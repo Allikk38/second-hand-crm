@@ -13,6 +13,7 @@ import { AuthManager } from '../auth/AuthManager.js';
 import { Cart } from './Cart.js';
 import { ShiftOpener } from './ShiftOpener.js';
 import { Notification } from '../common/Notification.js';
+import { formatAttributes } from '../../utils/categorySchema.js';
 
 export class CashierPage extends BaseComponent {
     constructor(container) {
@@ -52,7 +53,7 @@ export class CashierPage extends BaseComponent {
                             <input 
                                 type="text" 
                                 name="search" 
-                                placeholder="Поиск по названию или размеру..." 
+                                placeholder="Поиск по названию или характеристикам..." 
                                 value="${this.searchQuery}"
                                 autocomplete="off"
                             >
@@ -75,12 +76,13 @@ export class CashierPage extends BaseComponent {
 
     renderProductItem(product) {
         const isAvailable = product.status === 'in_stock';
+        const attributesText = formatAttributes(product.category, product.attributes);
         
         return `
             <div class="product-item ${!isAvailable ? 'product-sold' : ''}" data-id="${product.id}">
                 <div class="product-item-info">
                     <span class="product-item-name">${product.name}</span>
-                    ${product.size ? `<span class="product-item-size">Размер: ${product.size}</span>` : ''}
+                    ${attributesText ? `<span class="product-attributes">${attributesText}</span>` : ''}
                 </div>
                 <div class="product-item-actions">
                     <span class="price">${this.formatMoney(product.price)}</span>
@@ -94,17 +96,14 @@ export class CashierPage extends BaseComponent {
     }
 
     async attachEvents() {
-        // ShiftOpener
         const shiftContainer = this.element.querySelector('#shift-container');
         const shiftOpener = new ShiftOpener(shiftContainer);
         await shiftOpener.mount();
         
-        // Cart
         const cartContainer = this.element.querySelector('#cart-container');
         this.cart = new Cart(cartContainer);
         await this.cart.mount();
         
-        // Поиск
         const searchInput = this.element.querySelector('[name="search"]');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
@@ -114,7 +113,6 @@ export class CashierPage extends BaseComponent {
             });
         }
         
-        // Кнопки добавления в корзину
         this.attachAddToCartEvents();
         
         this.subscribe('cart:checkout', async ({ items, total, discount, paymentMethod }) => {
@@ -145,8 +143,6 @@ export class CashierPage extends BaseComponent {
 
     filterProducts() {
         const query = this.searchQuery.toLowerCase().trim();
-        
-        // Сначала фильтруем только товары в наличии
         let available = this.products.filter(p => p.status === 'in_stock');
         
         if (!query) {
@@ -154,8 +150,10 @@ export class CashierPage extends BaseComponent {
         } else {
             this.filteredProducts = available.filter(p => {
                 const nameMatch = p.name.toLowerCase().includes(query);
-                const sizeMatch = p.size && p.size.toLowerCase().includes(query);
-                return nameMatch || sizeMatch;
+                const attrMatch = p.attributes && Object.values(p.attributes).some(
+                    v => v && v.toString().toLowerCase().includes(query)
+                );
+                return nameMatch || attrMatch;
             });
         }
     }
@@ -164,20 +162,17 @@ export class CashierPage extends BaseComponent {
         const productsList = this.element.querySelector('.products-list');
         const inStockCount = this.filteredProducts.filter(p => p.status === 'in_stock').length;
         
-        // Обновляем заголовок
         const header = this.element.querySelector('.products-panel h3');
         if (header) {
             header.textContent = `Товары в наличии (${inStockCount})`;
         }
         
-        // Обновляем список
         if (this.filteredProducts.length) {
             productsList.innerHTML = this.filteredProducts.map(p => this.renderProductItem(p)).join('');
         } else {
             productsList.innerHTML = '<div class="empty-state">Товары не найдены</div>';
         }
         
-        // Перевешиваем события
         this.attachAddToCartEvents();
     }
 
