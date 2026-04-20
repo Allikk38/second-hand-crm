@@ -18,14 +18,23 @@ class PermissionManagerClass {
 
         const { data: perms } = await SupabaseClient
             .from('role_permissions')
-            .select(`
-                permission_id,
-                permissions!inner(slug)
-            `)
+            .select('permission_id')
             .eq('role_id', profile.role_id);
 
+        if (!perms || perms.length === 0) {
+            this.loaded = true;
+            return;
+        }
+
+        const permIds = perms.map(p => p.permission_id);
+        
+        const { data: permissions } = await SupabaseClient
+            .from('permissions')
+            .select('slug')
+            .in('id', permIds);
+
         this.permissions.clear();
-        perms?.forEach(p => this.permissions.add(p.permissions.slug));
+        permissions?.forEach(p => this.permissions.add(p.slug));
         this.loaded = true;
         
         EventBus.emit('permissions:loaded');
