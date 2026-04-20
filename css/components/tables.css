@@ -1,0 +1,299 @@
+/**
+ * Tables Component
+ * 
+ * Стили для таблиц с данными, сортировкой и пагинацией.
+ * 
+ * @stylesheet tables
+ */
+
+/* ========== DATA TABLE ========== */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+}
+
+.data-table thead {
+    background: var(--table-header-bg);
+    position: sticky;
+    top: 0;
+    z-index: var(--z-10);
+}
+
+.data-table th {
+    padding: var(--table-cell-padding);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 2px solid var(--color-border);
+}
+
+.data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition-fast);
+}
+
+.data-table th.sortable:hover {
+    background: var(--color-gray-100);
+}
+
+.data-table th.sort-asc::after {
+    content: " ↑";
+    color: var(--color-primary);
+}
+
+.data-table th.sort-desc::after {
+    content: " ↓";
+    color: var(--color-primary);
+}
+
+.data-table td {
+    padding: var(--table-cell-padding);
+    border-bottom: var(--border-width) solid var(--table-border-color);
+    vertical-align: middle;
+}
+
+.data-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.data-table tbody tr:hover {
+    background: var(--table-row-hover);
+}
+
+.data-table tbody tr.selected {
+    background: var(--color-primary-bg);
+}
+
+/* ========== TABLE VARIANTS ========== */
+.table-sm th,
+.table-sm td {
+    padding: var(--table-cell-padding-sm);
+    font-size: var(--font-size-xs);
+}
+
+.table-striped tbody tr:nth-child(even) {
+    background: var(--color-gray-50);
+}
+
+.table-bordered {
+    border: var(--border-width) solid var(--table-border-color);
+}
+
+.table-bordered th,
+.table-bordered td {
+    border: var(--border-width) solid var(--table-border-color);
+}
+
+/* ========== TABLE ALIGNMENT ========== */
+.data-table .text-left { text-align: left; }
+.data-table .text-center { text-align: center; }
+.data-table .text-right { text-align: right; }
+
+.data-table .money {
+    text-align: right;
+    font-family: var(--font-family-mono);
+}
+
+.data-table .money.positive {
+    color: var(--color-success);
+}
+
+.data-table .money.negative {
+    color: var(--color-danger);
+}
+
+/* ========== TABLE ACTIONS ========== */
+.table-actions {
+    display: flex;
+    gap: var(--spacing-2);
+}
+
+.table-actions .btn-icon {
+    opacity: 0.6;
+    transition: opacity var(--transition-fast);
+}
+
+.data-table tbody tr:hover .table-actions .btn-icon {
+    opacity: 1;
+}
+
+/* ========== TABLE CONTAINER ========== */
+.table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius-lg);
+    border: var(--border-width) solid var(--color-border-light);
+}
+
+.table-container .data-table {
+    margin: 0;
+}
+
+/* ========== TABLE FOOTER ========== */
+.table-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-4);
+    background: var(--color-gray-50);
+    border-top: var(--border-width) solid var(--color-border);
+}
+
+.table-info {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+/* ========== PAGINATION ========== */
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+}
+
+.pagination-btn {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 var(--spacing-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-white);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--color-gray-100);
+    border-color: var(--color-gray-400);
+}
+
+.pagination-btn.active {
+    background: var(--color-primary);
+    color: var(--color-white);
+    border-color: var(--color-primary);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pagination-ellipsis {
+    padding: 0 var(--spacing-1);
+    color: var(--color-text-muted);
+}
+
+/* ========== SELLER INFO ========== */
+.seller-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.seller-name {
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+}
+
+.seller-email {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+/* ========== TOP PRODUCTS LIST ========== */
+.top-products-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.top-product-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3) 0;
+    border-bottom: var(--border-width) solid var(--color-border-light);
+}
+
+.top-product-item:last-child {
+    border-bottom: none;
+}
+
+.top-product-item .rank {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-gray-100);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+}
+
+.top-product-item:nth-child(1) .rank {
+    background: #ffd700;
+    color: #000;
+}
+
+.top-product-item:nth-child(2) .rank {
+    background: #c0c0c0;
+    color: #000;
+}
+
+.top-product-item:nth-child(3) .rank {
+    background: #cd7f32;
+    color: #fff;
+}
+
+.top-product-item .name {
+    flex: 1;
+    font-weight: var(--font-weight-medium);
+}
+
+.top-product-item .value {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.top-product-item .revenue {
+    min-width: 80px;
+    text-align: right;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-primary);
+}
+
+/* ========== EMPTY STATE ========== */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-10);
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.empty-state-icon {
+    font-size: 64px;
+    margin-bottom: var(--spacing-4);
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin-bottom: var(--spacing-4);
+}
+
+.empty-message {
+    padding: var(--spacing-8);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
