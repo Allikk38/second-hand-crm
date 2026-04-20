@@ -1,0 +1,303 @@
+/**
+ * Responsive
+ * 
+ * Медиа-запросы для адаптивности на разных устройствах.
+ * 
+ * @stylesheet responsive
+ */
+
+/* ========== BREAKPOINTS ========== */
+/* 
+ * xs: 0-480px (мобильные)
+ * sm: 481-640px (большие мобильные)
+ * md: 641-768px (планшеты)
+ * lg: 769-1024px (десктоп)
+ * xl: 1025-1280px (большие десктопы)
+ * 2xl: 1281px+ (очень большие экраны)
+ */
+
+/* ========== MOBILE FIRST (базовые стили для мобильных) ========== */
+
+/* Планшеты и больше */
+@media (min-width: 641px) {
+    .md\:flex { display: flex; }
+    .md\:hidden { display: none; }
+    .md\:grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+    .md\:grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .md\:w-auto { width: auto; }
+}
+
+/* Десктопы и больше */
+@media (min-width: 769px) {
+    .lg\:flex { display: flex; }
+    .lg\:hidden { display: none; }
+    .lg\:grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+    .lg\:grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .lg\:w-1\/2 { width: 50%; }
+    .lg\:w-1\/3 { width: 33.333333%; }
+    .lg\:w-2\/3 { width: 66.666667%; }
+}
+
+/* Большие десктопы */
+@media (min-width: 1025px) {
+    .xl\:flex { display: flex; }
+    .xl\:hidden { display: none; }
+    .xl\:grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+    .xl\:grid-cols-5 { grid-template-columns: repeat(5, 1fr); }
+}
+
+/* ========== MAX-WIDTH MEDIA QUERIES ========== */
+
+/* Максимум 1024px */
+@media (max-width: 1024px) {
+    .cashier-layout {
+        grid-template-columns: 1fr;
+    }
+    
+    .cart {
+        position: static;
+        max-height: 400px;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .inventory-page .filters-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .inventory-page .bulk-actions-panel {
+        margin-left: 0;
+    }
+}
+
+/* Максимум 768px */
+@media (max-width: 768px) {
+    body {
+        padding: var(--spacing-3);
+    }
+    
+    .app-header {
+        flex-direction: column;
+        gap: var(--spacing-4);
+        padding: var(--spacing-3) 0;
+    }
+    
+    .app-nav {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .nav-btn {
+        flex: 1;
+        padding: var(--spacing-2);
+        font-size: var(--font-size-xs);
+    }
+    
+    .products-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-3);
+    }
+    
+    .modal {
+        min-width: auto;
+        width: 95vw;
+        padding: var(--spacing-4);
+    }
+    
+    .modal-header,
+    .modal-body,
+    .modal-footer {
+        padding: var(--spacing-4);
+    }
+    
+    .quick-view-content {
+        flex-direction: column;
+        width: 95%;
+        max-height: 90vh;
+    }
+    
+    .quick-view-photo {
+        max-height: 200px;
+    }
+    
+    .reports-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .period-selector {
+        flex-wrap: wrap;
+    }
+    
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .two-columns {
+        grid-template-columns: 1fr;
+    }
+    
+    .products-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .categories-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .category-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+    
+    .cart-item-main {
+        flex-wrap: wrap;
+    }
+    
+    .cart-item-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .payment-methods {
+        flex-direction: column;
+    }
+    
+    .table-container {
+        font-size: var(--font-size-xs);
+    }
+    
+    .data-table th,
+    .data-table td {
+        padding: var(--spacing-2);
+    }
+    
+    .products-table .attributes-cell {
+        display: none;
+    }
+    
+    .products-table .category-cell {
+        display: none;
+    }
+}
+
+/* Максимум 480px */
+@media (max-width: 480px) {
+    .products-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .nav-btn {
+        font-size: var(--font-size-xs);
+        padding: var(--spacing-1);
+    }
+    
+    .nav-btn-logout {
+        margin-left: var(--spacing-1);
+    }
+    
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .shift-stats-panel .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .login-form {
+        margin: 50px auto;
+        padding: var(--spacing-5);
+    }
+    
+    #notification-container {
+        top: var(--spacing-2);
+        right: var(--spacing-2);
+        left: var(--spacing-2);
+    }
+    
+    .modal {
+        width: 100%;
+        border-radius: 0;
+    }
+    
+    .confirm-dialog .actions {
+        flex-direction: column;
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-3);
+    }
+    
+    .bulk-actions-panel {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+
+/* ========== PRINT STYLES ========== */
+@media print {
+    .app-header,
+    .app-nav,
+    .filters-panel,
+    .bulk-actions-panel,
+    .btn,
+    .cart-panel,
+    .shift-stats-panel,
+    .products-toolbar,
+    .category-tabs,
+    .view-controls,
+    .reports-tabs,
+    .header-right {
+        display: none !important;
+    }
+    
+    .cashier-layout {
+        display: block;
+    }
+    
+    .products-panel {
+        box-shadow: none;
+    }
+    
+    .product-card,
+    .kpi-card,
+    .chart-card,
+    .card {
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+    
+    body {
+        background: white;
+        padding: 1cm;
+    }
+    
+    a[href]:after {
+        content: " (" attr(href) ")";
+    }
+}
+
+/* ========== TOUCH DEVICES ========== */
+@media (hover: none) and (pointer: coarse) {
+    .product-actions {
+        opacity: 1;
+    }
+    
+    .row-actions {
+        opacity: 1;
+    }
+    
+    .btn:hover {
+        transform: none;
+    }
+}
