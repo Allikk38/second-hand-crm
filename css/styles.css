@@ -615,7 +615,24 @@ label {
     border-radius: var(--radius-sm);
     margin-bottom: var(--spacing-md);
 }
+/* Превью прибыли */
+.profit-preview {
+    padding: var(--spacing-md);
+    background: var(--color-success-bg);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-md);
+    text-align: center;
+}
 
+.profit-value {
+    font-size: var(--font-size-lg);
+    color: var(--color-success);
+    margin: 0 var(--spacing-xs);
+}
+
+.profit-preview small {
+    color: var(--color-text-secondary);
+}
 .current-photo {
     margin-bottom: var(--spacing-sm);
 }
