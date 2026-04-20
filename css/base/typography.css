@@ -1,0 +1,296 @@
+/**
+ * Typography
+ * 
+ * Стили для текстового контента: заголовки, параграфы, ссылки.
+ * 
+ * @stylesheet typography
+ */
+
+/* ========== HEADINGS ========== */
+h1 {
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-4);
+}
+
+h2 {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-3);
+}
+
+h3 {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    line-height: var(--line-height-tight);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-2);
+}
+
+h4 {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-normal);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-2);
+}
+
+h5 {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-1);
+}
+
+h6 {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-normal);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    margin-bottom: var(--spacing-1);
+}
+
+/* ========== PARAGRAPHS ========== */
+p {
+    margin-bottom: var(--spacing-4);
+    color: var(--color-text-secondary);
+}
+
+p:last-child {
+    margin-bottom: 0;
+}
+
+/* ========== LINKS ========== */
+a {
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+    cursor: pointer;
+}
+
+a:hover {
+    color: var(--color-primary-dark);
+    text-decoration: underline;
+}
+
+a:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+    border-radius: var(--radius-xs);
+}
+
+/* ========== LISTS ========== */
+ul,
+ol {
+    margin-bottom: var(--spacing-4);
+    padding-left: var(--spacing-6);
+}
+
+ul {
+    list-style-type: disc;
+}
+
+ol {
+    list-style-type: decimal;
+}
+
+li {
+    margin-bottom: var(--spacing-1);
+    color: var(--color-text-secondary);
+}
+
+li:last-child {
+    margin-bottom: 0;
+}
+
+/* Вложенные списки */
+ul ul,
+ol ul {
+    list-style-type: circle;
+}
+
+ul ul ul,
+ol ul ul {
+    list-style-type: square;
+}
+
+/* ========== INLINE TEXT ELEMENTS ========== */
+mark {
+    background-color: var(--color-warning-bg);
+    color: var(--color-warning-dark);
+    padding: var(--spacing-0-5) var(--spacing-1);
+    border-radius: var(--radius-xs);
+}
+
+del,
+s {
+    color: var(--color-text-muted);
+    text-decoration: line-through;
+}
+
+ins {
+    text-decoration: none;
+    background-color: var(--color-success-bg);
+    color: var(--color-success-dark);
+}
+
+u {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+}
+
+/* ========== CODE AND PRE ========== */
+code {
+    font-family: var(--font-family-mono);
+    font-size: 0.9em;
+    padding: var(--spacing-0-5) var(--spacing-1);
+    background-color: var(--color-gray-100);
+    border-radius: var(--radius-sm);
+    color: var(--color-danger-dark);
+}
+
+pre {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
+    padding: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
+    background-color: var(--color-gray-900);
+    color: var(--color-gray-100);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+pre code {
+    padding: 0;
+    background-color: transparent;
+    color: inherit;
+    font-size: inherit;
+}
+
+/* ========== BLOCKQUOTE ========== */
+blockquote {
+    margin: var(--spacing-4) 0;
+    padding: var(--spacing-3) var(--spacing-5);
+    border-left: 4px solid var(--color-primary);
+    background-color: var(--color-gray-50);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+blockquote p:last-child {
+    margin-bottom: 0;
+}
+
+blockquote cite {
+    display: block;
+    margin-top: var(--spacing-2);
+    font-size: var(--font-size-sm);
+    font-style: normal;
+    color: var(--color-text-muted);
+}
+
+/* ========== HORIZONTAL RULE ========== */
+hr {
+    margin: var(--spacing-6) 0;
+    border: 0;
+    border-top: var(--border-width) solid var(--color-border);
+}
+
+/* ========== TEXT UTILITIES ========== */
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+.font-light { font-weight: var(--font-weight-light); }
+.font-normal { font-weight: var(--font-weight-normal); }
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+.leading-tight { line-height: var(--line-height-tight); }
+.leading-normal { line-height: var(--line-height-normal); }
+.leading-relaxed { line-height: var(--line-height-relaxed); }
+
+.tracking-tight { letter-spacing: var(--letter-spacing-tight); }
+.tracking-normal { letter-spacing: var(--letter-spacing-normal); }
+.tracking-wide { letter-spacing: var(--letter-spacing-wide); }
+
+.text-left { text-align: left; }
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-justify { text-align: justify; }
+
+.text-primary { color: var(--color-primary); }
+.text-success { color: var(--color-success); }
+.text-danger { color: var(--color-danger); }
+.text-warning { color: var(--color-warning); }
+.text-info { color: var(--color-info); }
+.text-muted { color: var(--color-text-muted); }
+.text-secondary { color: var(--color-text-secondary); }
+
+.text-uppercase { text-transform: uppercase; }
+.text-lowercase { text-transform: lowercase; }
+.text-capitalize { text-transform: capitalize; }
+
+.text-underline { text-decoration: underline; }
+.text-line-through { text-decoration: line-through; }
+.text-no-decoration { text-decoration: none; }
+
+.text-truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.text-break {
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.text-nowrap {
+    white-space: nowrap;
+}
+
+.text-wrap {
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+/* ========== HEADING UTILITIES ========== */
+.page-title {
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-4);
+}
+
+.section-title {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-3);
+}
+
+.section-subtitle {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    margin-bottom: var(--spacing-2);
+}
