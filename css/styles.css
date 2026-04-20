@@ -450,7 +450,23 @@ label {
     align-items: center;
     margin-bottom: var(--spacing-lg);
 }
+/* Поиск */
+.search-bar {
+    margin-bottom: var(--spacing-lg);
+}
 
+.search-bar input {
+    max-width: 400px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--color-white);
+}
+
+.product-size {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    margin: 2px 0;
+}
 .btn-add {
     padding: var(--spacing-sm) var(--spacing-lg);
     background: var(--color-primary);
