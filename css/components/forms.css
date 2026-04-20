@@ -1,0 +1,460 @@
+/**
+ * Forms Component
+ * 
+ * Стили для форм, инпутов, селектов и других элементов ввода.
+ * 
+ * @stylesheet forms
+ */
+
+/* ========== FORM GROUP ========== */
+.form-group {
+    margin-bottom: var(--spacing-4);
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-4);
+}
+
+/* ========== LABELS ========== */
+label {
+    display: block;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    margin-bottom: var(--spacing-1-5);
+    color: var(--color-text);
+}
+
+.label-hint {
+    margin-left: var(--spacing-1);
+    font-weight: var(--font-weight-normal);
+    color: var(--color-text-muted);
+}
+
+.required {
+    color: var(--color-danger);
+    margin-left: var(--spacing-0-5);
+}
+
+/* ========== INPUTS ========== */
+input,
+select,
+textarea {
+    display: block;
+    width: 100%;
+    padding: var(--spacing-2) var(--spacing-3);
+    
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
+    color: var(--color-text);
+    
+    background: var(--color-white);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    
+    transition: border-color var(--transition-fast), 
+                box-shadow var(--transition-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-outline);
+}
+
+input:invalid:not(:placeholder-shown),
+select:invalid:not(:placeholder-shown) {
+    border-color: var(--color-danger);
+}
+
+input:invalid:not(:placeholder-shown):focus {
+    box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.1);
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+    background: var(--bg-disabled);
+    color: var(--color-text-disabled);
+    cursor: not-allowed;
+    border-color: var(--color-border-light);
+}
+
+input[readonly],
+select[readonly],
+textarea[readonly] {
+    background: var(--color-gray-50);
+    cursor: default;
+}
+
+/* ========== PLACEHOLDER ========== */
+input::placeholder,
+textarea::placeholder {
+    color: var(--color-text-muted);
+    opacity: 0.7;
+}
+
+/* ========== INPUT SIZES ========== */
+.input-sm {
+    padding: var(--spacing-1-5) var(--spacing-2);
+    font-size: var(--font-size-xs);
+    height: var(--input-height-sm);
+}
+
+.input-lg {
+    padding: var(--spacing-3) var(--spacing-4);
+    font-size: var(--font-size-base);
+    height: var(--input-height-lg);
+}
+
+/* ========== SELECT ========== */
+select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23616161' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--spacing-3) center;
+    background-size: 16px;
+    padding-right: var(--spacing-8);
+    cursor: pointer;
+}
+
+select:disabled {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23bdbdbd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    cursor: not-allowed;
+}
+
+/* Multiple select */
+select[multiple] {
+    background-image: none;
+    padding: var(--spacing-2);
+    min-height: 120px;
+}
+
+select[multiple] option {
+    padding: var(--spacing-1-5) var(--spacing-3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+select[multiple] option:checked {
+    background: var(--color-primary) linear-gradient(0deg, var(--color-primary) 0%, var(--color-primary) 100%);
+    color: var(--color-white);
+}
+
+select[multiple] option:hover {
+    background: var(--color-primary-bg);
+}
+
+/* ========== TEXTAREA ========== */
+textarea {
+    resize: vertical;
+    min-height: 80px;
+    line-height: var(--line-height-normal);
+}
+
+textarea:not([rows]) {
+    min-height: 100px;
+}
+
+/* ========== CHECKBOX AND RADIO ========== */
+input[type="checkbox"],
+input[type="radio"] {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    margin-right: var(--spacing-2);
+    vertical-align: middle;
+    cursor: pointer;
+    border-radius: var(--radius-xs);
+    accent-color: var(--color-primary);
+}
+
+input[type="radio"] {
+    border-radius: var(--radius-full);
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.checkbox-label,
+.radio-label {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    margin-bottom: var(--spacing-2);
+    font-weight: var(--font-weight-normal);
+}
+
+.checkbox-label input,
+.radio-label input {
+    margin-top: 0;
+}
+
+.checkbox-label:has(input:disabled),
+.radio-label:has(input:disabled) {
+    cursor: not-allowed;
+    color: var(--color-text-disabled);
+}
+
+/* ========== FILE INPUT ========== */
+input[type="file"] {
+    padding: var(--spacing-1-5);
+    background: var(--color-gray-50);
+    cursor: pointer;
+}
+
+input[type="file"]::file-selector-button {
+    margin-right: var(--spacing-3);
+    padding: var(--spacing-1-5) var(--spacing-3);
+    
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    
+    background: var(--color-white);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-sm);
+    
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+input[type="file"]::file-selector-button:hover {
+    background: var(--color-gray-100);
+    border-color: var(--color-gray-400);
+}
+
+/* ========== NUMBER INPUT ========== */
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* ========== SEARCH INPUT ========== */
+.search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-wrapper input {
+    padding-right: var(--spacing-8);
+}
+
+.search-wrapper .btn-clear-input {
+    position: absolute;
+    right: var(--spacing-2);
+}
+
+.search-loader {
+    position: absolute;
+    right: var(--spacing-3);
+}
+
+/* ========== INPUT WITH ICON ========== */
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-wrapper input {
+    width: 100%;
+}
+
+.input-wrapper .input-icon {
+    position: absolute;
+    left: var(--spacing-3);
+    color: var(--color-text-muted);
+}
+
+.input-wrapper .input-loader,
+.input-wrapper .input-error-icon {
+    position: absolute;
+    right: var(--spacing-3);
+}
+
+.input-wrapper input {
+    padding-left: var(--spacing-8);
+}
+
+/* ========== FORM HINT ========== */
+.form-hint {
+    display: block;
+    margin-top: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+/* ========== VALIDATION ========== */
+.has-error input,
+.has-error select,
+.has-error textarea {
+    border-color: var(--color-danger);
+}
+
+.has-error input:focus,
+.has-error select:focus,
+.has-error textarea:focus {
+    box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.1);
+}
+
+.validation-error {
+    margin-top: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-danger);
+}
+
+.validation-warning {
+    margin-top: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-warning);
+}
+
+.has-success input,
+.has-success select,
+.has-success textarea {
+    border-color: var(--color-success);
+}
+
+/* ========== FIELDSET ========== */
+fieldset {
+    margin-bottom: var(--spacing-4);
+    padding: var(--spacing-4);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+legend {
+    padding: 0 var(--spacing-2);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+}
+
+/* ========== FORM ACTIONS ========== */
+.form-actions {
+    display: flex;
+    gap: var(--spacing-3);
+    justify-content: flex-end;
+    margin-top: var(--spacing-6);
+}
+
+/* ========== DYNAMIC FIELDS ========== */
+.dynamic-fields {
+    padding: var(--spacing-4);
+    background: var(--color-gray-50);
+    border-radius: var(--radius-md);
+    margin: var(--spacing-4) 0;
+}
+
+.attributes-section h4 {
+    margin-bottom: var(--spacing-4);
+    padding-bottom: var(--spacing-2);
+    border-bottom: var(--border-width) solid var(--color-border);
+}
+
+/* ========== QUANTITY CONTROL ========== */
+.quantity-control {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    background: var(--color-gray-100);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-0-5);
+}
+
+.qty-input {
+    width: 50px;
+    padding: var(--spacing-1);
+    text-align: center;
+    border: none;
+    background: transparent;
+    font-weight: var(--font-weight-medium);
+}
+
+.qty-input:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* ========== DISCOUNT INPUT ========== */
+.discount-input-wrapper {
+    display: inline-flex;
+    align-items: center;
+    background: var(--color-gray-100);
+    border-radius: var(--radius-md);
+    padding: 0 var(--spacing-2);
+}
+
+.discount-input-wrapper input {
+    width: 60px;
+    padding: var(--spacing-1-5) var(--spacing-1);
+    border: none;
+    background: transparent;
+    text-align: right;
+}
+
+.discount-input-wrapper input:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+/* ========== SCANNER INPUT ========== */
+.scanner-input-wrapper {
+    position: relative;
+}
+
+.scanner-input-wrapper input {
+    padding: var(--spacing-3) var(--spacing-4);
+    font-size: var(--font-size-base);
+    border: 2px solid var(--color-primary-light);
+    background: var(--color-primary-bg);
+}
+
+.scanner-input-wrapper input:focus {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-outline);
+}
+
+.scanner-hint {
+    display: block;
+    margin-top: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+/* ========== PASSWORD INPUT ========== */
+.password-input-wrapper {
+    position: relative;
+}
+
+.password-toggle {
+    position: absolute;
+    right: var(--spacing-2);
+    top: 50%;
+    transform: translateY(-50%);
+    padding: var(--spacing-1);
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+}
+
+.password-toggle:hover {
+    color: var(--color-text);
+}
