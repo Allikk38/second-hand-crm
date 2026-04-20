@@ -1,8 +1,19 @@
 /**
  * Форма добавления и редактирования товара
- * Поддерживает загрузку фото, валидацию полей
+ * 
+ * Архитектурные решения:
+ * - Динамические поля на основе схемы категорий (CATEGORY_SCHEMA)
+ * - Атрибуты хранятся в JSONB поле для гибкости
+ * - Валидация по схеме категории
+ * - Поддержка загрузки фото в Supabase Storage
  * 
  * @module ProductForm
+ * @requires BaseComponent
+ * @requires ProductService
+ * @requires SupabaseClient
+ * @requires AuthManager
+ * @requires Notification
+ * @requires categorySchema
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -10,31 +21,111 @@ import { ProductService } from '../../services/ProductService.js';
 import { SupabaseClient } from '../../core/SupabaseClient.js';
 import { AuthManager } from '../auth/AuthManager.js';
 import { Notification } from '../common/Notification.js';
+import { 
+    CATEGORY_SCHEMA, 
+    getCategorySchema, 
+    getCategoryOptions 
+} from '../../utils/categorySchema.js';
 
 export class ProductForm extends BaseComponent {
+    /**
+     * @param {HTMLElement} container - Контейнер для формы
+     * @param {Object} product - Товар для редактирования (опционально)
+     */
+    constructor(container, product = null) {
+        super(container);
+        this.product = product;
+        this.selectedCategory = product?.category || '';
+        this.isEditMode = !!product;
+    }
+
+    /**
+     * Рендерит форму с динамическими полями
+     */
     async render() {
+        const categoryOptions = getCategoryOptions();
+        const schema = this.selectedCategory ? getCategorySchema(this.selectedCategory) : null;
+        
         return `
             <div class="modal-overlay">
-                <div class="modal">
-                    <h3>Новый товар</h3>
+                <div class="modal product-form-modal">
+                    <h3>${this.isEditMode ? 'Редактирование товара' : 'Новый товар'}</h3>
+                    
                     <form id="product-form">
-                        <input type="text" name="name" placeholder="Название" required>
-                        <input type="number" name="price" placeholder="Цена" step="0.01" min="0" required>
-                        <select name="category">
-                            <option value="">Категория</option>
-                            <option value="clothes">Одежда</option>
-                            <option value="toys">Игрушки</option>
-                            <option value="dishes">Посуда</option>
-                            <option value="other">Другое</option>
-                        </select>
-                        <input type="text" name="size" placeholder="Размер (например: 104, M, 42)">
-                        <input type="file" name="photo" accept="image/*">
+                        <!-- Основные поля -->
+                        <div class="form-group">
+                            <label for="prod-name">Название *</label>
+                            <input 
+                                type="text" 
+                                id="prod-name" 
+                                name="name" 
+                                value="${this.product?.name || ''}"
+                                placeholder="Например: Детская куртка"
+                                required
+                            >
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="prod-price">Цена (₽) *</label>
+                                <input 
+                                    type="number" 
+                                    id="prod-price" 
+                                    name="price" 
+                                    value="${this.product?.price || ''}"
+                                    step="0.01" 
+                                    min="0" 
+                                    placeholder="0.00"
+                                    required
+                                >
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="prod-category">Категория *</label>
+                            <select id="prod-category" name="category" required>
+                                <option value="">Выберите категорию</option>
+                                ${categoryOptions.map(opt => `
+                                    <option value="${opt.value}" ${this.selectedCategory === opt.value ? 'selected' : ''}>
+                                        ${opt.label}
+                                    </option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        
+                        <!-- Динамические поля атрибутов -->
+                        <div id="dynamic-fields" class="dynamic-fields">
+                            ${this.renderDynamicFields(schema)}
+                        </div>
+                        
+                        <!-- Загрузка фото -->
+                        <div class="form-group">
+                            <label for="prod-photo">Фото товара</label>
+                            ${this.product?.photo_url ? `
+                                <div class="current-photo">
+                                    <img src="${this.product.photo_url}" alt="Текущее фото">
+                                    <span class="photo-hint">Выберите новое фото чтобы заменить</span>
+                                </div>
+                            ` : ''}
+                            <input 
+                                type="file" 
+                                id="prod-photo" 
+                                name="photo" 
+                                accept="image/jpeg,image/png,image/webp"
+                            >
+                            <small class="form-hint">JPEG, PNG, WebP до 5 МБ</small>
+                        </div>
+                        
                         <div class="actions">
                             <button type="submit" class="btn-primary">
-                                <span class="btn-text">Сохранить</span>
-                                <span class="btn-loader" style="display:none;">Загрузка...</span>
+                                <span class="btn-text">${this.isEditMode ? 'Сохранить' : 'Добавить товар'}</span>
+                                <span class="btn-loader" style="display:none;">
+                                    <span class="loading-spinner"></span>
+                                </span>
                             </button>
-                            <button type="button" data-action="cancel">Отмена</button>
+                            <button type="button" class="btn-secondary" data-action="cancel">
+                                Отмена
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -42,20 +133,112 @@ export class ProductForm extends BaseComponent {
         `;
     }
 
+    /**
+     * Рендерит динамические поля на основе схемы категории
+     * @param {Object} schema - Схема категории
+     */
+    renderDynamicFields(schema) {
+        if (!schema) {
+            return '<div class="form-hint">Выберите категорию для указания характеристик</div>';
+        }
+        
+        const attributes = this.product?.attributes || {};
+        
+        return schema.fields.map(field => {
+            const value = attributes[field.name] || '';
+            
+            switch (field.type) {
+                case 'select':
+                    return `
+                        <div class="form-group">
+                            <label for="attr-${field.name}">
+                                ${field.label} ${field.required ? '*' : ''}
+                            </label>
+                            <select id="attr-${field.name}" name="attr_${field.name}" ${field.required ? 'required' : ''}>
+                                <option value="">Выберите</option>
+                                ${field.options.map(opt => `
+                                    <option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    `;
+                    
+                case 'textarea':
+                    return `
+                        <div class="form-group">
+                            <label for="attr-${field.name}">
+                                ${field.label} ${field.required ? '*' : ''}
+                            </label>
+                            <textarea 
+                                id="attr-${field.name}" 
+                                name="attr_${field.name}" 
+                                placeholder="${field.placeholder}"
+                                ${field.required ? 'required' : ''}
+                            >${value}</textarea>
+                        </div>
+                    `;
+                    
+                default:
+                    return `
+                        <div class="form-group">
+                            <label for="attr-${field.name}">
+                                ${field.label} ${field.required ? '*' : ''}
+                            </label>
+                            <input 
+                                type="${field.type}" 
+                                id="attr-${field.name}" 
+                                name="attr_${field.name}" 
+                                value="${value}"
+                                placeholder="${field.placeholder}"
+                                ${field.required ? 'required' : ''}
+                            >
+                        </div>
+                    `;
+            }
+        }).join('');
+    }
+
+    /**
+     * Привязывает события формы
+     */
     attachEvents() {
-        this.element.querySelector('[data-action="cancel"]').addEventListener('click', () => {
+        // Отмена
+        this.element.querySelector('[data-action="cancel"]')?.addEventListener('click', () => {
             this.destroy();
         });
-
+        
+        // Смена категории - перерисовываем динамические поля
+        const categorySelect = this.element.querySelector('#prod-category');
+        if (categorySelect) {
+            categorySelect.addEventListener('change', (e) => {
+                this.selectedCategory = e.target.value;
+                this.updateDynamicFields();
+            });
+        }
+        
+        // Отправка формы
         this.element.querySelector('#product-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             await this.handleSubmit(e.target);
         });
     }
 
+    /**
+     * Обновляет блок динамических полей при смене категории
+     */
+    updateDynamicFields() {
+        const schema = getCategorySchema(this.selectedCategory);
+        const container = this.element.querySelector('#dynamic-fields');
+        container.innerHTML = this.renderDynamicFields(schema);
+    }
+
+    /**
+     * Валидация формы
+     */
     validateForm(form) {
         const name = form.name.value.trim();
         const price = parseFloat(form.price.value);
+        const category = form.category.value;
         
         if (!name) {
             Notification.warning('Введите название товара');
@@ -77,9 +260,34 @@ export class ProductForm extends BaseComponent {
             return false;
         }
         
+        if (!category) {
+            Notification.warning('Выберите категорию товара');
+            return false;
+        }
+        
         return true;
     }
 
+    /**
+     * Собирает атрибуты из динамических полей
+     */
+    collectAttributes(form) {
+        const schema = getCategorySchema(this.selectedCategory);
+        const attributes = {};
+        
+        schema.fields.forEach(field => {
+            const input = form.querySelector(`[name="attr_${field.name}"]`);
+            if (input && input.value.trim()) {
+                attributes[field.name] = input.value.trim();
+            }
+        });
+        
+        return attributes;
+    }
+
+    /**
+     * Управляет состоянием загрузки кнопки
+     */
     setLoading(loading) {
         const btn = this.element.querySelector('button[type="submit"]');
         const text = btn.querySelector('.btn-text');
@@ -90,6 +298,9 @@ export class ProductForm extends BaseComponent {
         loader.style.display = loading ? 'inline' : 'none';
     }
 
+    /**
+     * Обработка отправки формы
+     */
     async handleSubmit(form) {
         if (!this.validateForm(form)) return;
         
@@ -98,8 +309,9 @@ export class ProductForm extends BaseComponent {
         try {
             const user = AuthManager.getUser();
             const file = form.photo.files[0];
-            let photoUrl = null;
+            let photoUrl = this.product?.photo_url || null;
 
+            // Загрузка нового фото
             if (file) {
                 if (file.size > 5 * 1024 * 1024) {
                     Notification.warning('Фото не должно превышать 5 МБ');
@@ -107,7 +319,9 @@ export class ProductForm extends BaseComponent {
                     return;
                 }
                 
-                const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+                
                 const { error } = await SupabaseClient.storage
                     .from('product-photos')
                     .upload(fileName, file);
@@ -121,24 +335,34 @@ export class ProductForm extends BaseComponent {
                 photoUrl = data.publicUrl;
             }
 
-            const product = {
+            // Собираем данные товара
+            const productData = {
                 name: form.name.value.trim(),
                 price: parseFloat(form.price.value),
-                category: form.category.value || null,
-                size: form.size.value.trim() || null,
+                category: form.category.value,
+                attributes: this.collectAttributes(form),
                 photo_url: photoUrl,
-                created_by: user.id,
-                status: 'in_stock'
+                created_by: this.isEditMode ? this.product.created_by : user.id,
+                status: this.product?.status || 'in_stock'
             };
 
-            await ProductService.create(product);
-            Notification.success('Товар успешно добавлен');
+            // Создание или обновление
+            if (this.isEditMode) {
+                await ProductService.update(this.product.id, productData);
+                Notification.success('Товар обновлен');
+            } else {
+                await ProductService.create(productData);
+                Notification.success('Товар успешно добавлен');
+            }
+            
             this.publish('product:created');
+            this.publish('product:updated');
             this.destroy();
             
         } catch (error) {
+            console.error('[ProductForm] Ошибка:', error);
             this.publish('app:error', error);
-            Notification.error('Ошибка при создании товара');
+            Notification.error(this.isEditMode ? 'Ошибка при обновлении товара' : 'Ошибка при создании товара');
         } finally {
             this.setLoading(false);
         }
