@@ -83,5 +83,5 @@ async getTotalStats() {
         inventoryValue,
         totalCost,
         totalProfit
-    };
+    }; 
 }
