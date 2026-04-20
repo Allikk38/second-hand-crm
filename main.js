@@ -27,9 +27,10 @@ function renderApp() {
             <header>
                 <h1>Second Hand CRM</h1>
                 <nav>
-                    <button data-page="inventory">📦 Склад</button>
-                    <button data-page="cashier">💰 Касса</button>
-                    <button data-action="logout">🚪 Выход</button>
+                    <button data-page="inventory">Склад</button>
+                    <button data-page="cashier">Касса</button>
+                    <button data-page="reports">Отчеты</button>
+                    <button data-action="logout">Выход</button>
                 </nav>
             </header>
             <main id="page-container"></main>
@@ -58,6 +59,11 @@ async function showPage(page) {
         const { CashierPage } = await import('./modules/cashier/CashierPage.js');
         const cashier = new CashierPage(container);
         await cashier.mount();
+    }
+    if (page === 'reports') {
+        const { ReportsPage } = await import('./modules/reports/ReportsPage.js');
+        const reports = new ReportsPage(container);
+        await reports.mount();
     }
 }
 
