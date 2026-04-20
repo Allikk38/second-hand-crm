@@ -26,24 +26,25 @@ class PermissionManagerClass {
             return;
         }
 
-        const permIds = perms.map(p => p.permission_id);
+        const ids = perms.map(p => p.permission_id);
         
         const { data: permissions } = await SupabaseClient
             .from('permissions')
             .select('slug')
-            .in('id', permIds);
+            .in('id', ids);
 
         this.permissions.clear();
         permissions?.forEach(p => this.permissions.add(p.slug));
         this.loaded = true;
         
+        console.log('Загружены права:', Array.from(this.permissions));
         EventBus.emit('permissions:loaded');
     }
 
     can(slug) {
         return this.loaded && this.permissions.has(slug);
     }
-    
+
     getAll() {
         return Array.from(this.permissions);
     }
