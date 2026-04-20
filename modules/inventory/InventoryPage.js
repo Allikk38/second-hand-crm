@@ -1,6 +1,6 @@
 /**
  * Страница склада
- * Отображение, поиск и управление товарами
+ * Отображение, поиск, создание, редактирование и удаление товаров
  * 
  * @module InventoryPage
  */
@@ -9,6 +9,8 @@ import { BaseComponent } from '../../core/BaseComponent.js';
 import { ProductService } from '../../services/ProductService.js';
 import { PermissionManager } from '../../core/PermissionManager.js';
 import { ProductForm } from './ProductForm.js';
+import { ConfirmDialog } from '../common/ConfirmDialog.js';
+import { Notification } from '../common/Notification.js';
 import { formatAttributes } from '../../utils/categorySchema.js';
 
 export class InventoryPage extends BaseComponent {
@@ -30,6 +32,8 @@ export class InventoryPage extends BaseComponent {
         }
 
         const canCreate = PermissionManager.can('products:create');
+        const canEdit = PermissionManager.can('products:edit');
+        const canDelete = PermissionManager.can('products:delete');
 
         return `
             <div class="inventory-page">
@@ -50,7 +54,7 @@ export class InventoryPage extends BaseComponent {
                 
                 <div class="products-grid">
                     ${this.filteredProducts.length 
-                        ? this.filteredProducts.map(p => this.renderProductCard(p)).join('')
+                        ? this.filteredProducts.map(p => this.renderProductCard(p, canEdit, canDelete)).join('')
                         : '<div class="empty-state">Товары не найдены</div>'
                     }
                 </div>
@@ -58,7 +62,7 @@ export class InventoryPage extends BaseComponent {
         `;
     }
 
-    renderProductCard(product) {
+    renderProductCard(product, canEdit, canDelete) {
         const attributesText = formatAttributes(product.category, product.attributes);
         
         return `
@@ -74,6 +78,18 @@ export class InventoryPage extends BaseComponent {
                     ${attributesText ? `<span class="product-attributes">${attributesText}</span>` : ''}
                     <p class="price">${this.formatMoney(product.price)}</p>
                     <span class="status ${product.status}">${this.getStatusText(product.status)}</span>
+                </div>
+                <div class="product-actions">
+                    ${canEdit ? `
+                        <button class="btn-icon btn-edit" data-action="edit" data-id="${product.id}" title="Редактировать">
+                            ✎
+                        </button>
+                    ` : ''}
+                    ${canDelete ? `
+                        <button class="btn-icon btn-delete" data-action="delete" data-id="${product.id}" title="Удалить">
+                            ✕
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -102,6 +118,24 @@ export class InventoryPage extends BaseComponent {
                 this.update();
             });
         }
+        
+        this.element.querySelectorAll('[data-action="edit"]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const product = this.products.find(p => p.id === id);
+                this.openProductForm(product);
+            });
+        });
+        
+        this.element.querySelectorAll('[data-action="delete"]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                const product = this.products.find(p => p.id === id);
+                await this.deleteProduct(product);
+            });
+        });
 
         this.subscribe('product:created', () => this.refresh());
         this.subscribe('product:updated', () => this.refresh());
@@ -134,17 +168,42 @@ export class InventoryPage extends BaseComponent {
         }
     }
 
-    openProductForm() {
+    openProductForm(product = null) {
         const modalContainer = document.createElement('div');
         modalContainer.id = 'modal-container';
         document.body.appendChild(modalContainer);
         
-        const form = new ProductForm(modalContainer);
+        const form = new ProductForm(modalContainer, product);
         form.mount();
         
         const unsubscribe = this.subscribe('product:created', () => {
             modalContainer.remove();
             unsubscribe();
         });
+        
+        const unsubscribeUpdate = this.subscribe('product:updated', () => {
+            modalContainer.remove();
+            unsubscribeUpdate();
+        });
+    }
+
+    async deleteProduct(product) {
+        const confirmed = await ConfirmDialog.show({
+            title: 'Удаление товара',
+            message: `Вы уверены, что хотите удалить "${product.name}"?`,
+            confirmText: 'Удалить',
+            cancelText: 'Отмена',
+            type: 'danger'
+        });
+        
+        if (!confirmed) return;
+        
+        try {
+            await ProductService.delete(product.id);
+            Notification.success(`Товар "${product.name}" удален`);
+        } catch (error) {
+            this.publish('app:error', error);
+            Notification.error('Ошибка при удалении товара');
+        }
     }
 }
