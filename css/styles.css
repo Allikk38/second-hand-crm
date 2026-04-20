@@ -341,3 +341,11 @@ body {
         opacity: 0;
     }
 }
+.btn-primary {
+    position: relative;
+}
+
+.btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
