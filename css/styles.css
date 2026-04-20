@@ -571,7 +571,25 @@ label {
     box-shadow: var(--shadow-modal);
     animation: slideUp var(--transition-base);
 }
+/* ========== ДИАЛОГ ПОДТВЕРЖДЕНИЯ ========== */
+.confirm-dialog {
+    min-width: 380px;
+    text-align: center;
+}
 
+.confirm-message {
+    margin: var(--spacing-lg) 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-base);
+}
+
+.confirm-dialog.confirm-danger .confirm-message {
+    color: var(--color-danger);
+}
+
+.confirm-dialog.confirm-warning .confirm-message {
+    color: var(--color-warning);
+}
 @keyframes slideUp {
     from {
         opacity: 0;
