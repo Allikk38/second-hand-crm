@@ -60,6 +60,7 @@ async function showPage(page) {
         const cashier = new CashierPage(container);
         await cashier.mount();
     }
+    
     if (page === 'reports') {
         const { ReportsPage } = await import('./modules/reports/ReportsPage.js');
         const reports = new ReportsPage(container);
