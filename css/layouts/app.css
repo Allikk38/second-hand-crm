@@ -1,0 +1,303 @@
+/**
+ * App Layout
+ * 
+ * Основной макет приложения: хедер, навигация, контейнеры.
+ * 
+ * @stylesheet app
+ */
+
+/* ========== APP ROOT ========== */
+#app-root {
+    max-width: 1400px;
+    margin: 0 auto;
+    min-height: 100vh;
+}
+
+.app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ========== APP HEADER ========== */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-4) 0;
+    margin-bottom: var(--spacing-6);
+    border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.app-header h1 {
+    margin: 0;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-primary);
+}
+
+/* ========== NAVIGATION ========== */
+.app-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    background: var(--color-white);
+    padding: var(--spacing-1);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.nav-btn {
+    padding: var(--spacing-2) var(--spacing-5);
+    background: transparent;
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--transition-fast);
+    border: none;
+}
+
+.nav-btn:hover {
+    background: var(--color-gray-100);
+    color: var(--color-text);
+}
+
+.nav-btn.active {
+    background: var(--color-primary);
+    color: var(--color-white);
+}
+
+.nav-btn-logout {
+    margin-left: var(--spacing-4);
+    color: var(--color-danger);
+}
+
+.nav-btn-logout:hover {
+    background: var(--color-danger-bg);
+    color: var(--color-danger-dark);
+}
+
+/* ========== PAGE CONTAINER ========== */
+.page-container {
+    flex: 1;
+    padding-bottom: var(--spacing-8);
+}
+
+/* ========== PAGE HEADER ========== */
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-6);
+}
+
+.header-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+.header-left h2 {
+    margin: 0;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+/* ========== STATS BADGE ========== */
+.stats-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    font-size: var(--font-size-sm);
+}
+
+.stats-badge span {
+    padding: var(--spacing-0-5) var(--spacing-3);
+    background: var(--color-gray-100);
+    border-radius: var(--radius-full);
+    color: var(--color-text-secondary);
+}
+
+.badge-success {
+    background: var(--color-success-bg) !important;
+    color: var(--color-success) !important;
+}
+
+.badge-secondary {
+    background: var(--color-gray-200) !important;
+}
+
+.count-badge {
+    display: inline-block;
+    padding: var(--spacing-0-5) var(--spacing-2);
+    background: var(--color-gray-200);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    margin-left: var(--spacing-2);
+}
+
+/* ========== FILTERS PANEL ========== */
+.filters-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-5);
+    padding: var(--spacing-4);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.filters-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    flex-wrap: wrap;
+}
+
+.filters-group select {
+    width: auto;
+    min-width: 160px;
+}
+
+/* ========== BULK ACTIONS ========== */
+.bulk-actions-panel {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    margin-left: auto;
+    padding: var(--spacing-2) var(--spacing-4);
+    background: var(--color-primary-bg);
+    border-radius: var(--radius-lg);
+}
+
+.selected-count {
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-primary-dark);
+}
+
+/* ========== LOAD MORE TRIGGER ========== */
+.load-more-trigger {
+    height: 20px;
+    margin: var(--spacing-4) 0;
+}
+
+.end-of-list {
+    padding: var(--spacing-4);
+    text-align: center;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* ========== ERROR STATE ========== */
+.error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-10);
+    text-align: center;
+    background: var(--color-danger-bg);
+    border-radius: var(--radius-lg);
+    color: var(--color-danger-dark);
+}
+
+.error-state p {
+    margin-bottom: var(--spacing-2);
+}
+
+.error-state small {
+    font-size: var(--font-size-sm);
+    opacity: 0.8;
+}
+
+/* ========== LOADING STATES ========== */
+.loading-overlay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    gap: var(--spacing-4);
+}
+
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-8);
+    color: var(--color-text-muted);
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.loading-spinner.small {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+}
+
+.loading-spinner.large {
+    width: 48px;
+    height: 48px;
+    border-width: 4px;
+}
+
+.loading-text {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ========== LOGIN FORM ========== */
+.login-form {
+    max-width: 420px;
+    margin: 100px auto;
+    padding: var(--spacing-8);
+    background: var(--color-white);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+}
+
+.login-form h2 {
+    text-align: center;
+    margin-bottom: var(--spacing-6);
+}
+
+.login-form input {
+    margin-bottom: var(--spacing-4);
+}
+
+.login-form button {
+    width: 100%;
+    padding: var(--spacing-3);
+    margin-top: var(--spacing-4);
+}
+
+#error-message {
+    margin-top: var(--spacing-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+    text-align: center;
+}
