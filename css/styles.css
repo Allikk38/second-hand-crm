@@ -215,7 +215,8 @@ textarea:focus {
     box-shadow: 0 0 0 3px rgba(0, 112, 243, 0.1);
 }
 
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
     color: var(--color-text-muted);
 }
 
@@ -441,6 +442,7 @@ label {
 #error-message {
     margin-top: var(--spacing-sm);
     font-size: var(--font-size-sm);
+    color: var(--color-danger);
 }
 
 /* ========== СКЛАД ========== */
@@ -450,7 +452,7 @@ label {
     align-items: center;
     margin-bottom: var(--spacing-lg);
 }
-/* Поиск */
+
 .search-bar {
     margin-bottom: var(--spacing-lg);
 }
@@ -461,12 +463,6 @@ label {
     background: var(--color-white);
 }
 
-.product-size {
-    display: block;
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    margin: 2px 0;
-}
 .btn-add {
     padding: var(--spacing-sm) var(--spacing-lg);
     background: var(--color-primary);
@@ -515,10 +511,17 @@ label {
     margin-bottom: var(--spacing-xs);
 }
 
+.product-attributes {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    margin: 2px 0;
+}
+
 .product-info .price {
     font-weight: 600;
     color: var(--color-primary);
-    margin-bottom: var(--spacing-xs);
+    margin: var(--spacing-xs) 0;
 }
 
 .product-info .status {
@@ -537,6 +540,58 @@ label {
 .status.sold {
     background: var(--color-danger-bg);
     color: var(--color-danger);
+}
+
+/* ========== ФОРМА ТОВАРА ========== */
+.product-form-modal {
+    max-width: 500px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+}
+
+.form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-xs);
+    font-weight: 500;
+}
+
+.form-hint {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.dynamic-fields {
+    padding: var(--spacing-md);
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.current-photo {
+    margin-bottom: var(--spacing-sm);
+}
+
+.current-photo img {
+    max-width: 100px;
+    max-height: 100px;
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-xs);
+}
+
+.photo-hint {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
 }
 
 /* ========== МОДАЛЬНОЕ ОКНО ========== */
@@ -571,6 +626,39 @@ label {
     box-shadow: var(--shadow-modal);
     animation: slideUp var(--transition-base);
 }
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.modal h3 {
+    margin-bottom: var(--spacing-lg);
+}
+
+.modal input,
+.modal select,
+.modal textarea {
+    margin-bottom: var(--spacing-sm);
+}
+
+.modal .actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-lg);
+}
+
+.modal .actions button {
+    flex: 1;
+    padding: var(--spacing-sm);
+}
+
 /* ========== ДИАЛОГ ПОДТВЕРЖДЕНИЯ ========== */
 .confirm-dialog {
     min-width: 380px;
@@ -589,36 +677,6 @@ label {
 
 .confirm-dialog.confirm-warning .confirm-message {
     color: var(--color-warning);
-}
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.modal h3 {
-    margin-bottom: var(--spacing-lg);
-}
-
-.modal input,
-.modal select {
-    margin-bottom: var(--spacing-md);
-}
-
-.modal .actions {
-    display: flex;
-    gap: var(--spacing-sm);
-    margin-top: var(--spacing-lg);
-}
-
-.modal .actions button {
-    flex: 1;
-    padding: var(--spacing-sm);
 }
 
 /* ========== КАССА ========== */
@@ -650,6 +708,11 @@ label {
     border-radius: var(--radius-sm);
     transition: background var(--transition-fast);
 }
+
+.product-item:hover {
+    background: var(--color-border-light);
+}
+
 .product-item-info {
     flex: 1;
 }
@@ -658,11 +721,8 @@ label {
     font-weight: 500;
 }
 
-.product-item-size {
-    display: block;
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    margin-top: 2px;
+.product-item .product-attributes {
+    font-size: 11px;
 }
 
 .product-item-actions {
@@ -676,6 +736,11 @@ label {
     background: var(--color-primary);
     color: var(--color-white);
     font-size: var(--font-size-xs);
+}
+
+.product-item .price {
+    font-weight: 600;
+    color: var(--color-primary);
 }
 
 .product-sold {
@@ -692,14 +757,6 @@ label {
 .status-badge.sold {
     background: var(--color-danger-bg);
     color: var(--color-danger);
-}
-.product-item:hover {
-    background: var(--color-border-light);
-}
-
-.product-item .price {
-    font-weight: 600;
-    color: var(--color-primary);
 }
 
 /* Корзина */
@@ -1027,20 +1084,6 @@ label {
     }
 }
 
-/* ========== ТЕМНАЯ ТЕМА (ЗАГОТОВКА) ========== */
-@media (prefers-color-scheme: dark) {
-    /* Можно раскомментировать для темной темы */
-    /*
-    :root {
-        --color-bg: #1a1a1a;
-        --color-white: #2a2a2a;
-        --color-border: #3a3a3a;
-        --color-text: #e0e0e0;
-        --color-text-secondary: #a0a0a0;
-    }
-    */
-}
-
 /* ========== УТИЛИТЫ ДЛЯ JS ========== */
 .hidden {
     display: none !important;
@@ -1066,55 +1109,4 @@ label {
 .fade-exit-active {
     opacity: 0;
     transition: opacity var(--transition-base);
-}
-/* ========== ФОРМА ТОВАРА ========== */
-.product-form-modal {
-    max-width: 500px;
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--spacing-md);
-}
-
-.form-group {
-    margin-bottom: var(--spacing-md);
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: var(--spacing-xs);
-    font-weight: 500;
-}
-
-.form-hint {
-    display: block;
-    margin-top: var(--spacing-xs);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-}
-
-.dynamic-fields {
-    padding: var(--spacing-md);
-    background: var(--color-bg);
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--spacing-md);
-}
-
-.current-photo {
-    margin-bottom: var(--spacing-sm);
-}
-
-.current-photo img {
-    max-width: 100px;
-    max-height: 100px;
-    border-radius: var(--radius-sm);
-    margin-bottom: var(--spacing-xs);
-}
-
-.photo-hint {
-    display: block;
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
 }
