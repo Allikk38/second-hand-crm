@@ -7,6 +7,7 @@
 
 import { BaseComponent } from '../../core/BaseComponent.js';
 import { Notification } from '../common/Notification.js';
+import { ConfirmDialog } from '../common/ConfirmDialog.js';
 
 export class Cart extends BaseComponent {
     constructor(container) {
@@ -98,18 +99,39 @@ export class Cart extends BaseComponent {
     attachEvents() {
         // Удаление одного товара
         this.element.querySelectorAll('[data-action="remove-item"]').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 const id = btn.dataset.id;
-                this.removeItem(id);
+                const item = this.items.find(i => i.id === id);
+                
+                const confirmed = await ConfirmDialog.show({
+                    title: 'Удаление товара',
+                    message: `Удалить "${item.name}" из корзины?`,
+                    confirmText: 'Удалить',
+                    cancelText: 'Отмена',
+                    type: 'warning'
+                });
+                
+                if (confirmed) {
+                    this.removeItem(id);
+                }
             });
         });
         
         // Очистка корзины
         const clearBtn = this.element.querySelector('[data-action="clear-cart"]');
         if (clearBtn) {
-            clearBtn.addEventListener('click', () => {
-                if (confirm('Очистить корзину?')) {
+            clearBtn.addEventListener('click', async () => {
+                const confirmed = await ConfirmDialog.show({
+                    title: 'Очистка корзины',
+                    message: 'Все товары будут удалены из корзины. Продолжить?',
+                    confirmText: 'Очистить',
+                    cancelText: 'Отмена',
+                    type: 'warning'
+                });
+                
+                if (confirmed) {
                     this.clear();
+                    Notification.info('Корзина очищена');
                 }
             });
         }
@@ -134,17 +156,27 @@ export class Cart extends BaseComponent {
         // Оформление продажи
         const checkoutBtn = this.element.querySelector('[data-action="checkout"]');
         if (checkoutBtn) {
-            checkoutBtn.addEventListener('click', () => {
+            checkoutBtn.addEventListener('click', async () => {
                 const subtotal = this.items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
                 const discountAmount = subtotal * (this.discount / 100);
                 const total = subtotal - discountAmount;
                 
-                this.publish('cart:checkout', { 
-                    items: this.items, 
-                    total,
-                    discount: this.discount,
-                    paymentMethod: this.paymentMethod
+                const confirmed = await ConfirmDialog.show({
+                    title: 'Подтверждение продажи',
+                    message: `Сумма продажи: ${this.formatMoney(total)}. Продолжить?`,
+                    confirmText: 'Продать',
+                    cancelText: 'Отмена',
+                    type: 'info'
                 });
+                
+                if (confirmed) {
+                    this.publish('cart:checkout', { 
+                        items: this.items, 
+                        total,
+                        discount: this.discount,
+                        paymentMethod: this.paymentMethod
+                    });
+                }
             });
         }
     }
