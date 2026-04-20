@@ -4,6 +4,7 @@ import { PermissionManager } from './core/PermissionManager.js';
 import { AuthManager } from './modules/auth/AuthManager.js';
 import { LoginForm } from './modules/auth/LoginForm.js';
 import { InventoryPage } from './modules/inventory/InventoryPage.js';
+import { CashierPage } from './modules/cashier/CashierPage.js';
 
 const root = document.getElementById('app-root');
 
@@ -14,12 +15,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     if (user) {
         await PermissionManager.loadUserPermissions(user.id);
-        const inventory = new InventoryPage(root);
-        await inventory.mount();
+        renderApp();
     } else {
         new LoginForm(root).render();
     }
 });
+
+function renderApp() {
+    root.innerHTML = `
+        <div class="app">
+            <header>
+                <h1>Second Hand CRM</h1>
+                <nav>
+                    <button data-page="inventory">📦 Склад</button>
+                    <button data-page="cashier">💰 Касса</button>
+                    <button data-action="logout">🚪 Выход</button>
+                </nav>
+            </header>
+            <main id="page-container"></main>
+        </div>
+    `;
+    
+    document.querySelector('[data-page="inventory"]').addEventListener('click', () => showPage('inventory'));
+    document.querySelector('[data-page="cashier"]').addEventListener('click', () => showPage('cashier'));
+    document.querySelector('[data-action="logout"]').addEventListener('click', async () => {
+        await AuthManager.signOut();
+        EventBus.emit('auth:logout');
+    });
+    
+    showPage('inventory');
+}
+
+async function showPage(page) {
+    const container = document.getElementById('page-container');
+    
+    if (page === 'inventory') {
+        const inventory = new InventoryPage(container);
+        await inventory.mount();
+    }
+    
+    if (page === 'cashier') {
+        const { CashierPage } = await import('./modules/cashier/CashierPage.js');
+        const cashier = new CashierPage(container);
+        await cashier.mount();
+    }
+}
 
 EventBus.on('auth:logout', () => {
     new LoginForm(root).render();
