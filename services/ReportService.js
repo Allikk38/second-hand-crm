@@ -56,33 +56,32 @@ export const ReportService = {
         return stats;
     },
 
-    async getTotalStats() {
-        const { data: products } = await SupabaseClient
-            .from('products')
-            .select('status, price, cost_price');
-        
-        const { data: sales } = await SupabaseClient
-            .from('sales')
-            .select('total, items');
-        
-        const inStock = products?.filter(p => p.status === 'in_stock').length || 0;
-        const sold = products?.filter(p => p.status === 'sold').length || 0;
-        const totalRevenue = sales?.reduce((sum, s) => sum + s.total, 0) || 0;
-        const inventoryValue = products?.filter(p => p.status === 'in_stock')
-            .reduce((sum, p) => sum + p.price, 0) || 0;
-        
-        // Расчет себестоимости проданных товаров
-        const soldProducts = products?.filter(p => p.status === 'sold') || [];
-        const totalCost = soldProducts.reduce((sum, p) => sum + (p.cost_price || 0), 0);
-        const totalProfit = totalRevenue - totalCost;
-        
-        return { 
-            inStock, 
-            sold, 
-            totalRevenue, 
-            inventoryValue,
-            totalCost,
-            totalProfit
-        };
-    }
-};
+async getTotalStats() {
+    const { data: products } = await SupabaseClient
+        .from('products')
+        .select('status, price, cost_price');
+    
+    const { data: sales } = await SupabaseClient
+        .from('sales')
+        .select('total, items');
+    
+    const inStock = products?.filter(p => p.status === 'in_stock').length || 0;
+    const sold = products?.filter(p => p.status === 'sold').length || 0;
+    const totalRevenue = sales?.reduce((sum, s) => sum + s.total, 0) || 0;
+    const inventoryValue = products?.filter(p => p.status === 'in_stock')
+        .reduce((sum, p) => sum + p.price, 0) || 0;
+    
+    // Расчет себестоимости проданных товаров
+    const soldProducts = products?.filter(p => p.status === 'sold') || [];
+    const totalCost = soldProducts.reduce((sum, p) => sum + (p.cost_price || 0), 0);
+    const totalProfit = totalRevenue - totalCost;
+    
+    return { 
+        inStock, 
+        sold, 
+        totalRevenue, 
+        inventoryValue,
+        totalCost,
+        totalProfit
+    };
+}
