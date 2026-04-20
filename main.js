@@ -1,10 +1,16 @@
+/**
+ * Точка входа приложения Second Hand CRM
+ * Инициализация авторизации, навигации и основных модулей
+ * 
+ * @module main
+ */
+
 import { SupabaseClient } from './core/SupabaseClient.js';
 import { EventBus } from './core/EventBus.js';
 import { PermissionManager } from './core/PermissionManager.js';
 import { AuthManager } from './modules/auth/AuthManager.js';
 import { LoginForm } from './modules/auth/LoginForm.js';
 import { InventoryPage } from './modules/inventory/InventoryPage.js';
-import { CashierPage } from './modules/cashier/CashierPage.js';
 
 const root = document.getElementById('app-root');
 
@@ -39,6 +45,7 @@ function renderApp() {
     
     document.querySelector('[data-page="inventory"]').addEventListener('click', () => showPage('inventory'));
     document.querySelector('[data-page="cashier"]').addEventListener('click', () => showPage('cashier'));
+    document.querySelector('[data-page="reports"]').addEventListener('click', () => showPage('reports'));
     document.querySelector('[data-action="logout"]').addEventListener('click', async () => {
         await AuthManager.signOut();
         EventBus.emit('auth:logout');
