@@ -1,6 +1,7 @@
 import { BaseComponent } from '../../core/BaseComponent.js';
 import { ProductService } from '../../services/ProductService.js';
 import { PermissionManager } from '../../core/PermissionManager.js';
+import { ProductForm } from './ProductForm.js';
 
 export class InventoryPage extends BaseComponent {
     constructor(container) {
@@ -50,11 +51,24 @@ export class InventoryPage extends BaseComponent {
     attachEvents() {
         const addBtn = this.element.querySelector('[data-action="add"]');
         if (addBtn) {
-            addBtn.addEventListener('click', () => this.publish('inventory:add_clicked'));
+            addBtn.addEventListener('click', () => this.openProductForm());
         }
 
         this.subscribe('product:created', () => this.update());
         this.subscribe('product:updated', () => this.update());
         this.subscribe('product:deleted', () => this.update());
+    }
+
+    openProductForm() {
+        const modalContainer = document.createElement('div');
+        modalContainer.id = 'modal-container';
+        document.body.appendChild(modalContainer);
+        
+        const form = new ProductForm(modalContainer);
+        form.mount();
+        
+        this.subscribe('product:created', () => {
+            modalContainer.remove();
+        });
     }
 }
