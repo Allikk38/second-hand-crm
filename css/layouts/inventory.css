@@ -1,0 +1,129 @@
+/**
+ * Inventory Layout
+ * 
+ * Стили для страницы управления складом.
+ * 
+ * @stylesheet inventory
+ */
+
+/* ========== INVENTORY PAGE ========== */
+.inventory-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+/* ========== SEARCH BAR ========== */
+.inventory-page .search-bar {
+    margin-bottom: var(--spacing-4);
+}
+
+.inventory-page .search-wrapper {
+    max-width: 500px;
+}
+
+.inventory-page .search-wrapper input {
+    padding: var(--spacing-3) var(--spacing-4);
+    padding-right: var(--spacing-10);
+    font-size: var(--font-size-base);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ========== FILTERS ========== */
+.inventory-page .filters-panel {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    background: var(--color-white);
+    border-bottom: var(--border-width) solid var(--color-border);
+}
+
+.inventory-page .category-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
+}
+
+/* ========== PRODUCTS CONTAINER ========== */
+.inventory-page .products-container {
+    min-height: 400px;
+}
+
+/* ========== INVENTORY STATS ========== */
+.inventory-stats {
+    display: flex;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-5);
+}
+
+.stat-card-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3) var(--spacing-5);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.stat-card-inline .stat-icon {
+    font-size: 24px;
+}
+
+.stat-card-inline .stat-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-card-inline .stat-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.stat-card-inline .stat-value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+}
+
+/* ========== PRODUCT ROW ACTIONS ========== */
+.inventory-page .row-actions {
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.inventory-page .product-row:hover .row-actions {
+    opacity: 1;
+}
+
+/* ========== EMPTY INVENTORY ========== */
+.inventory-page .empty-state {
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-12);
+}
+
+/* ========== INVENTORY RESPONSIVE ========== */
+@media (max-width: 1024px) {
+    .inventory-page .filters-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .inventory-page .bulk-actions-panel {
+        margin-left: 0;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .inventory-page .products-table {
+        font-size: var(--font-size-xs);
+    }
+    
+    .inventory-page .products-table .attributes-cell {
+        display: none;
+    }
+}
