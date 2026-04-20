@@ -632,7 +632,49 @@ label {
     border-radius: var(--radius-sm);
     transition: background var(--transition-fast);
 }
+.product-item-info {
+    flex: 1;
+}
 
+.product-item-name {
+    font-weight: 500;
+}
+
+.product-item-size {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    margin-top: 2px;
+}
+
+.product-item-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.product-item-actions button {
+    padding: var(--spacing-xs) var(--spacing-md);
+    background: var(--color-primary);
+    color: var(--color-white);
+    font-size: var(--font-size-xs);
+}
+
+.product-sold {
+    opacity: 0.6;
+}
+
+.status-badge {
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+}
+
+.status-badge.sold {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
 .product-item:hover {
     background: var(--color-border-light);
 }
