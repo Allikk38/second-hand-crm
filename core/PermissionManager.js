@@ -18,7 +18,10 @@ class PermissionManagerClass {
 
         const { data: perms } = await SupabaseClient
             .from('role_permissions')
-            .select('permissions(slug)')
+            .select(`
+                permission_id,
+                permissions!inner(slug)
+            `)
             .eq('role_id', profile.role_id);
 
         this.permissions.clear();
@@ -30,6 +33,10 @@ class PermissionManagerClass {
 
     can(slug) {
         return this.loaded && this.permissions.has(slug);
+    }
+    
+    getAll() {
+        return Array.from(this.permissions);
     }
 
     clear() {
