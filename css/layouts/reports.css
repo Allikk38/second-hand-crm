@@ -1,0 +1,481 @@
+/**
+ * Reports Layout
+ * 
+ * Стили для страницы отчетов и аналитики.
+ * 
+ * @stylesheet reports
+ */
+
+/* ========== REPORTS PAGE ========== */
+.reports-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+/* ========== REPORTS HEADER ========== */
+.reports-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--spacing-4);
+}
+
+.reports-header .period-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    margin-left: var(--spacing-2);
+}
+
+.period-selector {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+}
+
+.period-preset {
+    min-width: 120px;
+}
+
+.custom-period {
+    display: none;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.custom-period.visible {
+    display: flex;
+}
+
+.custom-period input {
+    width: 140px;
+}
+
+/* ========== REPORTS TABS ========== */
+.reports-tabs {
+    display: flex;
+    gap: var(--spacing-1);
+    border-bottom: var(--border-width) solid var(--color-border);
+    padding-bottom: var(--spacing-1);
+}
+
+.reports-tabs .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.tab-icon {
+    font-size: 16px;
+}
+
+/* ========== REPORTS CONTENT ========== */
+.reports-content {
+    min-height: 500px;
+}
+
+/* ========== REPORTS LOADER ========== */
+.reports-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: var(--spacing-4);
+    color: var(--color-text-muted);
+}
+
+/* ========== KPI GRID ========== */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+}
+
+.kpi-card {
+    padding: var(--spacing-5);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-base);
+}
+
+.kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.kpi-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    margin-bottom: var(--spacing-3);
+}
+
+.kpi-icon {
+    font-size: 24px;
+}
+
+.kpi-title {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    font-weight: var(--font-weight-medium);
+}
+
+.kpi-value {
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-2);
+}
+
+.kpi-footer {
+    display: flex;
+    align-items: center;
+}
+
+.trend {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-1);
+    padding: var(--spacing-0-5) var(--spacing-2);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+}
+
+.trend-up {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+}
+
+.trend-down {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
+
+.trend-neutral {
+    background: var(--color-gray-100);
+    color: var(--color-text-muted);
+}
+
+/* ========== CHARTS ========== */
+.charts-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: var(--spacing-5);
+    margin-bottom: var(--spacing-6);
+}
+
+.chart-card {
+    padding: var(--spacing-5);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.chart-card h4 {
+    margin-bottom: var(--spacing-4);
+    font-weight: var(--font-weight-semibold);
+}
+
+.chart-card.full-width {
+    grid-column: 1 / -1;
+}
+
+.chart-container {
+    position: relative;
+    height: 200px;
+}
+
+.chart-container.large {
+    height: 300px;
+}
+
+/* ========== DASHBOARD BOTTOM ========== */
+.dashboard-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-5);
+}
+
+/* ========== CARD ========== */
+.card {
+    padding: var(--spacing-5);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.card h4 {
+    margin-bottom: var(--spacing-4);
+    font-weight: var(--font-weight-semibold);
+}
+
+/* ========== ALERTS ========== */
+.alerts-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+}
+
+.alert-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3);
+    border-radius: var(--radius-md);
+}
+
+.alert-success {
+    background: var(--color-success-bg);
+    color: var(--color-success-dark);
+}
+
+.alert-warning {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
+}
+
+.alert-danger {
+    background: var(--color-danger-bg);
+    color: var(--color-danger-dark);
+}
+
+.alert-info {
+    background: var(--color-info-bg);
+    color: var(--color-info-dark);
+}
+
+.alert-icon {
+    font-size: 20px;
+}
+
+.alert-message {
+    flex: 1;
+    font-size: var(--font-size-sm);
+}
+
+.alert-value {
+    font-weight: var(--font-weight-bold);
+}
+
+/* ========== REPORT SUMMARY ========== */
+.report-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+}
+
+.summary-card {
+    padding: var(--spacing-4);
+    background: var(--color-gray-50);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.summary-card .label {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    margin-bottom: var(--spacing-2);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+}
+
+.summary-card .value {
+    display: block;
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text);
+}
+
+/* ========== TWO COLUMNS ========== */
+.two-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-5);
+    margin-bottom: var(--spacing-5);
+}
+
+/* ========== TOP LIST ========== */
+.top-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.top-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3) 0;
+    border-bottom: var(--border-width) solid var(--color-border-light);
+}
+
+.top-item:last-child {
+    border-bottom: none;
+}
+
+.top-item .rank {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-gray-100);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+}
+
+.top-item .name {
+    flex: 1;
+    font-weight: var(--font-weight-medium);
+}
+
+.top-item .value {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.top-item .amount {
+    min-width: 80px;
+    text-align: right;
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-primary);
+}
+
+/* ========== SLOW PRODUCTS ========== */
+.slow-products {
+    display: flex;
+    flex-direction: column;
+}
+
+.slow-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-3) 0;
+    border-bottom: var(--border-width) solid var(--color-border-light);
+}
+
+.slow-item:last-child {
+    border-bottom: none;
+}
+
+.slow-item .name {
+    flex: 1;
+}
+
+.slow-item .days {
+    padding: var(--spacing-1) var(--spacing-2);
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+}
+
+.slow-item .price {
+    min-width: 80px;
+    text-align: right;
+    color: var(--color-text-secondary);
+}
+
+/* ========== TABLE CARD ========== */
+.table-card {
+    padding: var(--spacing-5);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.table-card h4 {
+    margin-bottom: var(--spacing-4);
+}
+
+/* ========== PROFIT REPORT ========== */
+.profit-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-5);
+    margin-top: var(--spacing-5);
+}
+
+.profit-card {
+    padding: var(--spacing-6);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+}
+
+.profit-card h4 {
+    margin-bottom: var(--spacing-4);
+    color: var(--color-text-secondary);
+}
+
+.profit-value {
+    font-size: var(--font-size-4xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.profit-value.positive {
+    color: var(--color-success);
+}
+
+.profit-value.negative {
+    color: var(--color-danger);
+}
+
+.profit-value.warning {
+    color: var(--color-warning);
+}
+
+.info-message {
+    padding: var(--spacing-4);
+    background: var(--color-info-bg);
+    border-radius: var(--radius-md);
+    color: var(--color-info-dark);
+    text-align: center;
+}
+
+/* ========== REPORTS RESPONSIVE ========== */
+@media (max-width: 1024px) {
+    .charts-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .dashboard-bottom {
+        grid-template-columns: 1fr;
+    }
+    
+    .two-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .reports-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .period-selector {
+        flex-wrap: wrap;
+    }
+    
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .reports-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+}
