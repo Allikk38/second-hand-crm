@@ -1,0 +1,560 @@
+/**
+ * Buttons Component
+ * 
+ * Стили для кнопок всех размеров и вариантов.
+ * 
+ * @stylesheet buttons
+ */
+
+/* ========== BASE BUTTON ========== */
+.btn,
+button:not([class*="btn"]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-2);
+    
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: 1;
+    text-align: center;
+    text-decoration: none;
+    white-space: nowrap;
+    
+    padding: var(--spacing-2) var(--spacing-4);
+    height: var(--button-height);
+    
+    border: var(--border-width) solid transparent;
+    border-radius: var(--radius-md);
+    
+    cursor: pointer;
+    user-select: none;
+    
+    transition: all var(--transition-fast);
+    
+    background: var(--color-white);
+    color: var(--color-text);
+    border-color: var(--color-border);
+}
+
+.btn:hover:not(:disabled),
+button:not([class*="btn"]):hover:not(:disabled) {
+    background: var(--color-gray-50);
+    border-color: var(--color-gray-400);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn:active:not(:disabled),
+button:not([class*="btn"]):active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: var(--shadow-xs);
+}
+
+.btn:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+}
+
+.btn:disabled {
+    opacity: var(--opacity-disabled);
+    cursor: not-allowed;
+}
+
+/* ========== BUTTON VARIANTS ========== */
+
+/* Primary */
+.btn-primary {
+    background: var(--color-primary);
+    color: var(--color-white);
+    border-color: var(--color-primary);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+    border-color: var(--color-primary-dark);
+}
+
+.btn-primary:active:not(:disabled) {
+    background: var(--color-primary-dark);
+}
+
+/* Secondary */
+.btn-secondary {
+    background: var(--color-white);
+    color: var(--color-text);
+    border-color: var(--color-border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--color-gray-50);
+    border-color: var(--color-gray-400);
+}
+
+/* Success */
+.btn-success {
+    background: var(--color-success);
+    color: var(--color-white);
+    border-color: var(--color-success);
+}
+
+.btn-success:hover:not(:disabled) {
+    background: var(--color-success-dark);
+    border-color: var(--color-success-dark);
+}
+
+/* Danger */
+.btn-danger {
+    background: var(--color-danger);
+    color: var(--color-white);
+    border-color: var(--color-danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: var(--color-danger-dark);
+    border-color: var(--color-danger-dark);
+}
+
+/* Warning */
+.btn-warning {
+    background: var(--color-warning);
+    color: var(--color-white);
+    border-color: var(--color-warning);
+}
+
+.btn-warning:hover:not(:disabled) {
+    background: var(--color-warning-dark);
+    border-color: var(--color-warning-dark);
+}
+
+/* Ghost */
+.btn-ghost {
+    background: transparent;
+    color: var(--color-text-secondary);
+    border-color: transparent;
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: var(--color-gray-100);
+    border-color: transparent;
+    color: var(--color-text);
+    box-shadow: none;
+}
+
+/* Outline */
+.btn-outline {
+    background: transparent;
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.btn-outline:hover:not(:disabled) {
+    background: var(--color-primary-bg);
+    border-color: var(--color-primary);
+}
+
+.btn-outline.btn-danger {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+}
+
+.btn-outline.btn-danger:hover:not(:disabled) {
+    background: var(--color-danger-bg);
+}
+
+/* Link */
+.btn-link {
+    background: transparent;
+    color: var(--color-primary);
+    border: none;
+    padding: 0;
+    height: auto;
+    font-weight: var(--font-weight-normal);
+    box-shadow: none;
+    text-decoration: none;
+}
+
+.btn-link:hover:not(:disabled) {
+    background: transparent;
+    color: var(--color-primary-dark);
+    text-decoration: underline;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ========== BUTTON SIZES ========== */
+.btn-xs {
+    height: 24px;
+    padding: var(--spacing-1) var(--spacing-2);
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-sm);
+}
+
+.btn-sm {
+    height: var(--button-height-sm);
+    padding: var(--spacing-1-5) var(--spacing-3);
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-sm);
+}
+
+.btn-base {
+    height: var(--button-height);
+    padding: var(--spacing-2) var(--spacing-4);
+    font-size: var(--font-size-sm);
+}
+
+.btn-lg {
+    height: var(--button-height-lg);
+    padding: var(--spacing-3) var(--spacing-6);
+    font-size: var(--font-size-base);
+    border-radius: var(--radius-lg);
+}
+
+.btn-xl {
+    height: 56px;
+    padding: var(--spacing-4) var(--spacing-8);
+    font-size: var(--font-size-lg);
+    border-radius: var(--radius-lg);
+}
+
+/* ========== ICON BUTTONS ========== */
+.btn-icon {
+    width: var(--button-height);
+    height: var(--button-height);
+    padding: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    border: none;
+    color: var(--color-text-secondary);
+}
+
+.btn-icon:hover:not(:disabled) {
+    background: var(--color-gray-100);
+    color: var(--color-text);
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-icon.btn-xs {
+    width: 24px;
+    height: 24px;
+}
+
+.btn-icon.btn-sm {
+    width: var(--button-height-sm);
+    height: var(--button-height-sm);
+}
+
+.btn-icon.btn-lg {
+    width: var(--button-height-lg);
+    height: var(--button-height-lg);
+}
+
+.btn-icon.btn-primary {
+    background: var(--color-primary);
+    color: var(--color-white);
+}
+
+.btn-icon.btn-primary:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+}
+
+.btn-icon.btn-danger {
+    background: transparent;
+    color: var(--color-danger);
+}
+
+.btn-icon.btn-danger:hover:not(:disabled) {
+    background: var(--color-danger-bg);
+}
+
+/* ========== BUTTON GROUPS ========== */
+.btn-group {
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-group .btn {
+    border-radius: 0;
+}
+
+.btn-group .btn:first-child {
+    border-top-left-radius: var(--radius-md);
+    border-bottom-left-radius: var(--radius-md);
+}
+
+.btn-group .btn:last-child {
+    border-top-right-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-md);
+}
+
+.btn-group .btn:not(:last-child) {
+    border-right: none;
+}
+
+/* ========== BLOCK BUTTON ========== */
+.btn-block {
+    display: flex;
+    width: 100%;
+}
+
+/* ========== LOADING STATE ========== */
+.btn .btn-loader {
+    display: none;
+}
+
+.btn.loading {
+    position: relative;
+    pointer-events: none;
+}
+
+.btn.loading .btn-text {
+    opacity: 0;
+}
+
+.btn.loading .btn-loader {
+    display: flex;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* ========== SPECIAL BUTTONS ========== */
+
+/* Add button (для склада) */
+.btn-add {
+    background: var(--color-primary);
+    color: var(--color-white);
+    padding: var(--spacing-2) var(--spacing-5);
+    border-radius: var(--radius-full);
+    font-weight: var(--font-weight-medium);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-add:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Checkout button (для кассы) */
+.btn-checkout {
+    width: 100%;
+    height: 56px;
+    background: var(--color-primary);
+    color: var(--color-white);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    border-radius: var(--radius-md);
+    margin-top: var(--spacing-4);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-checkout:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Add to cart button */
+.btn-add-to-cart {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    background: var(--color-primary);
+    color: var(--color-white);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    line-height: 1;
+}
+
+.btn-add-to-cart:hover:not(:disabled) {
+    background: var(--color-primary-dark);
+    transform: scale(1.05);
+}
+
+/* Clear button */
+.btn-clear {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    padding: var(--spacing-1) var(--spacing-2);
+    height: auto;
+}
+
+.btn-clear:hover:not(:disabled) {
+    color: var(--color-danger);
+    background: transparent;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Quick discount buttons */
+.quick-discount {
+    padding: var(--spacing-1) var(--spacing-2);
+    height: 28px;
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-sm);
+}
+
+/* Markup buttons */
+.markup-btn {
+    padding: var(--spacing-1) var(--spacing-2);
+    height: 28px;
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-sm);
+    background: var(--color-gray-100);
+}
+
+.markup-btn:hover {
+    background: var(--color-gray-200);
+}
+
+/* Tab buttons */
+.tab-btn {
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: var(--spacing-3) var(--spacing-4);
+    font-weight: var(--font-weight-medium);
+    height: auto;
+}
+
+.tab-btn:hover:not(:disabled) {
+    background: transparent;
+    color: var(--color-text);
+    border-bottom-color: var(--color-border);
+    transform: none;
+    box-shadow: none;
+}
+
+.tab-btn.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+}
+
+/* Category tabs */
+.category-tab {
+    padding: var(--spacing-1-5) var(--spacing-3);
+    height: 32px;
+    background: var(--color-gray-100);
+    color: var(--color-text-secondary);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-sm);
+    border: none;
+}
+
+.category-tab:hover:not(:disabled) {
+    background: var(--color-gray-200);
+    color: var(--color-text);
+    transform: none;
+    box-shadow: none;
+}
+
+.category-tab.active {
+    background: var(--color-primary);
+    color: var(--color-white);
+}
+
+/* Close button */
+.btn-close {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-full);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-lg);
+}
+
+.btn-close:hover:not(:disabled) {
+    background: var(--color-gray-100);
+    color: var(--color-text);
+    transform: none;
+}
+
+/* Edit button */
+.btn-edit {
+    background: var(--color-white);
+    color: var(--color-primary);
+    border: var(--border-width) solid var(--color-border);
+}
+
+.btn-edit:hover:not(:disabled) {
+    background: var(--color-primary);
+    color: var(--color-white);
+    border-color: var(--color-primary);
+}
+
+/* Delete button */
+.btn-delete {
+    background: var(--color-white);
+    color: var(--color-danger);
+    border: var(--border-width) solid var(--color-border);
+}
+
+.btn-delete:hover:not(:disabled) {
+    background: var(--color-danger);
+    color: var(--color-white);
+    border-color: var(--color-danger);
+}
+
+/* Quantity buttons */
+.btn-qty {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: var(--color-gray-100);
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+    font-weight: var(--font-weight-bold);
+}
+
+.btn-qty:hover:not(:disabled) {
+    background: var(--color-gray-200);
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-qty:disabled {
+    opacity: 0.4;
+}
+
+/* Remove item button */
+.btn-remove {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text-muted);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-lg);
+}
+
+.btn-remove:hover:not(:disabled) {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+    transform: none;
+    box-shadow: none;
+}
+
+/* Clear input button */
+.btn-clear-input {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    font-size: var(--font-size-xs);
+    background: var(--color-gray-300);
+    color: var(--color-white);
+    border-radius: var(--radius-full);
+}
+
+.btn-clear-input:hover:not(:disabled) {
+    background: var(--color-gray-500);
+    transform: none;
+    box-shadow: none;
+}
