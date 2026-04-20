@@ -107,6 +107,8 @@ export const CATEGORY_SCHEMA = {
 
 /**
  * Получить схему для категории
+ * @param {string} category - Ключ категории
+ * @returns {Object} Схема категории
  */
 export function getCategorySchema(category) {
     return CATEGORY_SCHEMA[category] || CATEGORY_SCHEMA.other;
@@ -114,6 +116,7 @@ export function getCategorySchema(category) {
 
 /**
  * Получить список категорий для select
+ * @returns {Array<{value: string, label: string}>}
  */
 export function getCategoryOptions() {
     return Object.entries(CATEGORY_SCHEMA).map(([value, data]) => ({
@@ -124,13 +127,31 @@ export function getCategoryOptions() {
 
 /**
  * Форматировать атрибуты для отображения
+ * @param {string} category - Категория товара
+ * @param {Object} attributes - Объект атрибутов
+ * @returns {string} Отформатированная строка
  */
 export function formatAttributes(category, attributes) {
     if (!attributes || !Object.keys(attributes).length) return '';
     
     const schema = getCategorySchema(category);
-    return schema.fields
-        .filter(field => attributes[field.name])
-        .map(field => `${field.label}: ${attributes[field.name]}`)
-        .join(' • ');
+    const parts = [];
+    
+    schema.fields.forEach(field => {
+        const value = attributes[field.name];
+        if (value && value.toString().trim()) {
+            parts.push(`${field.label}: ${value}`);
+        }
+    });
+    
+    return parts.join(' • ');
+}
+
+/**
+ * Получить название категории
+ * @param {string} category - Ключ категории
+ * @returns {string} Название категории
+ */
+export function getCategoryName(category) {
+    return CATEGORY_SCHEMA[category]?.name || category || 'Другое';
 }
