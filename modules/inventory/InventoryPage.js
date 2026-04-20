@@ -9,6 +9,7 @@ import { BaseComponent } from '../../core/BaseComponent.js';
 import { ProductService } from '../../services/ProductService.js';
 import { PermissionManager } from '../../core/PermissionManager.js';
 import { ProductForm } from './ProductForm.js';
+import { formatAttributes } from '../../utils/categorySchema.js';
 
 export class InventoryPage extends BaseComponent {
     constructor(container) {
@@ -41,7 +42,7 @@ export class InventoryPage extends BaseComponent {
                     <input 
                         type="text" 
                         name="search" 
-                        placeholder="Поиск по названию или размеру..." 
+                        placeholder="Поиск по названию или характеристикам..." 
                         value="${this.searchQuery}"
                         autocomplete="off"
                     >
@@ -58,6 +59,8 @@ export class InventoryPage extends BaseComponent {
     }
 
     renderProductCard(product) {
+        const attributesText = formatAttributes(product.category, product.attributes);
+        
         return `
             <div class="product-card" data-id="${product.id}">
                 <div class="product-photo">
@@ -68,7 +71,7 @@ export class InventoryPage extends BaseComponent {
                 </div>
                 <div class="product-info">
                     <h4>${product.name}</h4>
-                    ${product.size ? `<span class="product-size">Размер: ${product.size}</span>` : ''}
+                    ${attributesText ? `<span class="product-attributes">${attributesText}</span>` : ''}
                     <p class="price">${this.formatMoney(product.price)}</p>
                     <span class="status ${product.status}">${this.getStatusText(product.status)}</span>
                 </div>
@@ -86,13 +89,11 @@ export class InventoryPage extends BaseComponent {
     }
 
     attachEvents() {
-        // Кнопка добавления
         const addBtn = this.element.querySelector('[data-action="add"]');
         if (addBtn) {
             addBtn.addEventListener('click', () => this.openProductForm());
         }
         
-        // Поиск
         const searchInput = this.element.querySelector('[name="search"]');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
@@ -115,8 +116,10 @@ export class InventoryPage extends BaseComponent {
         } else {
             this.filteredProducts = this.products.filter(p => {
                 const nameMatch = p.name.toLowerCase().includes(query);
-                const sizeMatch = p.size && p.size.toLowerCase().includes(query);
-                return nameMatch || sizeMatch;
+                const attrMatch = p.attributes && Object.values(p.attributes).some(
+                    v => v && v.toString().toLowerCase().includes(query)
+                );
+                return nameMatch || attrMatch;
             });
         }
     }
