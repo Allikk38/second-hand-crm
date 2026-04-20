@@ -1,3 +1,9 @@
+/**
+ * Сервис отчетов и аналитики
+ * 
+ * @module ReportService
+ */
+
 import { SupabaseClient } from '../core/SupabaseClient.js';
 
 export const ReportService = {
@@ -53,11 +59,11 @@ export const ReportService = {
     async getTotalStats() {
         const { data: products } = await SupabaseClient
             .from('products')
-            .select('status, price');
+            .select('status, price, cost_price');
         
         const { data: sales } = await SupabaseClient
             .from('sales')
-            .select('total');
+            .select('total, items');
         
         const inStock = products?.filter(p => p.status === 'in_stock').length || 0;
         const sold = products?.filter(p => p.status === 'sold').length || 0;
@@ -65,6 +71,18 @@ export const ReportService = {
         const inventoryValue = products?.filter(p => p.status === 'in_stock')
             .reduce((sum, p) => sum + p.price, 0) || 0;
         
-        return { inStock, sold, totalRevenue, inventoryValue };
+        // Расчет себестоимости проданных товаров
+        const soldProducts = products?.filter(p => p.status === 'sold') || [];
+        const totalCost = soldProducts.reduce((sum, p) => sum + (p.cost_price || 0), 0);
+        const totalProfit = totalRevenue - totalCost;
+        
+        return { 
+            inStock, 
+            sold, 
+            totalRevenue, 
+            inventoryValue,
+            totalCost,
+            totalProfit
+        };
     }
 };
