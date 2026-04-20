@@ -1067,3 +1067,54 @@ label {
     opacity: 0;
     transition: opacity var(--transition-base);
 }
+/* ========== ФОРМА ТОВАРА ========== */
+.product-form-modal {
+    max-width: 500px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-md);
+}
+
+.form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: var(--spacing-xs);
+    font-weight: 500;
+}
+
+.form-hint {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.dynamic-fields {
+    padding: var(--spacing-md);
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.current-photo {
+    margin-bottom: var(--spacing-sm);
+}
+
+.current-photo img {
+    max-width: 100px;
+    max-height: 100px;
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-xs);
+}
+
+.photo-hint {
+    display: block;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
