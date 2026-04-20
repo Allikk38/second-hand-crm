@@ -3,6 +3,7 @@ import { EventBus } from './core/EventBus.js';
 import { PermissionManager } from './core/PermissionManager.js';
 import { AuthManager } from './modules/auth/AuthManager.js';
 import { LoginForm } from './modules/auth/LoginForm.js';
+import { InventoryPage } from './modules/inventory/InventoryPage.js';
 
 const root = document.getElementById('app-root');
 
@@ -13,8 +14,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     if (user) {
         await PermissionManager.loadUserPermissions(user.id);
-        root.innerHTML = `<h2>Добро пожаловать, ${user.email}</h2>`;
+        const inventory = new InventoryPage(root);
+        await inventory.mount();
     } else {
         new LoginForm(root).render();
     }
+});
+
+EventBus.on('auth:logout', () => {
+    new LoginForm(root).render();
 });
