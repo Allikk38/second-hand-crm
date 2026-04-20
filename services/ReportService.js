@@ -1,87 +1,115 @@
 /**
- * Сервис отчетов и аналитики
+ * Страница отчетов
+ * Статистика по продажам, товарам и прибыли
  * 
- * @module ReportService
+ * @module ReportsPage
  */
 
-import { SupabaseClient } from '../core/SupabaseClient.js';
+import { BaseComponent } from '../../core/BaseComponent.js';
+import { ReportService } from '../../services/ReportService.js';
+import { PermissionManager } from '../../core/PermissionManager.js';
+import { getCategoryName } from '../../utils/categorySchema.js';
 
-export const ReportService = {
-    async getSalesByPeriod(startDate, endDate) {
-        const { data, error } = await SupabaseClient
-            .from('sales')
-            .select(`
-                *,
-                shifts(user_id)
-            `)
-            .gte('created_at', startDate)
-            .lte('created_at', endDate)
-            .order('created_at', { ascending: false });
+export class ReportsPage extends BaseComponent {
+    async render() {
+        this.showLoader();
         
-        if (error) throw error;
-        return data;
-    },
+        const canViewFull = PermissionManager.can('reports:view');
+        
+        let stats = { 
+            inStock: 0, 
+            sold: 0, 
+            totalRevenue: 0, 
+            inventoryValue: 0,
+            totalCost: 0,
+            totalProfit: 0
+        };
+        let categoryStats = {};
+        
+        try {
+            stats = await ReportService.getTotalStats();
+            categoryStats = await ReportService.getSalesByCategory();
+        } catch (error) {
+            console.error('[ReportsPage] Ошибка загрузки:', error);
+            this.publish('app:error', error);
+        }
 
-    async getSalesByCategory() {
-        const { data: products } = await SupabaseClient
-            .from('products')
-            .select('category')
-            .eq('status', 'sold');
-        
-        const stats = {};
-        products?.forEach(p => {
-            const cat = p.category || 'other';
-            stats[cat] = (stats[cat] || 0) + 1;
-        });
-        
-        return stats;
-    },
+        const margin = stats.totalRevenue > 0 
+            ? ((stats.totalProfit / stats.totalRevenue) * 100).toFixed(1)
+            : 0;
 
-    async getSalesBySeller() {
-        const { data, error } = await SupabaseClient
-            .from('sales')
-            .select(`
-                total,
-                shifts!inner(user_id)
-            `);
-        
-        if (error) throw error;
-        
-        const stats = {};
-        data?.forEach(sale => {
-            const userId = sale.shifts.user_id;
-            stats[userId] = (stats[userId] || 0) + sale.total;
-        });
-        
-        return stats;
-    },
+        return `
+            <div class="reports-page">
+                <h2>Отчеты</h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Товаров на складе</h3>
+                        <div class="stat-value">${stats.inStock}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Продано товаров</h3>
+                        <div class="stat-value">${stats.sold}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Выручка</h3>
+                        <div class="stat-value">${this.formatMoney(stats.totalRevenue)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Стоимость склада</h3>
+                        <div class="stat-value">${this.formatMoney(stats.inventoryValue)}</div>
+                    </div>
+                </div>
+                
+                ${canViewFull ? `
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>Себестоимость продаж</h3>
+                            <div class="stat-value">${this.formatMoney(stats.totalCost)}</div>
+                        </div>
+                        <div class="stat-card profit-card">
+                            <h3>Чистая прибыль</h3>
+                            <div class="stat-value ${stats.totalProfit >= 0 ? 'profit-positive' : 'profit-negative'}">
+                                ${this.formatMoney(stats.totalProfit)}
+                            </div>
+                            <small>Маржа: ${margin}%</small>
+                        </div>
+                    </div>
+                ` : ''}
+                
+                ${canViewFull ? this.renderCategories(categoryStats) : ''}
+            </div>
+        `;
+    }
 
-async getTotalStats() {
-    const { data: products } = await SupabaseClient
-        .from('products')
-        .select('status, price, cost_price');
-    
-    const { data: sales } = await SupabaseClient
-        .from('sales')
-        .select('total, items');
-    
-    const inStock = products?.filter(p => p.status === 'in_stock').length || 0;
-    const sold = products?.filter(p => p.status === 'sold').length || 0;
-    const totalRevenue = sales?.reduce((sum, s) => sum + s.total, 0) || 0;
-    const inventoryValue = products?.filter(p => p.status === 'in_stock')
-        .reduce((sum, p) => sum + p.price, 0) || 0;
-    
-    // Расчет себестоимости проданных товаров
-    const soldProducts = products?.filter(p => p.status === 'sold') || [];
-    const totalCost = soldProducts.reduce((sum, p) => sum + (p.cost_price || 0), 0);
-    const totalProfit = totalRevenue - totalCost;
-    
-    return { 
-        inStock, 
-        sold, 
-        totalRevenue, 
-        inventoryValue,
-        totalCost,
-        totalProfit
-    }; 
+    renderCategories(stats) {
+        const total = Object.values(stats).reduce((a, b) => a + b, 0);
+        
+        if (total === 0) {
+            return `
+                <div class="categories-section">
+                    <h3>Продажи по категориям</h3>
+                    <div class="empty-state">Нет данных о продажах</div>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="categories-section">
+                <h3>Продажи по категориям</h3>
+                <div class="categories-list">
+                    ${Object.entries(stats).map(([cat, count]) => `
+                        <div class="category-item">
+                            <span>${getCategoryName(cat)}</span>
+                            <span>${count} (${((count/total)*100).toFixed(1)}%)</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    attachEvents() {
+        // Пока нет интерактива
+    }
 }
