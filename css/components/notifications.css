@@ -1,0 +1,290 @@
+/**
+ * Notifications Component
+ * 
+ * Стили для всплывающих уведомлений и тостов.
+ * 
+ * @stylesheet notifications
+ */
+
+/* ========== NOTIFICATION CONTAINER ========== */
+#notification-container {
+    position: fixed;
+    top: var(--spacing-5);
+    right: var(--spacing-5);
+    z-index: var(--z-toast);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    max-width: 380px;
+    width: 100%;
+    pointer-events: none;
+}
+
+#notification-container .notification {
+    pointer-events: auto;
+}
+
+/* ========== NOTIFICATION BASE ========== */
+.notification {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-3);
+    
+    padding: var(--spacing-4);
+    padding-right: var(--spacing-5);
+    
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    
+    border-left: 4px solid var(--color-info);
+    
+    animation: slideIn var(--transition-base);
+    transition: all var(--transition-base);
+    
+    cursor: default;
+}
+
+.notification-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-title {
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--spacing-0-5);
+    color: var(--color-text);
+}
+
+.notification-message {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    line-height: var(--line-height-normal);
+}
+
+.notification-close {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-lg);
+    line-height: 1;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    margin: -2px -6px 0 0;
+}
+
+.notification-close:hover {
+    background: var(--color-gray-100);
+    color: var(--color-text);
+}
+
+/* ========== NOTIFICATION TYPES ========== */
+.notification-success {
+    border-left-color: var(--color-success);
+}
+
+.notification-success .notification-title {
+    color: var(--color-success-dark);
+}
+
+.notification-error {
+    border-left-color: var(--color-danger);
+}
+
+.notification-error .notification-title {
+    color: var(--color-danger-dark);
+}
+
+.notification-warning {
+    border-left-color: var(--color-warning);
+}
+
+.notification-warning .notification-title {
+    color: var(--color-warning-dark);
+}
+
+.notification-info {
+    border-left-color: var(--color-info);
+}
+
+.notification-info .notification-title {
+    color: var(--color-info-dark);
+}
+
+/* ========== NOTIFICATION ICONS ========== */
+.notification-icon {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    font-size: 14px;
+}
+
+.notification-success .notification-icon {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+}
+
+.notification-error .notification-icon {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
+
+.notification-warning .notification-icon {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+}
+
+.notification-info .notification-icon {
+    background: var(--color-info-bg);
+    color: var(--color-info);
+}
+
+/* ========== NOTIFICATION ANIMATIONS ========== */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+.notification.removing {
+    animation: slideOut var(--transition-base) forwards;
+}
+
+/* ========== INLINE NOTIFICATION ========== */
+.notification-inline {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-3);
+    margin: var(--spacing-3) 0;
+    background: var(--color-gray-50);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    border-left: 3px solid var(--color-info);
+}
+
+.notification-inline.success {
+    background: var(--color-success-bg);
+    border-left-color: var(--color-success);
+    color: var(--color-success-dark);
+}
+
+.notification-inline.error {
+    background: var(--color-danger-bg);
+    border-left-color: var(--color-danger);
+    color: var(--color-danger-dark);
+}
+
+.notification-inline.warning {
+    background: var(--color-warning-bg);
+    border-left-color: var(--color-warning);
+    color: var(--color-warning-dark);
+}
+
+/* ========== DRAFT NOTICE ========== */
+.draft-notice {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-3);
+    padding: var(--spacing-3) var(--spacing-4);
+    margin: var(--spacing-4) 0;
+    background: var(--color-info-bg);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    color: var(--color-info-dark);
+}
+
+.draft-notice button {
+    margin-left: auto;
+}
+
+/* ========== ALERT COMPONENT ========== */
+.alert {
+    padding: var(--spacing-4);
+    margin: var(--spacing-4) 0;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-3);
+}
+
+.alert-icon {
+    flex-shrink: 0;
+    font-size: var(--font-size-xl);
+}
+
+.alert-content {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--spacing-1);
+}
+
+.alert-message {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.alert-success {
+    background: var(--color-success-bg);
+    color: var(--color-success-dark);
+}
+
+.alert-error {
+    background: var(--color-danger-bg);
+    color: var(--color-danger-dark);
+}
+
+.alert-warning {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
+}
+
+.alert-info {
+    background: var(--color-info-bg);
+    color: var(--color-info-dark);
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 480px) {
+    #notification-container {
+        top: var(--spacing-3);
+        right: var(--spacing-3);
+        left: var(--spacing-3);
+        max-width: none;
+    }
+    
+    .notification {
+        padding: var(--spacing-3);
+    }
+}
