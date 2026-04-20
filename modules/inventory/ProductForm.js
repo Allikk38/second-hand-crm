@@ -6,6 +6,7 @@
  * - Атрибуты хранятся в JSONB поле для гибкости
  * - Валидация по схеме категории
  * - Поддержка загрузки фото в Supabase Storage
+ * - Учет себестоимости для расчета прибыли
  * 
  * @module ProductForm
  * @requires BaseComponent
@@ -67,7 +68,7 @@ export class ProductForm extends BaseComponent {
                         
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="prod-price">Цена (₽) *</label>
+                                <label for="prod-price">Цена продажи (₽) *</label>
                                 <input 
                                     type="number" 
                                     id="prod-price" 
@@ -78,6 +79,20 @@ export class ProductForm extends BaseComponent {
                                     placeholder="0.00"
                                     required
                                 >
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="prod-cost">Себестоимость (₽)</label>
+                                <input 
+                                    type="number" 
+                                    id="prod-cost" 
+                                    name="cost_price" 
+                                    value="${this.product?.cost_price || ''}"
+                                    step="0.01" 
+                                    min="0" 
+                                    placeholder="0.00"
+                                >
+                                <small class="form-hint">Закупочная цена</small>
                             </div>
                         </div>
                         
@@ -115,6 +130,14 @@ export class ProductForm extends BaseComponent {
                             >
                             <small class="form-hint">JPEG, PNG, WebP до 5 МБ</small>
                         </div>
+                        
+                        ${this.isEditMode && this.product?.cost_price && this.product?.price ? `
+                            <div class="profit-preview">
+                                <span>Ожидаемая прибыль:</span>
+                                <strong class="profit-value">${this.formatMoney(this.product.price - this.product.cost_price)}</strong>
+                                <small>(${this.calculateMargin(this.product.price, this.product.cost_price)}% маржи)</small>
+                            </div>
+                        ` : ''}
                         
                         <div class="actions">
                             <button type="submit" class="btn-primary">
@@ -238,6 +261,7 @@ export class ProductForm extends BaseComponent {
     validateForm(form) {
         const name = form.name.value.trim();
         const price = parseFloat(form.price.value);
+        const costPrice = parseFloat(form.cost_price.value) || 0;
         const category = form.category.value;
         
         if (!name) {
@@ -251,12 +275,22 @@ export class ProductForm extends BaseComponent {
         }
         
         if (isNaN(price) || price <= 0) {
-            Notification.warning('Введите корректную цену');
+            Notification.warning('Введите корректную цену продажи');
             return false;
         }
         
         if (price > 1000000) {
             Notification.warning('Цена не может превышать 1 000 000 руб');
+            return false;
+        }
+        
+        if (costPrice < 0) {
+            Notification.warning('Себестоимость не может быть отрицательной');
+            return false;
+        }
+        
+        if (costPrice >= price) {
+            Notification.warning('Себестоимость должна быть меньше цены продажи');
             return false;
         }
         
@@ -283,6 +317,14 @@ export class ProductForm extends BaseComponent {
         });
         
         return attributes;
+    }
+
+    /**
+     * Рассчитывает маржинальность в процентах
+     */
+    calculateMargin(price, cost) {
+        if (!cost || cost === 0) return 100;
+        return ((price - cost) / price * 100).toFixed(1);
     }
 
     /**
@@ -339,6 +381,7 @@ export class ProductForm extends BaseComponent {
             const productData = {
                 name: form.name.value.trim(),
                 price: parseFloat(form.price.value),
+                cost_price: parseFloat(form.cost_price.value) || 0,
                 category: form.category.value,
                 attributes: this.collectAttributes(form),
                 photo_url: photoUrl,
