@@ -4,12 +4,22 @@
  * Компонент фильтрации товаров на странице склада.
  * Включает поиск, фильтр по категории, статусу и сортировку.
  * 
+ * В новой архитектуре:
+ * - Использует единый Store вместо InventoryState
+ * - Прямое чтение состояния из Store.state.inventory
+ * - Автоматическая синхронизация через Store.subscribe()
+ * - Категории обновляются реактивно при изменении в Store
+ * 
  * @module InventoryFilters
- * @version 1.0.0
+ * @version 5.0.0
+ * @changes
+ * - Полный переход на Store (удален InventoryState)
+ * - Упрощено получение и обновление категорий
+ * - Добавлена реактивность через Store.subscribe
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
-import { InventoryState } from './inventoryState.js';
+import { Store } from '../../core/Store.js';
 
 // ========== КОНСТАНТЫ ==========
 const SEARCH_DEBOUNCE_MS = 300;
@@ -43,15 +53,15 @@ export class InventoryFilters extends BaseComponent {
         };
         
         this.searchDebounceTimer = null;
-        this.unsubscribeState = null;
+        this.unsubscribers = [];
     }
     
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
     
     async render() {
-        const state = InventoryState.getState();
-        const categories = state.categories || [];
-        const hasActiveFilters = state.searchQuery || state.selectedCategory || state.selectedStatus;
+        const inventory = Store.state.inventory;
+        const categories = inventory.categories || [];
+        const hasActiveFilters = inventory.searchQuery || inventory.selectedCategory || inventory.selectedStatus;
         
         return `
             <div class="filters-panel" data-ref="filtersPanel">
@@ -60,10 +70,10 @@ export class InventoryFilters extends BaseComponent {
                         type="text" 
                         data-ref="searchInput"
                         placeholder="Поиск по названию или характеристикам..." 
-                        value="${this.escapeHtml(state.searchQuery)}"
+                        value="${this.escapeHtml(inventory.searchQuery)}"
                         autocomplete="off"
                     >
-                    ${state.searchQuery ? `
+                    ${inventory.searchQuery ? `
                         <button class="btn-ghost btn-icon" data-ref="clearSearchBtn" title="Очистить">✕</button>
                     ` : ''}
                 </div>
@@ -72,7 +82,7 @@ export class InventoryFilters extends BaseComponent {
                     <select data-ref="categoryFilter">
                         <option value="">Все категории</option>
                         ${categories.map(cat => `
-                            <option value="${cat.value}" ${state.selectedCategory === cat.value ? 'selected' : ''}>
+                            <option value="${cat.value}" ${inventory.selectedCategory === cat.value ? 'selected' : ''}>
                                 ${cat.label} (${cat.count})
                             </option>
                         `).join('')}
@@ -80,7 +90,7 @@ export class InventoryFilters extends BaseComponent {
                     
                     <select data-ref="statusFilter">
                         ${STATUS_OPTIONS.map(opt => `
-                            <option value="${opt.value}" ${state.selectedStatus === opt.value ? 'selected' : ''}>
+                            <option value="${opt.value}" ${inventory.selectedStatus === opt.value ? 'selected' : ''}>
                                 ${opt.label}
                             </option>
                         `).join('')}
@@ -88,7 +98,7 @@ export class InventoryFilters extends BaseComponent {
                     
                     <select data-ref="sortSelect">
                         ${SORT_OPTIONS.map(opt => `
-                            <option value="${opt.value}" ${state.sortBy === opt.value ? 'selected' : ''}>
+                            <option value="${opt.value}" ${inventory.sortBy === opt.value ? 'selected' : ''}>
                                 ${opt.label}
                             </option>
                         `).join('')}
@@ -172,13 +182,12 @@ export class InventoryFilters extends BaseComponent {
             }
         });
         
-        // Подписка на изменения состояния (для обновления списка категорий)
-        this.unsubscribeState = InventoryState.subscribe((changes) => {
-            const categoriesChanged = changes.some(c => c.key === 'categories');
-            if (categoriesChanged) {
+        // Подписка на изменения категорий в Store
+        this.unsubscribers.push(
+            Store.subscribe('inventory.categories', () => {
                 this.updateCategoryOptions();
-            }
-        });
+            })
+        );
     }
     
     // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
@@ -190,9 +199,9 @@ export class InventoryFilters extends BaseComponent {
         const select = this.refs.get('categoryFilter');
         if (!select) return;
         
-        const state = InventoryState.getState();
-        const categories = state.categories || [];
-        const selectedCategory = state.selectedCategory;
+        const inventory = Store.state.inventory;
+        const categories = inventory.categories || [];
+        const selectedCategory = inventory.selectedCategory;
         
         const currentValue = select.value;
         
@@ -213,14 +222,16 @@ export class InventoryFilters extends BaseComponent {
     
     /**
      * Обновляет категории (вызывается извне)
+     * @param {Array} categories - Массив категорий
      */
     updateCategories(categories) {
-        InventoryState.set('categories', categories);
+        Store.state.inventory.categories = categories;
         this.updateCategoryOptions();
     }
     
     /**
      * Получает текущие значения фильтров
+     * @returns {Object}
      */
     getFilters() {
         return {
@@ -233,6 +244,7 @@ export class InventoryFilters extends BaseComponent {
     
     /**
      * Устанавливает значения фильтров
+     * @param {Object} filters - Объект с фильтрами
      */
     setFilters(filters) {
         const searchInput = this.refs.get('searchInput');
@@ -274,15 +286,30 @@ export class InventoryFilters extends BaseComponent {
         }
     }
     
+    /**
+     * Сбрасывает все фильтры к значениям по умолчанию
+     */
+    resetFilters() {
+        const searchInput = this.refs.get('searchInput');
+        const categoryFilter = this.refs.get('categoryFilter');
+        const statusFilter = this.refs.get('statusFilter');
+        const sortSelect = this.refs.get('sortSelect');
+        
+        if (searchInput) searchInput.value = '';
+        if (categoryFilter) categoryFilter.value = '';
+        if (statusFilter) statusFilter.value = '';
+        if (sortSelect) sortSelect.value = 'created_at-desc';
+    }
+    
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
         if (this.searchDebounceTimer) {
             clearTimeout(this.searchDebounceTimer);
+            this.searchDebounceTimer = null;
         }
         
-        if (this.unsubscribeState) {
-            this.unsubscribeState();
-        }
+        this.unsubscribers.forEach(unsub => unsub());
+        this.unsubscribers = [];
     }
 }
