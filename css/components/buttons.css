@@ -1,15 +1,16 @@
-// ========================================
-// FILE: ./css/components/buttons.css
-// ========================================
-
 /**
- * Buttons Component - Clean & Professional
+ * Buttons Component - Tactile & Professional
  * 
- * Строгая система кнопок. Никаких градиентов и трансформаций scale.
- * Только цвет, фон и тень.
+ * Строгая, тактильная система кнопок для корпоративных интерфейсов.
+ * Четкая иерархия, микро-анимации нажатия, улучшенная доступность.
  * 
  * @stylesheet buttons
- * @version 3.0.0
+ * @version 3.1.0
+ * @changes
+ * - Добавлен эффект "вдавливания" при клике (translateY)
+ * - Переработаны стили фокуса
+ * - Улучшена поддержка кнопок с иконками
+ * - Переработаны цвета primary (slate вместо ярко-синего)
  */
 
 /* ========== BASE BUTTON ========== */
@@ -36,9 +37,7 @@
     cursor: pointer;
     user-select: none;
     
-    transition: background-color var(--transition-fast), 
-                border-color var(--transition-fast), 
-                box-shadow var(--transition-fast);
+    transition: all var(--transition-fast);
     
     background: var(--color-white);
     color: var(--color-text);
@@ -52,20 +51,23 @@
     box-shadow: var(--shadow-sm);
 }
 
+/* Эффект нажатия - кнопка "вдавливается" */
 .btn:active {
-    background: var(--color-slate-100);
+    transform: translateY(1px);
     box-shadow: var(--shadow-xs);
+    background: var(--color-slate-100);
 }
 
 .btn:focus-visible {
-    outline: none;
-    box-shadow: var(--shadow-outline);
-    border-color: var(--color-primary);
+    outline: 2px solid var(--color-slate-800);
+    outline-offset: 2px;
+    box-shadow: none;
 }
 
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
     box-shadow: none;
     background: var(--color-slate-100);
     border-color: var(--color-border-light);
@@ -73,25 +75,26 @@
 
 /* ========== PRIMARY BUTTON ========== */
 .btn-primary {
-    background: var(--color-primary);
+    background: var(--color-slate-800);
     color: var(--color-white);
-    border-color: var(--color-primary-dark);
+    border-color: var(--color-slate-900);
     box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover {
-    background: var(--color-primary-dark);
-    border-color: var(--color-primary-dark);
+    background: var(--color-slate-900);
+    border-color: var(--color-black);
     box-shadow: var(--shadow-md);
 }
 
 .btn-primary:active {
-    background: var(--color-primary-dark);
+    background: var(--color-slate-900);
+    transform: translateY(1px);
     box-shadow: var(--shadow-xs);
 }
 
 .btn-primary:focus-visible {
-    box-shadow: var(--shadow-outline);
+    outline-color: var(--color-slate-800);
 }
 
 /* ========== SECONDARY BUTTON ========== */
@@ -107,6 +110,10 @@
     color: var(--color-text);
 }
 
+.btn-secondary:active {
+    background: var(--color-slate-100);
+}
+
 /* ========== DANGER BUTTON ========== */
 .btn-danger {
     background: var(--color-danger);
@@ -119,7 +126,11 @@
     border-color: var(--color-danger-dark);
 }
 
-/* ========== TERTIARY (GHOST) BUTTON ========== */
+.btn-danger:focus-visible {
+    outline-color: var(--color-danger);
+}
+
+/* ========== GHOST BUTTON ========== */
 .btn-ghost {
     background: transparent;
     color: var(--color-text-secondary);
@@ -138,7 +149,7 @@
     background: var(--color-slate-200);
 }
 
-/* ========== ICON BUTTON ========== */
+/* ========== ICON BUTTONS ========== */
 .btn-icon {
     width: var(--button-height);
     padding: 0;
@@ -156,6 +167,10 @@
     box-shadow: none;
 }
 
+.btn-icon:active {
+    background: var(--color-slate-200);
+}
+
 .btn-icon.btn-danger {
     color: var(--color-danger);
 }
@@ -163,6 +178,18 @@
 .btn-icon.btn-danger:hover {
     background: var(--color-danger-bg);
     color: var(--color-danger-dark);
+}
+
+/* Кнопка с иконкой и текстом */
+.btn-icon-text {
+    padding: 0 var(--spacing-4) 0 var(--spacing-3);
+    width: auto;
+}
+
+.btn-icon-text .btn-icon-svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
 }
 
 /* ========== SIZES ========== */
@@ -196,22 +223,24 @@
     width: 100%;
 }
 
-/* ========== SPECIALIZED BUTTONS (Наследование) ========== */
+/* ========== SPECIALIZED BUTTONS ========== */
 
 /* Checkout button (Касса) */
 .btn-checkout {
     width: 100%;
     height: 48px;
-    background: var(--color-success);
+    background: var(--color-slate-800);
     color: var(--color-white);
-    border-color: var(--color-success-dark);
+    border-color: var(--color-slate-900);
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .btn-checkout:hover {
-    background: var(--color-success-dark);
-    border-color: var(--color-success-dark);
+    background: var(--color-slate-900);
+    border-color: var(--color-black);
 }
 
 /* FAB Button */
@@ -222,7 +251,7 @@
     width: 56px;
     height: 56px;
     border-radius: 28px;
-    background: var(--color-primary);
+    background: var(--color-slate-800);
     color: var(--color-white);
     border: none;
     box-shadow: var(--shadow-lg);
@@ -232,12 +261,18 @@
     align-items: center;
     justify-content: center;
     z-index: var(--z-fixed);
-    transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+    transition: all var(--transition-fast);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .fab:hover {
-    background: var(--color-primary-dark);
+    background: var(--color-slate-900);
     box-shadow: var(--shadow-xl);
+}
+
+.fab:active {
+    transform: translateY(2px);
+    box-shadow: var(--shadow-md);
 }
 
 /* Quantity Button (Корзина) */
@@ -251,6 +286,7 @@
     color: var(--color-text);
     font-weight: var(--font-weight-semibold);
     box-shadow: none;
+    font-size: 16px;
 }
 
 .btn-qty:hover {
@@ -280,7 +316,7 @@
 /* ========== АДАПТИВНОСТЬ ========== */
 @media (max-width: 768px) {
     .fab {
-        bottom: 80px; /* Отступ над мобильной навигацией */
+        bottom: 80px;
         right: var(--spacing-4);
         width: 48px;
         height: 48px;
@@ -292,5 +328,8 @@
 @media (prefers-reduced-motion: reduce) {
     .btn {
         transition: none !important;
+    }
+    .btn:active {
+        transform: none !important;
     }
 }
