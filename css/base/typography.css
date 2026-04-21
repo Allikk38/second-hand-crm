@@ -1,15 +1,22 @@
 /**
- * Typography
+ * Typography - Business Professional
  * 
- * Стили для текстового контента: заголовки, параграфы, ссылки.
+ * Строгая, читаемая типографика для бизнес-приложений.
+ * Без декоративных элементов, только иерархия.
  * 
  * @stylesheet typography
+ * @version 4.0.0
+ * @changes
+ * - Убраны цветные фоны у mark, ins, blockquote
+ * - Упрощены отступы у заголовков
+ * - Минимальный набор утилит
+ * - Убраны декоративные text-underline
  */
 
 /* ========== HEADINGS ========== */
 h1 {
     font-size: var(--font-size-3xl);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     line-height: var(--line-height-tight);
     color: var(--color-text);
     margin-bottom: var(--spacing-4);
@@ -61,6 +68,7 @@ h6 {
 p {
     margin-bottom: var(--spacing-4);
     color: var(--color-text-secondary);
+    line-height: var(--line-height-relaxed);
 }
 
 p:last-child {
@@ -71,19 +79,12 @@ p:last-child {
 a {
     color: var(--color-primary);
     text-decoration: none;
-    transition: color var(--transition-fast);
     cursor: pointer;
 }
 
 a:hover {
     color: var(--color-primary-dark);
     text-decoration: underline;
-}
-
-a:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
-    border-radius: var(--radius-xs);
 }
 
 /* ========== LISTS ========== */
@@ -104,6 +105,7 @@ ol {
 li {
     margin-bottom: var(--spacing-1);
     color: var(--color-text-secondary);
+    line-height: var(--line-height-relaxed);
 }
 
 li:last-child {
@@ -116,17 +118,11 @@ ol ul {
     list-style-type: circle;
 }
 
-ul ul ul,
-ol ul ul {
-    list-style-type: square;
-}
-
-/* ========== INLINE TEXT ELEMENTS ========== */
+/* ========== INLINE TEXT ========== */
 mark {
-    background-color: var(--color-warning-bg);
-    color: var(--color-warning-dark);
-    padding: var(--spacing-0-5) var(--spacing-1);
-    border-radius: var(--radius-xs);
+    background: transparent;
+    color: inherit;
+    font-weight: var(--font-weight-medium);
 }
 
 del,
@@ -137,21 +133,15 @@ s {
 
 ins {
     text-decoration: none;
-    background-color: var(--color-success-bg);
     color: var(--color-success-dark);
 }
 
-u {
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
-}
-
-/* ========== CODE AND PRE ========== */
+/* ========== CODE ========== */
 code {
     font-family: var(--font-family-mono);
     font-size: 0.9em;
     padding: var(--spacing-0-5) var(--spacing-1);
-    background-color: var(--color-gray-100);
+    background: var(--color-gray-100);
     border-radius: var(--radius-sm);
     color: var(--color-danger-dark);
 }
@@ -162,16 +152,15 @@ pre {
     line-height: var(--line-height-normal);
     padding: var(--spacing-4);
     margin-bottom: var(--spacing-4);
-    background-color: var(--color-gray-900);
+    background: var(--color-gray-900);
     color: var(--color-gray-100);
     border-radius: var(--radius-md);
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
 pre code {
     padding: 0;
-    background-color: transparent;
+    background: transparent;
     color: inherit;
     font-size: inherit;
 }
@@ -180,11 +169,8 @@ pre code {
 blockquote {
     margin: var(--spacing-4) 0;
     padding: var(--spacing-3) var(--spacing-5);
-    border-left: 4px solid var(--color-primary);
-    background-color: var(--color-gray-50);
-    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    border-left: 3px solid var(--color-border);
     color: var(--color-text-secondary);
-    font-style: italic;
 }
 
 blockquote p:last-child {
@@ -214,9 +200,7 @@ hr {
 .text-xl { font-size: var(--font-size-xl); }
 .text-2xl { font-size: var(--font-size-2xl); }
 .text-3xl { font-size: var(--font-size-3xl); }
-.text-4xl { font-size: var(--font-size-4xl); }
 
-.font-light { font-weight: var(--font-weight-light); }
 .font-normal { font-weight: var(--font-weight-normal); }
 .font-medium { font-weight: var(--font-weight-medium); }
 .font-semibold { font-weight: var(--font-weight-semibold); }
@@ -226,20 +210,17 @@ hr {
 .leading-normal { line-height: var(--line-height-normal); }
 .leading-relaxed { line-height: var(--line-height-relaxed); }
 
-.tracking-tight { letter-spacing: var(--letter-spacing-tight); }
 .tracking-normal { letter-spacing: var(--letter-spacing-normal); }
 .tracking-wide { letter-spacing: var(--letter-spacing-wide); }
 
 .text-left { text-align: left; }
 .text-center { text-align: center; }
 .text-right { text-align: right; }
-.text-justify { text-align: justify; }
 
 .text-primary { color: var(--color-primary); }
 .text-success { color: var(--color-success); }
 .text-danger { color: var(--color-danger); }
 .text-warning { color: var(--color-warning); }
-.text-info { color: var(--color-info); }
 .text-muted { color: var(--color-text-muted); }
 .text-secondary { color: var(--color-text-secondary); }
 
@@ -247,10 +228,7 @@ hr {
 .text-lowercase { text-transform: lowercase; }
 .text-capitalize { text-transform: capitalize; }
 
-.text-underline { text-decoration: underline; }
-.text-line-through { text-decoration: line-through; }
-.text-no-decoration { text-decoration: none; }
-
+/* Утилиты для длинного текста */
 .text-truncate {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -262,25 +240,16 @@ hr {
     overflow-wrap: break-word;
 }
 
-.text-nowrap {
-    white-space: nowrap;
-}
-
-.text-wrap {
-    white-space: normal;
-    word-wrap: break-word;
-}
-
-/* ========== HEADING UTILITIES ========== */
+/* ========== ЗАГОЛОВКИ СТРАНИЦ ========== */
 .page-title {
-    font-size: var(--font-size-3xl);
-    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     margin-bottom: var(--spacing-4);
 }
 
 .section-title {
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     margin-bottom: var(--spacing-3);
