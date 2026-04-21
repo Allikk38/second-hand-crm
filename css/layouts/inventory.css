@@ -1,17 +1,16 @@
 /**
- * Inventory Layout - Professional & Refined
+ * Inventory Layout - Business Professional
  * 
- * Взрослый, строгий дизайн страницы склада.
- * Акцент на типографику, воздушные отступы и четкую визуализацию данных.
- * Улучшена читаемость таблиц, переработаны статусы и фильтры.
+ * Строгая страница склада для бизнес-приложений.
+ * Без анимаций строк, без градиентов.
  * 
  * @stylesheet inventory
- * @version 3.1.0
+ * @version 4.0.0
  * @changes
- * - Рефакторинг таблицы: плавающие строки, улучшенные ховеры
- * - Переработка табов категорий (pill design)
- * - Улучшение визуальной иерархии цен и маржи
- * - Убраны детские тени и границы
+ * - Убраны transform и анимированные тени у строк
+ * - Убраны градиенты у карточек статистики
+ * - Упрощены категории (pill design без анимаций)
+ * - Статичные статусы и действия
  */
 
 /* ========== INVENTORY PAGE CONTAINER ========== */
@@ -30,16 +29,10 @@
 
 /* ========== FILTERS PANEL (TOOLBAR) ========== */
 .inventory-page .filters-panel {
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
-    background: var(--color-slate-50);
-    border-bottom: 1px solid var(--color-slate-300);
-    padding: var(--spacing-3) 0;
-    margin-bottom: var(--spacing-2);
+    flex-shrink: 0;
 }
 
-/* Категории - Pill Design */
+/* Категории - Pill Design (статичный) */
 .inventory-page .category-tabs {
     display: flex;
     flex-wrap: nowrap;
@@ -55,23 +48,20 @@
     border-radius: var(--radius-full);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border);
     white-space: nowrap;
     cursor: pointer;
-    transition: all var(--transition-fast);
-    box-shadow: var(--shadow-xs);
 }
 
 .category-tab:hover {
-    background: var(--color-slate-100);
-    border-color: var(--color-slate-300);
+    background: var(--color-gray-50);
+    border-color: var(--color-gray-300);
 }
 
 .category-tab.active {
-    background: var(--color-slate-800);
+    background: var(--color-gray-800);
     color: var(--color-white);
-    border-color: var(--color-slate-800);
-    box-shadow: var(--shadow-sm);
+    border-color: var(--color-gray-800);
 }
 
 /* ========== INVENTORY STATS ========== */
@@ -88,23 +78,20 @@
     gap: var(--spacing-4);
     padding: var(--spacing-4) var(--spacing-5);
     background: var(--color-white);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    border: var(--border-width) solid var(--color-border);
     flex: 1;
     min-width: 150px;
-    transition: transform var(--transition-fast);
 }
 
 .stat-card-inline:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    background: var(--color-gray-50);
 }
 
 .stat-card-inline .stat-icon {
     font-size: 28px;
     color: var(--color-primary);
-    opacity: 0.8;
+    opacity: 0.7;
 }
 
 .stat-card-inline .stat-content {
@@ -121,7 +108,7 @@
 }
 
 .stat-card-inline .stat-value {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-bold);
     color: var(--color-text);
     line-height: 1.2;
@@ -139,8 +126,7 @@
 
 .products-table {
     width: 100%;
-    border-collapse: separate;
-    border-spacing: 0 4px;
+    border-collapse: collapse;
     min-width: 800px;
 }
 
@@ -158,49 +144,21 @@
     letter-spacing: var(--letter-spacing-wide);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .products-table td {
-    padding: var(--spacing-4) var(--spacing-4);
+    padding: var(--spacing-3) var(--spacing-4);
     background: var(--color-white);
     vertical-align: middle;
     font-size: var(--font-size-sm);
     color: var(--color-text);
-    border: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    border-bottom: var(--border-width) solid var(--color-border-light);
 }
 
-/* Первая и последняя ячейка - скругления */
-.products-table tr td:first-child {
-    border-top-left-radius: var(--radius-md);
-    border-bottom-left-radius: var(--radius-md);
-}
-
-.products-table tr td:last-child {
-    border-top-right-radius: var(--radius-md);
-    border-bottom-right-radius: var(--radius-md);
-}
-
-/* Ховер на строку */
-.products-table tbody tr {
-    transition: all var(--transition-fast);
-    cursor: default;
-}
-
+/* Ховер на строку - только фон */
 .products-table tbody tr:hover td {
-    background: var(--color-white);
-    box-shadow: var(--shadow-md);
-    transform: scale(1.002);
-}
-
-.products-table tbody tr:hover {
-    border-left: 3px solid var(--color-primary);
-}
-
-/* Убираем лишние границы у первой ячейки */
-.products-table tbody tr:hover td:first-child {
-    border-left: none;
+    background: var(--color-gray-50);
 }
 
 /* Статусы */
@@ -210,33 +168,35 @@
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
-    letter-spacing: 0.01em;
-    background: var(--color-slate-100);
-    color: var(--color-text-secondary);
     text-transform: uppercase;
 }
 
 .status-badge.status-in_stock {
-    background: rgba(22, 163, 74, 0.1);
+    background: var(--color-success-bg);
     color: var(--color-success-dark);
 }
 
 .status-badge.status-sold {
-    background: rgba(220, 38, 38, 0.1);
+    background: var(--color-danger-bg);
     color: var(--color-danger-dark);
+}
+
+.status-badge.status-reserved {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
 }
 
 /* Фото товара */
 .product-thumb {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, var(--color-slate-100) 0%, var(--color-slate-200) 100%);
+    background: var(--color-gray-100);
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border-light);
 }
 
 .product-thumb img {
@@ -285,13 +245,7 @@
 .row-actions {
     display: flex;
     gap: var(--spacing-2);
-    opacity: 0.4;
-    transition: opacity var(--transition-fast);
     justify-content: flex-end;
-}
-
-.products-table tbody tr:hover .row-actions {
-    opacity: 1;
 }
 
 /* ========== EMPTY STATE ========== */
@@ -300,8 +254,8 @@
     text-align: center;
     color: var(--color-text-muted);
     background: var(--color-white);
-    border-radius: var(--radius-xl);
-    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-lg);
+    border: var(--border-width) dashed var(--color-border);
     margin: var(--spacing-4);
 }
 
@@ -323,13 +277,12 @@
     align-items: center;
     gap: var(--spacing-3);
     padding: var(--spacing-3) 0;
-    border-bottom: 1px solid var(--color-border-light);
+    border-bottom: var(--border-width) solid var(--color-border-light);
 }
 
 .skeleton {
-    background: var(--color-slate-200);
+    background: var(--color-gray-200);
     border-radius: var(--radius-sm);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 
 .skeleton-checkbox { width: 20px; height: 20px; }
@@ -337,11 +290,6 @@
 .skeleton-text { flex: 1; height: 16px; border-radius: var(--radius-full); }
 .skeleton-badge { width: 80px; height: 24px; border-radius: var(--radius-full); }
 .skeleton-actions { width: 60px; height: 32px; border-radius: var(--radius-md); }
-
-@keyframes skeleton-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
 
 /* ========== BULK ACTIONS ========== */
 .bulk-actions-panel {
@@ -352,34 +300,46 @@
     padding: var(--spacing-2) var(--spacing-4);
     background: var(--color-white);
     border-radius: var(--radius-full);
-    border: 1px solid var(--color-border-light);
-    box-shadow: var(--shadow-sm);
+    border: var(--border-width) solid var(--color-border);
 }
 
-/* ========== FAB BUTTON ========== */
+/* ========== FAB BUTTON (МОБИЛЬНЫЙ) ========== */
 .fab-add-product {
     position: fixed;
     bottom: var(--spacing-6);
     right: var(--spacing-6);
     width: 56px;
     height: 56px;
-    border-radius: 28px;
-    background: var(--color-slate-800);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
     color: var(--color-white);
     border: none;
-    box-shadow: var(--shadow-lg);
     font-size: 24px;
     cursor: pointer;
     display: none;
     align-items: center;
     justify-content: center;
     z-index: var(--z-fixed);
-    transition: all var(--transition-fast);
 }
 
 .fab-add-product:hover {
-    background: var(--color-slate-900);
-    transform: scale(1.05);
+    background: var(--color-primary-dark);
+}
+
+/* ========== LOAD MORE TRIGGER ========== */
+.load-more-trigger {
+    height: 1px;
+    margin: var(--spacing-2) 0;
+}
+
+.end-of-list {
+    text-align: center;
+    padding: var(--spacing-4);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    margin-top: var(--spacing-2);
 }
 
 /* ========== АДАПТИВНОСТЬ ========== */
@@ -393,25 +353,9 @@
         -webkit-overflow-scrolling: touch;
     }
     
-    .products-table {
-        border-spacing: 0;
-    }
-    
     .products-table td {
-        padding: var(--spacing-3) var(--spacing-2);
-        box-shadow: none;
-        border-bottom: 1px solid var(--color-border-light);
-        background: var(--color-white);
-    }
-    
-    .products-table tr td:first-child,
-    .products-table tr td:last-child {
-        border-radius: 0;
-    }
-    
-    .products-table tbody tr:hover td {
-        transform: none;
-        box-shadow: none;
+        padding: var(--spacing-2);
+        border-bottom: var(--border-width) solid var(--color-border-light);
     }
     
     .stat-card-inline {
@@ -424,7 +368,6 @@
         right: var(--spacing-4);
         width: 48px;
         height: 48px;
-        border-radius: 24px;
     }
     
     .header-right .btn-primary {
@@ -436,17 +379,16 @@
 @media print {
     .filters-panel,
     .fab-add-product,
-    .row-actions {
+    .row-actions,
+    .bulk-actions-panel {
         display: none !important;
     }
     
     .products-table-wrapper {
-        box-shadow: none;
-        border: 1px solid #ccc;
+        border: var(--border-width) solid var(--color-border);
     }
     
     .products-table td {
-        box-shadow: none;
-        border: 1px solid #eee;
+        border: var(--border-width) solid var(--color-border-light);
     }
 }
