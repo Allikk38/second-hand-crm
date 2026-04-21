@@ -1,22 +1,21 @@
 /**
- * App Layout - Excel-like Tabs Navigation
+ * App Layout - Business Professional
  * 
- * Основной макет приложения с переработанной навигацией в стиле Excel.
- * Хедер упрощен, вкладки прикреплены к контентной области.
+ * Основной макет приложения со строгой навигацией в стиле Excel.
+ * Без анимаций, без градиентов.
  * 
  * @stylesheet app
- * @version 3.2.0
+ * @version 4.0.0
  * @changes
- * - Редизайн навигации: .app-nav заменен на .app-tabs, расположенный над .page-container.
- * - Вкладки стилизованы под Excel: соединяются с панелью контента, активная приподнята.
- * - Упрощен хедер, удалены старые стили кнопок навигации.
- * - На мобильных устройствах вкладки прокручиваются горизонтально, не превращаясь в нижнюю панель.
+ * - Убраны анимации у вкладок
+ * - Упрощен хедер
+ * - Статичные вкладки без эффекта "поверх"
+ * - Убран градиент из фона
  */
 
 /* ========== ROOT CONTAINERS ========== */
 html {
     height: 100%;
-    overflow: hidden;
 }
 
 body {
@@ -41,29 +40,24 @@ body {
     height: 100%;
     width: 100%;
     overflow: hidden;
-    position: relative;
     background: var(--color-bg);
 }
 
-/* ========== APP HEADER (УПРОЩЕННЫЙ) ========== */
+/* ========== APP HEADER ========== */
 .app-header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 var(--spacing-6);
-    height: 48px; /* Более компактный хедер */
-    
-    background: var(--color-slate-50);
-    border-bottom: 1px solid var(--color-border-light);
-    
-    position: relative;
-    z-index: var(--z-fixed);
+    height: 48px;
+    background: var(--color-white);
+    border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .app-header h1 {
     margin: 0;
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     letter-spacing: var(--letter-spacing-tight);
@@ -79,28 +73,35 @@ body {
 .app-tabs {
     flex-shrink: 0;
     display: flex;
-    align-items: flex-end; /* Выравнивание по нижнему краю для эффекта "листа" */
+    align-items: center;
     gap: 0;
     padding: 0 var(--spacing-6);
     margin: 0;
-    
-    background: var(--color-slate-50);
-    border-bottom: 1px solid var(--color-border-light);
+    background: var(--color-white);
+    border-bottom: var(--border-width) solid var(--color-border);
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; /* Скрываем скроллбар для чистоты, но оставляем функциональность */
 }
 
 .app-tabs::-webkit-scrollbar {
-    display: none;
+    height: 4px;
+}
+
+.app-tabs::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.app-tabs::-webkit-scrollbar-thumb {
+    background: var(--color-gray-300);
+    border-radius: var(--radius-full);
 }
 
 .app-tab {
-    position: relative;
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
-    padding: var(--spacing-3) var(--spacing-4);
+    padding: var(--spacing-2) var(--spacing-4);
     margin-right: var(--spacing-1);
     
     background: transparent;
@@ -110,11 +111,9 @@ body {
     font-size: var(--font-size-sm);
     line-height: 1;
     
-    border: 1px solid transparent;
-    border-bottom: none;
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    border: none;
+    border-bottom: 2px solid transparent;
     
-    transition: all var(--transition-fast);
     cursor: pointer;
     white-space: nowrap;
 }
@@ -123,61 +122,49 @@ body {
 .tab-icon {
     width: 18px;
     height: 18px;
-    fill: currentColor;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     opacity: 0.6;
-    transition: opacity var(--transition-fast);
 }
 
 .app-tab:hover {
-    background: var(--color-slate-100);
+    background: var(--color-gray-50);
     color: var(--color-text);
-    border-color: var(--color-border-light);
 }
 
 .app-tab:hover .tab-icon {
-    opacity: 0.9;
+    opacity: 0.8;
 }
 
-/* Активная вкладка - эффект "поверх" контента */
+/* Активная вкладка */
 .app-tab.active {
     color: var(--color-primary-dark);
-    background: var(--color-white);
-    border-color: var(--color-border-light);
-    border-bottom-color: var(--color-white); /* Сливается с page-container */
-    margin-bottom: -1px; /* Перекрывает границу .app-tabs */
-    padding-bottom: calc(var(--spacing-3) + 1px); /* Компенсация отрицательного маргина */
-    
+    border-bottom-color: var(--color-primary);
     font-weight: var(--font-weight-semibold);
-    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .app-tab.active .tab-icon {
     opacity: 1;
-    fill: var(--color-primary);
 }
 
 /* ========== PAGE CONTAINER ========== */
 .page-container {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
-    position: relative;
-    background: var(--color-white); /* Белый фон для контента, как лист Excel */
-    border-top: 1px solid var(--color-border-light);
-    box-shadow: inset 0 2px 4px -2px rgba(0, 0, 0, 0.02);
-    z-index: 1;
+    overflow: auto;
+    background: var(--color-bg);
 }
 
+/* Страницы */
 .inventory-page,
 .cashier-page,
 .reports-page {
     height: 100%;
-    overflow: auto;
     display: flex;
     flex-direction: column;
-    scroll-behavior: smooth;
     padding: var(--spacing-4);
-    background: var(--color-white); /* Наследуем белый фон */
+    background: var(--color-bg);
 }
 
 @media (min-width: 641px) {
@@ -207,15 +194,12 @@ body {
 }
 
 .page-container::-webkit-scrollbar-thumb {
-    background: var(--color-slate-300);
+    background: var(--color-gray-300);
     border-radius: var(--radius-full);
-    border: 2px solid var(--color-white);
-    background-clip: padding-box;
 }
 
 .page-container::-webkit-scrollbar-thumb:hover {
-    background: var(--color-slate-400);
-    background-clip: padding-box;
+    background: var(--color-gray-400);
 }
 
 /* ========== PAGE HEADER ========== */
@@ -229,7 +213,7 @@ body {
 
 .header-left h2 {
     margin: 0;
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
 }
@@ -250,12 +234,11 @@ body {
 
 .stats-badge span {
     padding: var(--spacing-1) var(--spacing-3);
-    background: var(--color-slate-50);
+    background: var(--color-white);
     border-radius: var(--radius-full);
     color: var(--color-text-secondary);
     font-weight: var(--font-weight-medium);
-    box-shadow: var(--shadow-xs);
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border);
 }
 
 .badge-success {
@@ -283,9 +266,9 @@ body {
     gap: var(--spacing-4);
     margin-bottom: var(--spacing-5);
     padding: var(--spacing-3) var(--spacing-4);
-    background: var(--color-slate-50);
+    background: var(--color-white);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border);
     flex-shrink: 0;
 }
 
@@ -297,8 +280,7 @@ body {
     padding: var(--spacing-2) var(--spacing-4);
     background: var(--color-white);
     border-radius: var(--radius-full);
-    border: 1px solid var(--color-border-light);
-    box-shadow: var(--shadow-xs);
+    border: var(--border-width) solid var(--color-border);
 }
 
 .selected-count {
@@ -315,18 +297,17 @@ body {
     min-height: 300px;
     gap: var(--spacing-4);
     background: var(--color-white);
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-lg);
     margin: var(--spacing-4);
 }
 
 .loading-spinner {
     display: inline-block;
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--color-border);
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--color-border);
     border-top-color: var(--color-primary);
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
 }
 
 .loading-spinner.small {
@@ -341,57 +322,59 @@ body {
     font-weight: var(--font-weight-medium);
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
 /* ========== LOGIN FORM ========== */
 .login-form {
     max-width: 400px;
     margin: 100px auto;
     padding: var(--spacing-8);
     background: var(--color-white);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-xl);
-    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    border: var(--border-width) solid var(--color-border);
 }
 
 .login-form h2 {
     text-align: center;
     margin-bottom: var(--spacing-6);
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
+}
+
+/* ========== ERROR STATE ========== */
+.error-state {
+    padding: var(--spacing-8);
+    text-align: center;
+    color: var(--color-text-secondary);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    border: var(--border-width) solid var(--color-border);
+    margin: var(--spacing-4);
+}
+
+.error-state-icon {
+    font-size: 48px;
+    margin-bottom: var(--spacing-4);
+    opacity: 0.5;
 }
 
 /* ========== АДАПТИВНОСТЬ ========== */
 @media (max-width: 768px) {
     .app-header {
         padding: 0 var(--spacing-4);
-        height: 48px;
     }
     
     .app-header h1 {
-        font-size: var(--font-size-base);
+        font-size: var(--font-size-sm);
     }
     
     .app-tabs {
         padding: 0 var(--spacing-4);
-        /* На мобильных вкладки прокручиваются, но остаются сверху */
     }
     
     .app-tab {
         padding: var(--spacing-2) var(--spacing-3);
         font-size: var(--font-size-xs);
-    }
-    
-    .tab-text {
-        display: block; /* Показываем текст на мобильных, так как это вкладки Excel */
-    }
-
-    /* Убираем старую мобильную нижнюю навигацию, которой больше нет */
-    .page-container {
-        padding-bottom: 0;
     }
     
     .page-header {
@@ -402,6 +385,16 @@ body {
     
     .header-right {
         justify-content: flex-end;
+    }
+    
+    .filters-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .bulk-actions-panel {
+        margin-left: 0;
+        justify-content: center;
     }
 }
 
@@ -416,8 +409,6 @@ body {
         overflow: visible;
         height: auto;
         padding: 0 !important;
-        border: none;
-        box-shadow: none;
     }
     
     .inventory-page,
