@@ -1,10 +1,15 @@
+// ========================================
+// FILE: ./css/components/modal.css
+// ========================================
+
 /**
- * Modal Component
+ * Modal Component - Clean & Functional
  * 
- * Стили для модальных окон и диалогов подтверждения.
+ * Строгие модальные окна. Четкое разделение зон, читаемый текст.
+ * Никаких лишних анимаций и белого текста на белом фоне.
  * 
  * @stylesheet modal
- * @version 2.0.1
+ * @version 3.0.0
  */
 
 /* ========== MODAL OVERLAY ========== */
@@ -14,37 +19,31 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--overlay-bg);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: var(--z-modal-backdrop);
     padding: var(--spacing-4);
+    backdrop-filter: blur(2px);
 }
 
 /* ========== MODAL CONTAINER ========== */
 .modal {
     background: var(--color-white);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow-xl);
     width: 100%;
-    max-width: var(--modal-width-base);
+    max-width: 560px;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    border: 1px solid var(--color-border-light);
 }
 
 .modal-sm {
-    max-width: var(--modal-width-sm);
-}
-
-.modal-lg {
-    max-width: var(--modal-width-lg);
-}
-
-.modal-xl {
-    max-width: var(--modal-width-xl);
+    max-width: 400px;
 }
 
 /* ========== MODAL HEADER ========== */
@@ -53,7 +52,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-4) var(--spacing-5);
-    border-bottom: var(--border-width) solid var(--color-border-light);
+    border-bottom: 1px solid var(--color-border-light);
     flex-shrink: 0;
 }
 
@@ -67,7 +66,7 @@
 .modal-header .btn-close {
     width: 32px;
     height: 32px;
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     background: transparent;
     color: var(--color-text-muted);
     font-size: 20px;
@@ -77,11 +76,10 @@
     align-items: center;
     justify-content: center;
     transition: background var(--transition-fast);
-    flex-shrink: 0;
 }
 
 .modal-header .btn-close:hover {
-    background: var(--color-gray-100);
+    background: var(--color-slate-100);
     color: var(--color-text);
 }
 
@@ -91,6 +89,7 @@
     overflow-y: auto;
     flex: 1;
     color: var(--color-text);
+    background: var(--color-white);
 }
 
 .modal-body p {
@@ -101,173 +100,21 @@
 /* ========== MODAL FOOTER ========== */
 .modal-footer {
     padding: var(--spacing-4) var(--spacing-5);
-    border-top: var(--border-width) solid var(--color-border-light);
-    background: var(--color-gray-50);
+    border-top: 1px solid var(--color-border-light);
+    background: var(--color-slate-50);
     flex-shrink: 0;
 }
 
-/* ========== PRODUCT FORM MODAL ========== */
-.product-form-modal {
-    max-width: 600px;
-}
-
-.product-form-modal .pricing-section {
-    background: var(--color-gray-50);
-    padding: var(--spacing-4);
-    border-radius: var(--radius-md);
-    margin: var(--spacing-4) 0;
-}
-
-.product-form-modal .markup-presets {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    margin: var(--spacing-3) 0;
-    flex-wrap: wrap;
-}
-
-.product-form-modal .markup-label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    margin-right: var(--spacing-2);
-}
-
-.product-form-modal .margin-calculator {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-2);
-    padding: var(--spacing-3);
-    background: var(--color-white);
-    border-radius: var(--radius-md);
-    border: var(--border-width) solid var(--color-border-light);
-}
-
-.product-form-modal .margin-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-1) 0;
-    color: var(--color-text);
-}
-
-.product-form-modal .market-hint {
-    padding-top: var(--spacing-3);
-    margin-top: var(--spacing-2);
-    border-top: 1px dashed var(--color-border);
-    background: var(--color-info-bg);
-    padding: var(--spacing-3);
-    border-radius: var(--radius-md);
-    color: var(--color-info-dark);
-}
-
-/* ========== PHOTO UPLOAD AREA ========== */
-.photo-upload-area {
-    margin-top: var(--spacing-3);
-}
-
-.photo-preview {
-    width: 100%;
-    aspect-ratio: 1;
-    max-width: 300px;
-    margin: 0 auto var(--spacing-4);
-    background: var(--color-gray-100);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    border: 2px dashed var(--color-border);
-}
-
-.photo-preview.empty {
-    background: var(--color-gray-50);
-}
-
-.photo-preview img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.preview-placeholder {
-    font-size: 48px;
-    color: var(--color-text-muted);
-}
-
-.preview-text {
-    position: absolute;
-    bottom: var(--spacing-3);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-muted);
-    background: var(--color-white);
-    padding: var(--spacing-1) var(--spacing-3);
-    border-radius: var(--radius-full);
-}
-
-.upload-controls {
-    display: flex;
-    gap: var(--spacing-3);
-    justify-content: center;
-    margin-bottom: var(--spacing-3);
-}
-
-.upload-progress {
-    margin-top: var(--spacing-3);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-}
-
-.progress-bar {
-    flex: 1;
-    height: 8px;
-    background: var(--color-gray-200);
-    border-radius: var(--radius-full);
-    overflow: hidden;
-}
-
-.progress-fill {
-    height: 100%;
-    background: var(--color-primary);
-    border-radius: var(--radius-full);
-    transition: width 0.3s ease;
-}
-
-.progress-text {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text);
-    min-width: 45px;
-}
-
 /* ========== CONFIRM DIALOG ========== */
-.confirm-dialog {
-    max-width: 420px;
-}
-
-.confirm-dialog .modal-header {
-    border-bottom: none;
-    padding-bottom: var(--spacing-2);
-}
-
 .confirm-dialog .modal-body {
     text-align: center;
-    padding: var(--spacing-4) var(--spacing-5) var(--spacing-5);
+    padding: var(--spacing-6) var(--spacing-5);
 }
 
 .confirm-message {
     margin: var(--spacing-4) 0;
     color: var(--color-text-secondary);
     font-size: var(--font-size-base);
-    line-height: var(--line-height-normal);
-}
-
-.confirm-dialog.confirm-danger .confirm-message {
-    color: var(--color-danger-dark);
-}
-
-.confirm-dialog.confirm-warning .confirm-message {
-    color: var(--color-warning-dark);
 }
 
 .confirm-dialog .actions {
@@ -278,6 +125,18 @@
 
 .confirm-dialog .actions button {
     flex: 1;
+}
+
+/* ========== PRODUCT FORM MODAL ========== */
+.product-form-modal {
+    max-width: 640px;
+}
+
+.product-form-modal .pricing-section {
+    background: var(--color-slate-50);
+    padding: var(--spacing-4);
+    border-radius: var(--radius-md);
+    margin: var(--spacing-4) 0;
 }
 
 /* ========== QUICK VIEW MODAL ========== */
@@ -304,7 +163,8 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--overlay-bg);
+    backdrop-filter: blur(2px);
     cursor: pointer;
 }
 
@@ -312,12 +172,13 @@
     position: relative;
     display: flex;
     background: var(--color-white);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow-2xl);
     max-width: 800px;
     width: 90%;
     max-height: 85vh;
     overflow: hidden;
+    border: 1px solid var(--color-border-light);
 }
 
 .quick-view-content .btn-close {
@@ -329,24 +190,19 @@
     height: 36px;
     background: var(--color-white);
     color: var(--color-text);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
     box-shadow: var(--shadow-sm);
-    border: var(--border-width) solid var(--color-border-light);
+    border: 1px solid var(--color-border-light);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
     cursor: pointer;
-}
-
-.quick-view-content .btn-close:hover {
-    background: var(--color-gray-50);
 }
 
 .quick-view-photo {
     flex: 1;
     min-width: 300px;
-    background: var(--color-gray-100);
+    background: var(--color-slate-100);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -358,16 +214,12 @@
     object-fit: cover;
 }
 
-.quick-view-photo .photo-placeholder {
-    font-size: 80px;
-    color: var(--color-text-muted);
-}
-
 .quick-view-info {
     flex: 1;
     padding: var(--spacing-5);
     overflow-y: auto;
     color: var(--color-text);
+    background: var(--color-white);
 }
 
 .quick-view-info h3 {
@@ -377,103 +229,12 @@
     color: var(--color-text);
 }
 
-.quick-view-category {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-sm);
-    margin-bottom: var(--spacing-3);
-    display: inline-block;
-    padding: var(--spacing-1) var(--spacing-3);
-    background: var(--color-gray-100);
-    border-radius: var(--radius-full);
-}
-
-.quick-view-attributes {
-    margin-bottom: var(--spacing-4);
-    padding: var(--spacing-3);
-    background: var(--color-gray-50);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-}
-
-.quick-view-prices {
-    margin: var(--spacing-4) 0;
-    padding: var(--spacing-3);
-    background: var(--color-white);
-    border-radius: var(--radius-md);
-    border: var(--border-width) solid var(--color-border-light);
-}
-
 .quick-view-prices .price-large {
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-bold);
     color: var(--color-primary);
     display: block;
     margin-bottom: var(--spacing-2);
-}
-
-.quick-view-prices .cost-price {
-    display: block;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    margin-top: var(--spacing-1);
-}
-
-.quick-view-prices .margin-badge {
-    display: inline-block;
-    margin-top: var(--spacing-2);
-    padding: var(--spacing-1) var(--spacing-3);
-    background: var(--color-gray-100);
-    border-radius: var(--radius-full);
-    font-size: var(--font-size-xs);
-    color: var(--color-text);
-}
-
-.quick-view-prices .margin-badge.high {
-    background: var(--color-success-bg);
-    color: var(--color-success-dark);
-}
-
-.quick-view-actions {
-    margin-top: auto;
-    padding-top: var(--spacing-4);
-}
-
-.quick-view-actions .btn-large {
-    width: 100%;
-    height: 44px;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-}
-
-/* ========== DRAFT NOTICE ========== */
-.draft-notice {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    padding: var(--spacing-3) var(--spacing-4);
-    margin: var(--spacing-4) 0;
-    background: var(--color-info-bg);
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    color: var(--color-info-dark);
-    border-left: 3px solid var(--color-info);
-}
-
-.draft-notice button {
-    margin-left: auto;
-}
-
-/* ========== FORM ACTIONS ========== */
-.form-actions {
-    display: flex;
-    gap: var(--spacing-3);
-    justify-content: flex-end;
-    margin-top: var(--spacing-4);
-}
-
-.form-actions button {
-    min-width: 100px;
 }
 
 /* ========== АДАПТИВНОСТЬ ========== */
@@ -487,18 +248,6 @@
         max-height: 95vh;
     }
     
-    .modal-header {
-        padding: var(--spacing-3) var(--spacing-4);
-    }
-    
-    .modal-body {
-        padding: var(--spacing-4);
-    }
-    
-    .modal-footer {
-        padding: var(--spacing-3) var(--spacing-4);
-    }
-    
     .quick-view-content {
         flex-direction: column;
         max-height: 90vh;
@@ -508,10 +257,6 @@
     .quick-view-photo {
         min-width: auto;
         max-height: 250px;
-    }
-    
-    .quick-view-info {
-        padding: var(--spacing-4);
     }
     
     .confirm-dialog .actions {
@@ -527,23 +272,12 @@
     .modal {
         max-height: 100vh;
         border-radius: 0;
+        border: none;
     }
     
     .quick-view-content {
         width: 100%;
         max-height: 100vh;
         border-radius: 0;
-    }
-    
-    .photo-preview {
-        max-width: 100%;
-    }
-    
-    .form-actions {
-        flex-direction: column;
-    }
-    
-    .form-actions button {
-        width: 100%;
     }
 }
