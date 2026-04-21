@@ -1,13 +1,19 @@
 /**
- * Модальное окно подтверждения действия
- * Заменяет нативный confirm()
+ * Confirm Dialog Module
+ * 
+ * Модальное окно подтверждения действия.
+ * Заменяет нативный confirm().
  * 
  * @module ConfirmDialog
+ * @version 2.0.0
+ * @changes
+ * - Убран BaseComponent (используем чистый DOM API)
+ * - Убраны анимации
+ * - Добавлена поддержка HTML в сообщении
+ * - Улучшена обработка клавиатуры
  */
 
-import { BaseComponent } from '../../core/BaseComponent.js';
-
-export class ConfirmDialog extends BaseComponent {
+export class ConfirmDialog {
     /**
      * @param {HTMLElement} container - Контейнер для диалога
      * @param {Object} options - Настройки
@@ -16,41 +22,86 @@ export class ConfirmDialog extends BaseComponent {
      * @param {string} options.confirmText - Текст кнопки подтверждения
      * @param {string} options.cancelText - Текст кнопки отмены
      * @param {string} options.type - Тип: 'danger', 'warning', 'info'
+     * @param {boolean} options.html - Разрешить HTML в сообщении
      */
     constructor(container, options = {}) {
-        super(container);
+        if (!container || !(container instanceof HTMLElement)) {
+            throw new Error('ConfirmDialog: container must be a valid HTMLElement');
+        }
+        
+        this.container = container;
         this.options = {
             title: 'Подтверждение',
             message: 'Вы уверены?',
             confirmText: 'Да',
             cancelText: 'Отмена',
             type: 'info',
+            html: false,
             ...options
         };
-        this.resolve = null;
-    }
-
-    render() {
-        const typeClass = `confirm-${this.options.type}`;
         
-        return `
-            <div class="modal-overlay">
-                <div class="modal confirm-dialog ${typeClass}">
-                    <h3>${this.options.title}</h3>
-                    <p class="confirm-message">${this.options.message}</p>
-                    <div class="actions">
-                        <button class="btn-secondary" data-action="cancel">
-                            ${this.options.cancelText}
-                        </button>
-                        <button class="${this.getConfirmButtonClass()}" data-action="confirm">
-                            ${this.options.confirmText}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
+        this.resolve = null;
+        this.element = null;
+        this.handleKeyDown = this.handleKeyDown.bind(this);
     }
 
+    /**
+     * Рендерит диалог
+     * @returns {HTMLElement}
+     */
+    render() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.setAttribute('data-ref', 'overlay');
+        
+        const modal = document.createElement('div');
+        modal.className = `modal confirm-dialog modal-${this.options.type}`;
+        
+        const header = document.createElement('div');
+        header.className = 'modal-header';
+        header.innerHTML = `<h3>${this.escapeHtml(this.options.title)}</h3>`;
+        
+        const body = document.createElement('div');
+        body.className = 'modal-body';
+        
+        if (this.options.html) {
+            body.innerHTML = `<div class="confirm-message">${this.options.message}</div>`;
+        } else {
+            body.innerHTML = `<div class="confirm-message">${this.escapeHtml(this.options.message)}</div>`;
+        }
+        
+        const footer = document.createElement('div');
+        footer.className = 'modal-footer';
+        
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = `btn-secondary`;
+        cancelBtn.textContent = this.options.cancelText;
+        cancelBtn.setAttribute('data-action', 'cancel');
+        
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = this.getConfirmButtonClass();
+        confirmBtn.textContent = this.options.confirmText;
+        confirmBtn.setAttribute('data-action', 'confirm');
+        
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        footer.appendChild(actions);
+        
+        modal.appendChild(header);
+        modal.appendChild(body);
+        modal.appendChild(footer);
+        overlay.appendChild(modal);
+        
+        return overlay;
+    }
+    
+    /**
+     * Получает класс для кнопки подтверждения
+     * @returns {string}
+     */
     getConfirmButtonClass() {
         const classes = {
             danger: 'btn-danger',
@@ -59,47 +110,96 @@ export class ConfirmDialog extends BaseComponent {
         };
         return classes[this.options.type] || 'btn-primary';
     }
-
+    
+    /**
+     * Экранирует HTML спецсимволы
+     * @param {string} str
+     * @returns {string}
+     */
+    escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+    
+    /**
+     * Привязывает события
+     */
     attachEvents() {
-        this.element.querySelector('[data-action="cancel"]').addEventListener('click', () => {
-            this.close(false);
-        });
+        // Кнопки
+        const cancelBtn = this.element.querySelector('[data-action="cancel"]');
+        const confirmBtn = this.element.querySelector('[data-action="confirm"]');
         
-        this.element.querySelector('[data-action="confirm"]').addEventListener('click', () => {
-            this.close(true);
-        });
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => this.close(false));
+        }
+        
+        if (confirmBtn) {
+            confirmBtn.addEventListener('click', () => this.close(true));
+        }
         
         // Закрытие по клику на оверлей
-        this.element.querySelector('.modal-overlay').addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal-overlay')) {
-                this.close(false);
-            }
-        });
+        const overlay = this.element.querySelector('.modal-overlay');
+        if (overlay) {
+            overlay.addEventListener('click', (e) => {
+                if (e.target === overlay) {
+                    this.close(false);
+                }
+            });
+        }
         
         // Закрытие по Escape
-        this.handleKeyDown = (e) => {
-            if (e.key === 'Escape') {
-                this.close(false);
-            }
-            if (e.key === 'Enter') {
-                this.close(true);
-            }
-        };
         document.addEventListener('keydown', this.handleKeyDown);
     }
-
+    
+    /**
+     * Обработчик клавиатуры
+     * @param {KeyboardEvent} e
+     */
+    handleKeyDown(e) {
+        if (e.key === 'Escape') {
+            this.close(false);
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            this.close(true);
+        }
+    }
+    
+    /**
+     * Отключает события
+     */
+    detachEvents() {
+        document.removeEventListener('keydown', this.handleKeyDown);
+    }
+    
     /**
      * Закрывает диалог и возвращает результат
      * @param {boolean} result - Результат (true - подтверждено)
      */
     close(result) {
-        document.removeEventListener('keydown', this.handleKeyDown);
-        this.destroy();
+        this.detachEvents();
+        
+        if (this.element && this.element.parentNode) {
+            this.element.remove();
+        }
+        
         if (this.resolve) {
             this.resolve(result);
         }
     }
-
+    
+    /**
+     * Монтирует диалог в контейнер
+     * @returns {Promise<void>}
+     */
+    async mount() {
+        this.element = this.render();
+        this.container.appendChild(this.element);
+        this.attachEvents();
+    }
+    
     /**
      * Показывает диалог и возвращает Promise
      * @returns {Promise<boolean>}
@@ -110,7 +210,7 @@ export class ConfirmDialog extends BaseComponent {
             this.resolve = resolve;
         });
     }
-
+    
     /**
      * Статический метод для быстрого показа диалога
      * @static
@@ -119,6 +219,8 @@ export class ConfirmDialog extends BaseComponent {
      */
     static async show(options) {
         const container = document.createElement('div');
+        container.style.position = 'relative';
+        container.style.zIndex = '1000';
         document.body.appendChild(container);
         
         const dialog = new ConfirmDialog(container, options);
