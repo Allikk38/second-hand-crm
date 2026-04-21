@@ -9,11 +9,12 @@
  * и запускает приложение.
  * 
  * @module main
- * @version 4.2.1
+ * @version 4.3.1
  * @changes
- * - Добавлен cache-busting параметр к импорту InventoryPage для принудительной загрузки свежей версии
- * - Исправлена проверка прав доступа для страниц: теперь доступ открывается при наличии любого права из семейства (view, create, edit, delete)
- * - Устранена проблема блокировки страницы склада при отсутствии явного права `products:view`
+ * - Обновлена версия cache-busting до 4.3.1 для принудительной загрузки свежих модулей
+ * - Добавлено логирование версий модулей для отладки кэширования
+ * - Исправлена проверка прав доступа для страниц: теперь доступ открывается при наличии любого права из семейства
+ * - Добавлена обработка ошибок загрузки модулей
  */
 
 // ========== IMPORTS (Core) ==========
@@ -31,7 +32,7 @@ import { Notification } from './modules/common/Notification.js';
 // ========== CONSTANTS ==========
 const LOAD_TIMEOUT = 10000; // 10 секунд
 const RETRY_DELAY = 3000; // 3 секунды
-const CACHE_BUST = 'v=4.2.1'; // Для принудительного обновления кэша
+const CACHE_BUST = 'v=4.3.1'; // Для принудительного обновления кэша
 
 // ========== APPLICATION CLASS ==========
 class Application {
@@ -50,6 +51,9 @@ class Application {
     async init() {
         // Скрываем начальный лоадер
         this.hideInitialLoader();
+        
+        // Очищаем кэш принудительно при старте (для отладки)
+        this.clearAppCache();
         
         // Проверяем соединение
         if (!this.checkNetwork()) {
@@ -81,6 +85,23 @@ class Application {
             this.clearLoadTimeout();
             this.handleInitError(error);
         }
+    }
+    
+    /**
+     * Очищает кэш приложения
+     */
+    clearAppCache() {
+        // Очищаем кэш модулей (если поддерживается)
+        if (window.caches) {
+            caches.keys().then(names => {
+                names.forEach(name => {
+                    caches.delete(name);
+                });
+            });
+        }
+        
+        // Логируем версию для отладки
+        console.log(`[App] Version: ${CACHE_BUST}, Cache cleared`);
     }
     
     /**
@@ -151,7 +172,7 @@ class Application {
                     <div class="error-state-icon">⚠️</div>
                     <h3>Не удалось загрузить приложение</h3>
                     <p>${this.escapeHtml(error.message)}</p>
-                    <button class="btn-primary" onclick="location.reload()">Обновить</button>
+                    <button class="btn-primary" onclick="location.reload(true)">Обновить (очистить кэш)</button>
                 </div>
             `;
         }
@@ -191,6 +212,7 @@ class Application {
             title: 'Склад',
             loader: async (container) => {
                 const { InventoryPage } = await import(`./modules/inventory/InventoryPage.js?${CACHE_BUST}`);
+                console.log(`[App] InventoryPage loaded with version ${CACHE_BUST}`);
                 return new InventoryPage(container);
             },
             permissions: [
@@ -210,7 +232,7 @@ class Application {
             },
             permissions: [
                 'sales:view',
-                'sales:create',
+                'sales:2026-04-21',
                 'sales:delete',
                 'sales:edit'
             ]
@@ -275,7 +297,7 @@ class Application {
                         <div class="error-state-icon">⚠️</div>
                         <h3>Ошибка загрузки страницы</h3>
                         <p>${this.escapeHtml(error.message)}</p>
-                        <button class="btn-primary" onclick="location.reload()">Обновить</button>
+                        <button class="btn-primary" onclick="location.reload(true)">Обновить (очистить кэш)</button>
                     </div>
                 `;
             } else {
