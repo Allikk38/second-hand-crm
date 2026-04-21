@@ -9,12 +9,11 @@
  * и запускает приложение.
  * 
  * @module main
- * @version 4.3.1
+ * @version 4.3.2
  * @changes
- * - Обновлена версия cache-busting до 4.3.1 для принудительной загрузки свежих модулей
+ * - Исправлена опечатка в permissions для /cashier (sales:create)
+ * - Обновлена версия cache-busting до 4.3.2
  * - Добавлено логирование версий модулей для отладки кэширования
- * - Исправлена проверка прав доступа для страниц: теперь доступ открывается при наличии любого права из семейства
- * - Добавлена обработка ошибок загрузки модулей
  */
 
 // ========== IMPORTS (Core) ==========
@@ -32,7 +31,7 @@ import { Notification } from './modules/common/Notification.js';
 // ========== CONSTANTS ==========
 const LOAD_TIMEOUT = 10000; // 10 секунд
 const RETRY_DELAY = 3000; // 3 секунды
-const CACHE_BUST = 'v=4.3.1'; // Для принудительного обновления кэша
+const CACHE_BUST = 'v=4.3.2'; // Для принудительного обновления кэша
 
 // ========== APPLICATION CLASS ==========
 class Application {
@@ -232,7 +231,7 @@ class Application {
             },
             permissions: [
                 'sales:view',
-                'sales:2026-04-21',
+                'sales:create',
                 'sales:delete',
                 'sales:edit'
             ]
