@@ -3,13 +3,19 @@
  * 
  * Форма создания и редактирования товара.
  * 
+ * В новой архитектуре:
+ * - Публикует события product:created и product:updated через EventBus
+ * - Store автоматически реагирует на эти события через InventoryPage
+ * - Не зависит от InventoryState (чистый компонент)
+ * - Использует централизованные утилиты форматирования
+ * 
  * @module ProductForm
- * @version 4.1.0
+ * @version 5.0.0
  * @changes
- * - Рефакторинг: выделены модули валидации и фото
- * - Добавлена отмена предыдущих запросов
- * - Упрощена логика черновиков
- * - Уменьшен размер файла
+ * - Удалены ссылки на старые стейты
+ * - Добавлена публикация событий для синхронизации со Store
+ * - Упрощена логика закрытия и очистки
+ * - Обновлены импорты в соответствии с новой структурой
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -18,6 +24,7 @@ import { Storage } from '../../core/SupabaseClient.js';
 import { AuthManager } from '../auth/AuthManager.js';
 import { Notification } from '../common/Notification.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
+import { EventBus } from '../../core/EventBus.js';
 import { formatMoney } from '../../utils/formatters.js';
 import { CATEGORY_SCHEMA, getCategorySchema, getCategoryOptions, getCategoryName } from '../../utils/categorySchema.js';
 
@@ -742,14 +749,14 @@ export class ProductForm extends BaseComponent {
             if (this.isEditMode) {
                 await ProductService.update(this.product.id, productData);
                 Notification.success('Товар обновлен');
+                EventBus.emit('product:updated', { id: this.product.id, product: productData });
             } else {
-                await ProductService.create(productData);
+                const newProduct = await ProductService.create(productData);
                 Notification.success('Товар добавлен');
                 localStorage.removeItem(AUTO_SAVE_KEY);
+                EventBus.emit('product:created', { product: newProduct });
             }
             
-            this.publish('product:created');
-            this.publish('product:updated');
             this.close();
             
         } catch (error) {
