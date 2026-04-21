@@ -1,21 +1,37 @@
 /**
- * Reports Tabs Component
+ * Reports Header Component
  * 
- * Компонент вкладок для переключения между отчетами.
+ * Компонент заголовка отчетов с выбором периода.
  * 
- * @module ReportsTabs
+ * @module ReportsHeader
  * @version 1.0.0
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
 
-export class ReportsTabs extends BaseComponent {
+const PERIOD_PRESETS = [
+    { value: 'today', label: 'Сегодня' },
+    { value: 'yesterday', label: 'Вчера' },
+    { value: 'week', label: 'Неделя' },
+    { value: 'month', label: 'Месяц' },
+    { value: 'quarter', label: 'Квартал' },
+    { value: 'year', label: 'Год' },
+    { value: 'custom', label: 'Свой период' }
+];
+
+export class ReportsHeader extends BaseComponent {
     constructor(container, options = {}) {
         super(container);
         this.options = {
-            tabs: [],
-            activeTab: null,
-            onTabChange: null,
+            periodPreset: 'week',
+            startDate: null,
+            endDate: null,
+            compareWithPrevious: true,
+            onPeriodChange: null,
+            onCustomPeriodChange: null,
+            onCompareToggle: null,
+            onRefresh: null,
+            onExport: null,
             ...options
         };
     }
@@ -23,48 +39,116 @@ export class ReportsTabs extends BaseComponent {
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
     
     async render() {
-        const { tabs, activeTab } = this.options;
+        const { periodPreset, startDate, endDate, compareWithPrevious } = this.options;
+        
+        const startDateStr = startDate ? this.formatDateForInput(startDate) : '';
+        const endDateStr = endDate ? this.formatDateForInput(endDate) : '';
+        const showCustom = periodPreset === 'custom';
         
         return `
-            <div class="reports-tabs">
-                ${tabs.map(tab => `
-                    <button 
-                        class="tab-btn ${activeTab === tab.id ? 'active' : ''}"
-                        data-tab="${tab.id}"
-                    >
-                        <span class="tab-icon">${tab.icon}</span>
-                        ${tab.label}
+            <div class="reports-header">
+                <div class="period-selector">
+                    <select class="period-preset" data-ref="periodPreset">
+                        ${PERIOD_PRESETS.map(preset => `
+                            <option value="${preset.value}" ${periodPreset === preset.value ? 'selected' : ''}>
+                                ${preset.label}
+                            </option>
+                        `).join('')}
+                    </select>
+                    
+                    <div class="custom-period ${showCustom ? 'visible' : ''}" data-ref="customPeriod">
+                        <input type="date" data-ref="startDate" value="${startDateStr}" placeholder="С">
+                        <span>—</span>
+                        <input type="date" data-ref="endDate" value="${endDateStr}" placeholder="По">
+                        <button class="btn-secondary btn-sm" data-ref="applyCustomBtn">Применить</button>
+                    </div>
+                </div>
+                
+                <div class="header-actions">
+                    <label class="checkbox-label">
+                        <input type="checkbox" data-ref="compareToggle" ${compareWithPrevious ? 'checked' : ''}>
+                        Сравнить с прошлым периодом
+                    </label>
+                    
+                    <button class="btn-secondary btn-sm" data-ref="refreshBtn" title="Обновить">
+                        🔄
                     </button>
-                `).join('')}
+                    
+                    <button class="btn-secondary btn-sm" data-ref="exportBtn" title="Экспорт">
+                        📥
+                    </button>
+                </div>
             </div>
         `;
+    }
+    
+    formatDateForInput(date) {
+        if (!date) return '';
+        const d = new Date(date);
+        return d.toISOString().split('T')[0];
     }
     
     // ========== ПРИВЯЗКА СОБЫТИЙ ==========
     
     attachEvents() {
-        this.container.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-tab]');
-            if (!btn) return;
+        // Выбор пресета периода
+        this.addDomListener('periodPreset', 'change', (e) => {
+            const preset = e.target.value;
             
-            const tabId = btn.dataset.tab;
+            if (preset === 'custom') {
+                this.refs.get('customPeriod')?.classList.add('visible');
+            } else {
+                this.refs.get('customPeriod')?.classList.remove('visible');
+                if (this.options.onPeriodChange) {
+                    this.options.onPeriodChange(preset);
+                }
+            }
+        });
+        
+        // Применение кастомного периода
+        this.addDomListener('applyCustomBtn', 'click', () => {
+            const startDate = this.refs.get('startDate')?.value;
+            const endDate = this.refs.get('endDate')?.value;
             
-            // Обновляем активный класс
-            this.container.querySelectorAll('[data-tab]').forEach(b => {
-                b.classList.remove('active');
-            });
-            btn.classList.add('active');
-            
-            if (this.options.onTabChange) {
-                this.options.onTabChange(tabId);
+            if (startDate && endDate && this.options.onCustomPeriodChange) {
+                this.options.onCustomPeriodChange(new Date(startDate), new Date(endDate));
+            }
+        });
+        
+        // Чекбокс сравнения
+        this.addDomListener('compareToggle', 'change', (e) => {
+            if (this.options.onCompareToggle) {
+                this.options.onCompareToggle(e.target.checked);
+            }
+        });
+        
+        // Кнопка обновления
+        this.addDomListener('refreshBtn', 'click', () => {
+            if (this.options.onRefresh) {
+                this.options.onRefresh();
+            }
+        });
+        
+        // Кнопка экспорта
+        this.addDomListener('exportBtn', 'click', () => {
+            if (this.options.onExport) {
+                this.options.onExport();
             }
         });
     }
     
     // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
     
-    setActiveTab(tabId) {
-        this.options.activeTab = tabId;
+    setPeriod(preset, startDate, endDate) {
+        this.options.periodPreset = preset;
+        this.options.startDate = startDate;
+        this.options.endDate = endDate;
         this.update();
+    }
+    
+    setCompareWithPrevious(value) {
+        this.options.compareWithPrevious = value;
+        const checkbox = this.refs.get('compareToggle');
+        if (checkbox) checkbox.checked = value;
     }
 }
