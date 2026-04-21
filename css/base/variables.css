@@ -1,154 +1,154 @@
+// ========================================
+// FILE: ./css/base/variables.css
+// ========================================
+
 /**
  * CSS Variables
  * 
  * Централизованное хранилище всех дизайн-токенов проекта.
+ * Версия 3.0 - Чистый корпоративный стиль.
+ * Основано на Slate палитре Tailwind для холодного профессионального оттенка.
  * 
  * @stylesheet variables
  */
 
 :root {
-    /* ========== ОСНОВНЫЕ ЦВЕТА ========== */
+    /* ========== ОСНОВНЫЕ ЦВЕТА (АКЦЕНТ) ========== */
+    /* Холодный синий, строгий и деловой */
     --color-primary: #2563eb;
     --color-primary-light: #3b82f6;
     --color-primary-dark: #1d4ed8;
-    --color-primary-bg: #eff6ff;
+    --color-primary-bg: #eff6ff; /* Фон подсказок, выбранных элементов */
     
-    --color-secondary: #64748b;
-    --color-secondary-light: #94a3b8;
-    --color-secondary-dark: #475569;
-    --color-secondary-bg: #f8fafc;
-    
-    /* ========== СТАТУСНЫЕ ЦВЕТА ========== */
-    --color-success: #16a34a;
-    --color-success-light: #22c55e;
-    --color-success-dark: #15803d;
-    --color-success-bg: #f0fdf4;
-    
-    --color-danger: #dc2626;
-    --color-danger-light: #ef4444;
-    --color-danger-dark: #b91c1c;
-    --color-danger-bg: #fef2f2;
-    
-    --color-warning: #ea580c;
-    --color-warning-light: #f97316;
-    --color-warning-dark: #c2410c;
-    --color-warning-bg: #fff7ed;
-    
-    --color-info: #0284c7;
-    --color-info-light: #0ea5e9;
-    --color-info-dark: #0369a1;
-    --color-info-bg: #f0f9ff;
-    
-    /* ========== НЕЙТРАЛЬНЫЕ ЦВЕТА ========== */
+    /* ========== НЕЙТРАЛЬНЫЕ ЦВЕТА (SLATE) ========== */
+    /* Переход на Slate для более строгого UI */
     --color-white: #ffffff;
-    --color-black: #000000;
+    --color-black: #0f172a;
     
-    --color-gray-50: #f9fafb;
-    --color-gray-100: #f3f4f6;
-    --color-gray-200: #e5e7eb;
-    --color-gray-300: #d1d5db;
-    --color-gray-400: #9ca3af;
-    --color-gray-500: #6b7280;
-    --color-gray-600: #4b5563;
-    --color-gray-700: #374151;
-    --color-gray-800: #1f2937;
-    --color-gray-900: #111827;
+    --color-slate-50: #f8fafc;
+    --color-slate-100: #f1f5f9;
+    --color-slate-200: #e2e8f0;
+    --color-slate-300: #cbd5e1;
+    --color-slate-400: #94a3b8;
+    --color-slate-500: #64748b;
+    --color-slate-600: #475569;
+    --color-slate-700: #334155;
+    --color-slate-800: #1e293b;
+    --color-slate-900: #0f172a;
     
-    /* Алиасы */
-    --color-bg: #f3f4f6;
-    --color-border: var(--color-gray-300);
-    --color-border-light: var(--color-gray-200);
-    --color-text: #111827;
-    --color-text-secondary: #4b5563;
-    --color-text-muted: #6b7280;
-    --color-text-disabled: #9ca3af;
+    /* Алиасы для обратной совместимости и читаемости */
+    --color-gray-50: var(--color-slate-50);
+    --color-gray-100: var(--color-slate-100);
+    --color-gray-200: var(--color-slate-200);
+    --color-gray-300: var(--color-slate-300);
+    --color-gray-400: var(--color-slate-400);
+    --color-gray-500: var(--color-slate-500);
+    --color-gray-600: var(--color-slate-600);
+    --color-gray-700: var(--color-slate-700);
+    --color-gray-800: var(--color-slate-800);
+    --color-gray-900: var(--color-slate-900);
+
+    /* ========== СТАТУСНЫЕ ЦВЕТА (ПРИГЛУШЕННЫЕ) ========== */
+    --color-success: #16a34a;       /* Green 600 */
+    --color-success-light: #22c55e;  /* Green 500 */
+    --color-success-dark: #15803d;   /* Green 700 */
+    --color-success-bg: #f0fdf4;     /* Green 50 */
     
-    /* ========== ФОНОВЫЕ ЦВЕТА ========== */
-    --bg-primary: var(--color-primary-bg);
-    --bg-success: var(--color-success-bg);
-    --bg-danger: var(--color-danger-bg);
-    --bg-warning: var(--color-warning-bg);
-    --bg-info: var(--color-info-bg);
-    --bg-hover: var(--color-gray-100);
-    --bg-active: var(--color-gray-200);
-    --bg-disabled: var(--color-gray-100);
+    --color-danger: #dc2626;         /* Red 600 */
+    --color-danger-light: #ef4444;   /* Red 500 */
+    --color-danger-dark: #b91c1c;    /* Red 700 */
+    --color-danger-bg: #fef2f2;      /* Red 50 */
+    
+    --color-warning: #ea580c;        /* Orange 600 */
+    --color-warning-light: #f97316;  /* Orange 500 */
+    --color-warning-dark: #c2410c;   /* Orange 700 */
+    --color-warning-bg: #fff7ed;     /* Orange 50 */
+    
+    --color-info: #0284c7;           /* Sky 600 */
+    --color-info-light: #0ea5e9;     /* Sky 500 */
+    --color-info-dark: #0369a1;      /* Sky 700 */
+    --color-info-bg: #f0f9ff;        /* Sky 50 */
+
+    /* ========== КОНТЕКСТНЫЕ ЦВЕТА ИНТЕРФЕЙСА ========== */
+    /* Фон страницы - темнее для создания глубины и отделения карточек */
+    --color-bg: var(--color-slate-100);
+    --color-bg-secondary: var(--color-slate-50);
+    
+    /* Границы - четкие, но не кричащие */
+    --color-border: var(--color-slate-300);
+    --color-border-light: var(--color-slate-200);
+    
+    /* Текст - высокий контраст */
+    --color-text: var(--color-slate-900);
+    --color-text-secondary: var(--color-slate-600); /* Затемнен для читаемости */
+    --color-text-muted: var(--color-slate-500);
+    --color-text-disabled: var(--color-slate-400);
     
     /* ========== ТИПОГРАФИКА ========== */
-    --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    --font-family-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+    --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-family-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
     
-    /* Размеры шрифта */
-    --font-size-xs: 0.75rem;
-    --font-size-sm: 0.875rem;
-    --font-size-base: 1rem;
-    --font-size-lg: 1.125rem;
-    --font-size-xl: 1.25rem;
-    --font-size-2xl: 1.5rem;
-    --font-size-3xl: 1.875rem;
-    --font-size-4xl: 2.25rem;
+    /* Размеры шрифта - согласованная шкала */
+    --font-size-xs: 0.75rem;    /* 12px */
+    --font-size-sm: 0.875rem;   /* 14px */
+    --font-size-base: 1rem;     /* 16px */
+    --font-size-lg: 1.125rem;   /* 18px */
+    --font-size-xl: 1.25rem;    /* 20px */
+    --font-size-2xl: 1.5rem;    /* 24px */
+    --font-size-3xl: 1.875rem;  /* 30px */
+    --font-size-4xl: 2.25rem;   /* 36px */
     
     /* Веса шрифта */
-    --font-weight-light: 300;
     --font-weight-normal: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
     
-    /* Высота строк */
+    /* Высота строк - для удобочитаемости */
     --line-height-tight: 1.25;
     --line-height-normal: 1.5;
     --line-height-relaxed: 1.75;
     
     /* Межбуквенное расстояние */
-    --letter-spacing-tight: -0.01em;
+    --letter-spacing-tight: -0.02em;
     --letter-spacing-normal: 0;
     --letter-spacing-wide: 0.02em;
     
-    /* ========== ОТСТУПЫ ========== */
+    /* ========== ОТСТУПЫ (РИТМ 4PX) ========== */
     --spacing-0: 0;
     --spacing-px: 1px;
-    --spacing-0-5: 0.125rem;
-    --spacing-1: 0.25rem;
-    --spacing-1-5: 0.375rem;
-    --spacing-2: 0.5rem;
-    --spacing-2-5: 0.625rem;
-    --spacing-3: 0.75rem;
-    --spacing-3-5: 0.875rem;
-    --spacing-4: 1rem;
-    --spacing-5: 1.25rem;
-    --spacing-6: 1.5rem;
-    --spacing-7: 1.75rem;
-    --spacing-8: 2rem;
-    --spacing-9: 2.25rem;
-    --spacing-10: 2.5rem;
-    --spacing-11: 2.75rem;
-    --spacing-12: 3rem;
-    --spacing-14: 3.5rem;
-    --spacing-16: 4rem;
-    --spacing-20: 5rem;
-    --spacing-24: 6rem;
+    --spacing-0-5: 0.125rem;  /* 2px */
+    --spacing-1: 0.25rem;     /* 4px */
+    --spacing-1-5: 0.375rem;  /* 6px */
+    --spacing-2: 0.5rem;      /* 8px */
+    --spacing-2-5: 0.625rem;  /* 10px */
+    --spacing-3: 0.75rem;     /* 12px */
+    --spacing-4: 1rem;        /* 16px */
+    --spacing-5: 1.25rem;     /* 20px */
+    --spacing-6: 1.5rem;      /* 24px */
+    --spacing-8: 2rem;        /* 32px */
+    --spacing-10: 2.5rem;     /* 40px */
+    --spacing-12: 3rem;       /* 48px */
+    --spacing-16: 4rem;       /* 64px */
     
-    /* ========== РАДИУСЫ ========== */
+    /* ========== РАДИУСЫ (СТРОГАЯ ГЕОМЕТРИЯ) ========== */
     --radius-none: 0;
-    --radius-xs: 0.125rem;
-    --radius-sm: 0.25rem;
-    --radius-md: 0.375rem;
-    --radius-lg: 0.5rem;
-    --radius-xl: 0.75rem;
-    --radius-2xl: 1rem;
-    --radius-3xl: 1.5rem;
+    --radius-sm: 0.25rem;     /* 4px */
+    --radius-md: 0.375rem;    /* 6px */
+    --radius-lg: 0.5rem;      /* 8px */
+    --radius-xl: 0.75rem;     /* 12px */
+    --radius-2xl: 1rem;       /* 16px */
     --radius-full: 9999px;
     
-    /* ========== ТЕНИ ========== */
-    --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-    --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
-    --shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
-    --shadow-outline: 0 0 0 3px rgba(37, 99, 235, 0.1);
-    --shadow-none: none;
+    /* ========== ТЕНИ (ФИЗИЧНОСТЬ) ========== */
+    /* Увеличена сила теней для четкого отделения карточек от фона */
+    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+    --shadow-outline: 0 0 0 3px rgba(37, 99, 235, 0.2); /* Сделано мягче */
     
     /* ========== АНИМАЦИИ ========== */
     --transition-fast: 150ms;
@@ -162,7 +162,6 @@
     --z-30: 30;
     --z-40: 40;
     --z-50: 50;
-    
     --z-dropdown: 100;
     --z-sticky: 200;
     --z-fixed: 300;
@@ -191,7 +190,7 @@
     --focus-ring-offset: 2px;
     
     /* ========== ПРОЧЕЕ ========== */
-    --overlay-bg: rgba(0, 0, 0, 0.5);
+    --overlay-bg: rgba(15, 23, 42, 0.5); /* Затемнение на основе slate-900 */
     --border-width: 1px;
     --opacity-disabled: 0.5;
 }
