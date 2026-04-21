@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./modules/inventory/inventoryState.js
+// ========================================
+
 /**
  * Inventory State - Page State Manager
  * 
@@ -5,7 +9,10 @@
  * Хранит фильтры, пагинацию, выделенные товары.
  * 
  * @module inventoryState
- * @version 1.0.0
+ * @version 1.1.0
+ * @changes
+ * - Добавлено поле selectedCount в возвращаемый объект состояния
+ * - Исправлена ошибка вызова getSelectedCount() из InventoryPage
  */
 
 import { EventBus } from '../../core/EventBus.js';
@@ -74,7 +81,8 @@ class InventoryStateClass {
     getState() {
         return {
             ...this._state,
-            selectedIds: new Set(this._state.selectedIds)
+            selectedIds: new Set(this._state.selectedIds),
+            selectedCount: this._state.selectedIds.size
         };
     }
     
