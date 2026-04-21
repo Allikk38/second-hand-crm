@@ -1,15 +1,15 @@
 /**
  * App Layout - Main Layout Renderer
  * 
- * Отвечает за рендеринг основного макета приложения:
- * - Хедер с логотипом
- * - Навигация с SVG-иконками
- * - Контейнер для страниц
+ * Отвечает за рендеринг основного макета приложения в стиле Excel/Google Sheets.
+ * Хедер упрощен, навигация представлена в виде вкладок над контентной областью.
  * 
  * @module AppLayout
- * @requires AppState
- * @requires EventBus
- * @requires Router
+ * @version 3.2.0
+ * @changes
+ * - Полный редизайн: навигация в виде вкладок, интегрированных с контентом.
+ * - Перемещение навигации из хедера в область над page-container.
+ * - Упрощение хедера (только логотип/заголовок и кнопка выхода).
  */
 
 import { AppState } from './AppState.js';
@@ -80,16 +80,22 @@ export class AppLayout {
         
         this.container.innerHTML = `
             <div class="app">
+                <!-- Упрощенный хедер -->
                 <header class="app-header">
                     <h1 class="app-title">${APP_TITLE}</h1>
-                    <nav class="app-nav">
-                        ${NAV_ITEMS.map(item => this.renderNavItem(item, currentPath)).join('')}
-                        <button class="nav-btn nav-btn-logout" data-action="logout">
+                    <div class="header-actions">
+                        <button class="btn-ghost btn-icon" data-action="logout" title="Выход">
                             <span class="nav-icon">${LOGOUT_ICON}</span>
-                            <span class="nav-text">Выход</span>
                         </button>
-                    </nav>
+                    </div>
                 </header>
+                
+                <!-- Навигация в виде вкладок Excel -->
+                <nav class="app-tabs">
+                    ${NAV_ITEMS.map(item => this.renderTabItem(item, currentPath)).join('')}
+                </nav>
+                
+                <!-- Контейнер для страниц -->
                 <main id="page-container" class="page-container">
                     <div class="loading-overlay">
                         <div class="loading-spinner"></div>
@@ -104,15 +110,15 @@ export class AppLayout {
     }
     
     /**
-     * Рендерит один элемент навигации
+     * Рендерит один элемент навигации (вкладку)
      */
-    renderNavItem(item, currentPath) {
+    renderTabItem(item, currentPath) {
         const isActive = currentPath === item.path;
         
         return `
-            <button class="nav-btn ${isActive ? 'active' : ''}" data-nav="${item.id}" data-path="${item.path}">
-                <span class="nav-icon">${item.icon}</span>
-                <span class="nav-text">${item.title}</span>
+            <button class="app-tab ${isActive ? 'active' : ''}" data-nav="${item.id}" data-path="${item.path}">
+                <span class="tab-icon">${item.icon}</span>
+                <span class="tab-text">${item.title}</span>
             </button>
         `;
     }
@@ -136,21 +142,25 @@ export class AppLayout {
     }
     
     /**
-     * Подписывается на изменения состояния
+     * Подписывается на изменения состояния для обновления активной вкладки
      */
     subscribeToState() {
         this.unsubscribe = AppState.subscribe('currentPage', (newPath) => {
-            this.updateActiveNavItem(newPath);
+            this.updateActiveTabItem(newPath);
         });
     }
     
     /**
-     * Обновляет активный элемент навигации
+     * Обновляет активную вкладку
      */
-    updateActiveNavItem(currentPath) {
+    updateActiveTabItem(currentPath) {
         this.container.querySelectorAll('[data-nav]').forEach(btn => {
             const path = btn.dataset.path;
-            btn.classList.toggle('active', path === currentPath);
+            if (path === currentPath) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
         });
     }
     
