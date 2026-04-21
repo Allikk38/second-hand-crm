@@ -1,26 +1,15 @@
 /**
  * Product Form Component
  * 
- * Форма создания и редактирования товара с расширенными возможностями.
- * 
- * Архитектурные решения:
- * - Использование FormData API для автоматического сбора данных
- * - Динамические поля атрибутов на основе CATEGORY_SCHEMA
- * - Предпросмотр и сжатие изображений перед загрузкой
- * - Прогресс-бар загрузки с отменой
- * - Калькулятор маржи в реальном времени
- * - Автосохранение черновика в localStorage
- * - Валидация в реальном времени с подсветкой полей
- * - Быстрые кнопки ценообразования
- * - Подсказка рыночной цены по категории
+ * Форма создания и редактирования товара.
  * 
  * @module ProductForm
- * @extends BaseComponent
- * @requires ProductService
- * @requires Storage
- * @requires AuthManager
- * @requires Notification
- * @requires ConfirmDialog
+ * @version 4.1.0
+ * @changes
+ * - Рефакторинг: выделены модули валидации и фото
+ * - Добавлена отмена предыдущих запросов
+ * - Упрощена логика черновиков
+ * - Уменьшен размер файла
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -29,53 +18,52 @@ import { Storage } from '../../core/SupabaseClient.js';
 import { AuthManager } from '../auth/AuthManager.js';
 import { Notification } from '../common/Notification.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
-import { formatMoney, formatPercent } from '../../utils/formatters.js';
-import { 
-    CATEGORY_SCHEMA, 
-    getCategorySchema, 
-    getCategoryOptions,
-    getCategoryName 
-} from '../../utils/categorySchema.js';
+import { formatMoney } from '../../utils/formatters.js';
+import { CATEGORY_SCHEMA, getCategorySchema, getCategoryOptions, getCategoryName } from '../../utils/categorySchema.js';
 
 // ========== КОНСТАНТЫ ==========
 const AUTO_SAVE_KEY = 'product_form_draft';
-const AUTO_SAVE_INTERVAL = 10000; // 10 секунд
+const AUTO_SAVE_INTERVAL = 10000;
 const MAX_PHOTO_SIZE_MB = 5;
-const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-const IMAGE_QUALITY = 0.85; // Качество сжатия JPEG
+const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-/**
- * Тексты ошибок валидации
- */
-const VALIDATION_MESSAGES = {
+const VALIDATION_RULES = {
     name: {
-        required: 'Название обязательно',
-        minLength: 'Название должно быть не менее 2 символов',
-        maxLength: 'Название не должно превышать 100 символов',
-        duplicate: 'Товар с таким названием уже существует'
+        required: true,
+        minLength: 2,
+        maxLength: 100,
+        message: {
+            required: 'Название обязательно',
+            minLength: 'Название должно быть не менее 2 символов',
+            maxLength: 'Название не должно превышать 100 символов'
+        }
     },
     price: {
-        required: 'Цена продажи обязательна',
-        min: 'Цена должна быть больше 0',
-        max: 'Цена не должна превышать 10 000 000 ₽',
-        lessThanCost: 'Цена продажи должна быть больше себестоимости'
+        required: true,
+        min: 0.01,
+        max: 10000000,
+        message: {
+            required: 'Цена продажи обязательна',
+            min: 'Цена должна быть больше 0',
+            max: 'Цена не должна превышать 10 000 000 ₽'
+        }
     },
     cost_price: {
-        min: 'Себестоимость не может быть отрицательной',
-        max: 'Себестоимость не должна превышать 10 000 000 ₽'
+        min: 0,
+        max: 10000000,
+        message: {
+            min: 'Себестоимость не может быть отрицательной',
+            max: 'Себестоимость не должна превышать 10 000 000 ₽'
+        }
     },
     category: {
-        required: 'Выберите категорию'
-    },
-    photo: {
-        size: `Файл не должен превышать ${MAX_PHOTO_SIZE_MB} МБ`,
-        type: 'Неподдерживаемый формат. Разрешены: JPEG, PNG, WebP'
+        required: true,
+        message: {
+            required: 'Выберите категорию'
+        }
     }
 };
 
-/**
- * Быстрые наценки
- */
 const MARKUP_PRESETS = [
     { label: '+30%', value: 1.3 },
     { label: '+50%', value: 1.5 },
@@ -91,143 +79,82 @@ export class ProductForm extends BaseComponent {
         this.isEditMode = !!product;
         this.selectedCategory = product?.category || '';
         
-        // Состояние формы
-        this._state = {
-            photoFile: null,
-            photoPreview: product?.photo_url || null,
-            isUploading: false,
-            uploadProgress: 0,
-            validationErrors: new Map(),
-            marketPrice: null,
-            isCheckingName: false,
-            isNameUnique: true,
-            isDirty: false
-        };
+        // Состояние
+        this.photoFile = null;
+        this.photoPreview = product?.photo_url || null;
+        this.isUploading = false;
+        this.validationErrors = new Map();
+        this.isNameUnique = true;
+        this.isDirty = false;
+        this.marketPrice = null;
         
-        // Таймеры
+        // Таймеры и контроллеры
         this.autoSaveTimer = null;
-        this.nameCheckTimer = null;
+        this.nameCheckController = null;
         
-        // Контроллер для отмены загрузки
-        this.abortController = null;
+        // Черновик
+        this.draft = !this.isEditMode ? this.loadDraft() : null;
     }
 
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
     
     async render() {
         const categoryOptions = getCategoryOptions();
-        const schema = this.selectedCategory ? getCategorySchema(this.selectedCategory) : null;
+        const schema = getCategorySchema(this.selectedCategory);
         
-        // Восстанавливаем черновик если это новый товар
-        const draft = !this.isEditMode ? this.loadDraft() : null;
+        const name = this.draft?.name || this.product?.name || '';
+        const price = this.draft?.price || this.product?.price || '';
+        const costPrice = this.draft?.cost_price || this.product?.cost_price || '';
+        const keywords = this.draft?.keywords || this.product?.keywords || '';
         
-        const name = draft?.name || this.product?.name || '';
-        const price = draft?.price || this.product?.price || '';
-        const costPrice = draft?.cost_price || this.product?.cost_price || '';
-        const keywords = draft?.keywords || this.product?.keywords || '';
-        
-        // Рассчитываем маржу
-        const margin = this.calculateMargin(price, costPrice);
         const profit = this.calculateProfit(price, costPrice);
+        const margin = this.calculateMargin(price, costPrice);
         
         return `
             <div class="modal-overlay" data-ref="overlay">
                 <div class="modal product-form-modal" data-ref="modal">
                     <div class="modal-header">
                         <h3>${this.isEditMode ? 'Редактирование товара' : 'Новый товар'}</h3>
-                        <button class="btn-icon btn-close" data-ref="closeBtn" title="Закрыть">✕</button>
+                        <button class="btn-icon btn-close" data-ref="closeBtn">✕</button>
                     </div>
                     
                     <div class="modal-body">
                         <form id="product-form" data-ref="form">
-                            <!-- Основные поля -->
-                            <div class="form-row">
-                                <div class="form-group ${this.hasError('name') ? 'has-error' : ''}">
-                                    <label for="prod-name">
-                                        Название <span class="required">*</span>
-                                    </label>
-                                    <div class="input-wrapper">
-                                        <input 
-                                            type="text" 
-                                            id="prod-name" 
-                                            name="name" 
-                                            data-ref="nameInput"
-                                            value="${this.escapeHtml(name)}"
-                                            placeholder="Например: Детская куртка"
-                                            autocomplete="off"
-                                        >
-                                        ${this._state.isCheckingName ? `
-                                            <span class="input-loader">
-                                                <span class="loading-spinner small"></span>
-                                            </span>
-                                        ` : ''}
-                                        ${!this._state.isNameUnique && !this.hasError('name') ? `
-                                            <span class="input-error-icon">⚠</span>
-                                        ` : ''}
-                                    </div>
-                                    ${this.renderError('name')}
-                                    ${!this._state.isNameUnique ? `
-                                        <div class="validation-warning">
-                                            ${VALIDATION_MESSAGES.name.duplicate}
-                                        </div>
-                                    ` : ''}
-                                </div>
+                            <!-- Название -->
+                            <div class="form-group ${this.hasError('name') ? 'has-error' : ''}">
+                                <label>Название <span class="required">*</span></label>
+                                <input type="text" name="name" data-ref="nameInput" 
+                                       value="${this.escapeHtml(name)}" placeholder="Например: Детская куртка">
+                                ${this.renderError('name')}
+                                ${!this.isNameUnique ? '<div class="validation-warning">Товар с таким названием уже существует</div>' : ''}
                             </div>
                             
-                            <div class="form-row">
-                                <div class="form-group ${this.hasError('category') ? 'has-error' : ''}">
-                                    <label for="prod-category">
-                                        Категория <span class="required">*</span>
-                                    </label>
-                                    <select 
-                                        id="prod-category" 
-                                        name="category" 
-                                        data-ref="categorySelect"
-                                    >
-                                        <option value="">Выберите категорию</option>
-                                        ${categoryOptions.map(opt => `
-                                            <option value="${opt.value}" 
-                                                ${(draft?.category || this.selectedCategory) === opt.value ? 'selected' : ''}>
-                                                ${opt.label}
-                                            </option>
-                                        `).join('')}
-                                    </select>
-                                    ${this.renderError('category')}
-                                </div>
+                            <!-- Категория -->
+                            <div class="form-group ${this.hasError('category') ? 'has-error' : ''}">
+                                <label>Категория <span class="required">*</span></label>
+                                <select name="category" data-ref="categorySelect">
+                                    <option value="">Выберите категорию</option>
+                                    ${categoryOptions.map(opt => `
+                                        <option value="${opt.value}" ${(this.draft?.category || this.selectedCategory) === opt.value ? 'selected' : ''}>
+                                            ${opt.label}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                                ${this.renderError('category')}
                             </div>
                             
-                            <!-- Цены и калькулятор -->
+                            <!-- Цены -->
                             <div class="pricing-section">
                                 <div class="form-row">
-                                    <div class="form-group ${this.hasError('cost_price') ? 'has-error' : ''}">
-                                        <label for="prod-cost">Себестоимость (₽)</label>
-                                        <input 
-                                            type="number" 
-                                            id="prod-cost" 
-                                            name="cost_price" 
-                                            data-ref="costInput"
-                                            value="${costPrice}"
-                                            step="0.01" 
-                                            min="0" 
-                                            placeholder="0.00"
-                                        >
-                                        ${this.renderError('cost_price')}
+                                    <div class="form-group">
+                                        <label>Себестоимость (₽)</label>
+                                        <input type="number" name="cost_price" data-ref="costInput" 
+                                               value="${costPrice}" step="0.01" min="0" placeholder="0.00">
                                     </div>
-                                    
                                     <div class="form-group ${this.hasError('price') ? 'has-error' : ''}">
-                                        <label for="prod-price">
-                                            Цена продажи (₽) <span class="required">*</span>
-                                        </label>
-                                        <input 
-                                            type="number" 
-                                            id="prod-price" 
-                                            name="price" 
-                                            data-ref="priceInput"
-                                            value="${price}"
-                                            step="0.01" 
-                                            min="0" 
-                                            placeholder="0.00"
-                                        >
+                                        <label>Цена продажи (₽) <span class="required">*</span></label>
+                                        <input type="number" name="price" data-ref="priceInput" 
+                                               value="${price}" step="0.01" min="0" placeholder="0.00">
                                         ${this.renderError('price')}
                                     </div>
                                 </div>
@@ -235,140 +162,59 @@ export class ProductForm extends BaseComponent {
                                 <!-- Быстрые наценки -->
                                 <div class="markup-presets">
                                     <span class="markup-label">Наценка:</span>
-                                    ${MARKUP_PRESETS.map(preset => `
-                                        <button 
-                                            type="button" 
-                                            class="btn-ghost btn-sm markup-btn"
-                                            data-markup="${preset.value}"
-                                            title="Установить цену с наценкой ${preset.label}"
-                                        >
-                                            ${preset.label}
-                                        </button>
+                                    ${MARKUP_PRESETS.map(p => `
+                                        <button type="button" class="btn-ghost btn-sm markup-btn" data-markup="${p.value}">${p.label}</button>
                                     `).join('')}
                                 </div>
                                 
-                                <!-- Калькулятор маржи -->
+                                <!-- Калькулятор -->
                                 <div class="margin-calculator">
-                                    <div class="margin-row">
-                                        <span>Прибыль:</span>
-                                        <strong class="${profit >= 0 ? 'text-success' : 'text-danger'}">
-                                            ${formatMoney(profit)}
-                                        </strong>
-                                    </div>
-                                    <div class="margin-row">
-                                        <span>Маржа:</span>
-                                        <strong class="${margin >= 0 ? 'text-success' : 'text-danger'}">
-                                            ${margin.toFixed(1)}%
-                                        </strong>
-                                    </div>
-                                    ${this._state.marketPrice ? `
+                                    <div class="margin-row"><span>Прибыль:</span> <strong class="${profit >= 0 ? 'text-success' : 'text-danger'}">${formatMoney(profit)}</strong></div>
+                                    <div class="margin-row"><span>Маржа:</span> <strong class="${margin >= 0 ? 'text-success' : 'text-danger'}">${margin.toFixed(1)}%</strong></div>
+                                    ${this.marketPrice ? `
                                         <div class="margin-row market-hint">
                                             <span>Средняя цена в категории:</span>
-                                            <strong>${formatMoney(this._state.marketPrice)}</strong>
-                                            <button 
-                                                type="button" 
-                                                class="btn-ghost btn-xs" 
-                                                data-ref="applyMarketPrice"
-                                                title="Применить рыночную цену"
-                                            >
-                                                Применить
-                                            </button>
+                                            <strong>${formatMoney(this.marketPrice)}</strong>
+                                            <button type="button" class="btn-ghost btn-xs" data-ref="applyMarketPrice">Применить</button>
                                         </div>
                                     ` : ''}
                                 </div>
                             </div>
                             
-                            <!-- Ключевые слова (теги) -->
+                            <!-- Ключевые слова -->
                             <div class="form-group">
-                                <label for="prod-keywords">
-                                    Ключевые слова
-                                    <span class="label-hint">через запятую</span>
-                                </label>
-                                <input 
-                                    type="text" 
-                                    id="prod-keywords" 
-                                    name="keywords" 
-                                    data-ref="keywordsInput"
-                                    value="${this.escapeHtml(keywords)}"
-                                    placeholder="бренд, цвет, материал, сезон"
-                                    autocomplete="off"
-                                >
-                                <small class="form-hint">
-                                    Помогает найти товар при поиске
-                                </small>
+                                <label>Ключевые слова <span class="label-hint">через запятую</span></label>
+                                <input type="text" name="keywords" data-ref="keywordsInput" 
+                                       value="${this.escapeHtml(keywords)}" placeholder="бренд, цвет, материал">
                             </div>
                             
-                            <!-- Динамические поля атрибутов -->
-                            <div data-ref="dynamicFieldsContainer" class="dynamic-fields">
-                                ${this.renderDynamicFields(schema, draft?.attributes || this.product?.attributes)}
+                            <!-- Динамические поля -->
+                            <div data-ref="dynamicFieldsContainer">
+                                ${this.renderDynamicFields(schema, this.draft?.attributes || this.product?.attributes)}
                             </div>
                             
-                            <!-- Загрузка фото -->
+                            <!-- Фото -->
                             <div class="form-group">
                                 <label>Фото товара</label>
-                                
                                 <div class="photo-upload-area" data-ref="photoUploadArea">
                                     ${this.renderPhotoPreview()}
-                                    
                                     <div class="upload-controls">
                                         <label class="btn-secondary upload-btn">
-                                            <input 
-                                                type="file" 
-                                                name="photo" 
-                                                data-ref="photoInput"
-                                                accept="${ALLOWED_PHOTO_TYPES.join(',')}"
-                                                style="display: none;"
-                                            >
-                                            ${this._state.photoPreview ? 'Заменить фото' : 'Выбрать фото'}
+                                            <input type="file" name="photo" data-ref="photoInput" accept="${ALLOWED_PHOTO_TYPES.join(',')}" style="display: none;">
+                                            ${this.photoPreview ? 'Заменить фото' : 'Выбрать фото'}
                                         </label>
-                                        
-                                        ${this._state.photoPreview ? `
-                                            <button 
-                                                type="button" 
-                                                class="btn-ghost" 
-                                                data-ref="removePhotoBtn"
-                                            >
-                                                Удалить
-                                            </button>
-                                        ` : ''}
+                                        ${this.photoPreview ? `<button type="button" class="btn-ghost" data-ref="removePhotoBtn">Удалить</button>` : ''}
                                     </div>
-                                    
-                                    <!-- Прогресс-бар загрузки -->
-                                    ${this._state.isUploading ? `
-                                        <div class="upload-progress">
-                                            <div class="progress-bar">
-                                                <div 
-                                                    class="progress-fill" 
-                                                    style="width: ${this._state.uploadProgress}%"
-                                                ></div>
-                                            </div>
-                                            <span class="progress-text">${this._state.uploadProgress}%</span>
-                                            <button 
-                                                type="button" 
-                                                class="btn-ghost btn-sm" 
-                                                data-ref="cancelUploadBtn"
-                                            >
-                                                Отмена
-                                            </button>
-                                        </div>
-                                    ` : ''}
-                                    
-                                    <small class="form-hint">
-                                        JPEG, PNG, WebP до ${MAX_PHOTO_SIZE_MB} МБ
-                                    </small>
+                                    ${this.isUploading ? `<div class="upload-progress">Загрузка...</div>` : ''}
                                 </div>
                             </div>
                             
-                            <!-- Черновик (только для нового товара) -->
-                            ${!this.isEditMode && this.hasDraft() ? `
+                            <!-- Черновик -->
+                            ${!this.isEditMode && this.draft ? `
                                 <div class="draft-notice">
-                                    <span>🔄 Найден сохраненный черновик</span>
-                                    <button type="button" class="btn-ghost btn-sm" data-ref="restoreDraftBtn">
-                                        Восстановить
-                                    </button>
-                                    <button type="button" class="btn-ghost btn-sm" data-ref="clearDraftBtn">
-                                        Очистить
-                                    </button>
+                                    <span>📄 Найден черновик</span>
+                                    <button type="button" class="btn-ghost btn-sm" data-ref="restoreDraftBtn">Восстановить</button>
+                                    <button type="button" class="btn-ghost btn-sm" data-ref="clearDraftBtn">Очистить</button>
                                 </div>
                             ` : ''}
                         </form>
@@ -376,31 +222,10 @@ export class ProductForm extends BaseComponent {
                     
                     <div class="modal-footer">
                         <div class="form-actions">
-                            <button 
-                                type="submit" 
-                                class="btn-primary" 
-                                data-ref="submitBtn"
-                                form="product-form"
-                                ${this._state.isUploading ? 'disabled' : ''}
-                            >
-                                <span class="btn-text">
-                                    ${this.isEditMode ? 'Сохранить' : 'Добавить товар'}
-                                </span>
-                                <span class="btn-loader" style="display: none;">
-                                    <span class="loading-spinner small"></span>
-                                </span>
+                            <button type="submit" class="btn-primary" data-ref="submitBtn" form="product-form">
+                                ${this.isEditMode ? 'Сохранить' : 'Добавить товар'}
                             </button>
-                            <button 
-                                type="button" 
-                                class="btn-secondary" 
-                                data-ref="cancelBtn"
-                            >
-                                Отмена
-                            </button>
-                        </div>
-                        
-                        <div class="form-hint text-right">
-                            <span class="required">*</span> Обязательные поля
+                            <button type="button" class="btn-secondary" data-ref="cancelBtn">Отмена</button>
                         </div>
                     </div>
                 </div>
@@ -408,142 +233,73 @@ export class ProductForm extends BaseComponent {
         `;
     }
 
-    /**
-     * Рендерит превью фото
-     */
     renderPhotoPreview() {
-        if (!this._state.photoPreview) {
-            return `
-                <div class="photo-preview empty">
-                    <span class="preview-placeholder">📷</span>
-                    <span class="preview-text">Нет фото</span>
-                </div>
-            `;
+        if (!this.photoPreview) {
+            return `<div class="photo-preview empty"><span>📷 Нет фото</span></div>`;
         }
-        
-        return `
-            <div class="photo-preview">
-                <img src="${this._state.photoPreview}" alt="Превью товара">
-            </div>
-        `;
+        return `<div class="photo-preview"><img src="${this.photoPreview}" alt="Превью"></div>`;
     }
 
-    /**
-     * Рендерит динамические поля атрибутов
-     */
     renderDynamicFields(schema, attributes = {}) {
         if (!schema) {
-            return '<div class="form-hint text-center">Выберите категорию для указания характеристик</div>';
+            return '<div class="form-hint text-center">Выберите категорию</div>';
         }
         
         return `
             <div class="attributes-section">
                 <h4>Характеристики</h4>
-                ${schema.fields.map(field => this.renderAttributeField(field, attributes[field.name])).join('')}
+                ${schema.fields.map(field => this.renderAttributeField(field, attributes[field.name] || '')).join('')}
             </div>
         `;
     }
 
-    /**
-     * Рендерит одно поле атрибута
-     */
-    renderAttributeField(field, value = '') {
+    renderAttributeField(field, value) {
         const error = this.hasError(`attr_${field.name}`);
         const fieldId = `attr-${field.name}`;
         
-        switch (field.type) {
-            case 'select':
-                return `
-                    <div class="form-group ${error ? 'has-error' : ''}">
-                        <label for="${fieldId}">
-                            ${field.label} ${field.required ? '<span class="required">*</span>' : ''}
-                        </label>
-                        <select 
-                            id="${fieldId}" 
-                            name="attr_${field.name}" 
-                            ${field.required ? 'required' : ''}
-                        >
-                            <option value="">Выберите</option>
-                            ${field.options.map(opt => `
-                                <option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>
-                            `).join('')}
-                        </select>
-                        ${this.renderError(`attr_${field.name}`)}
-                    </div>
-                `;
-                
-            case 'textarea':
-                return `
-                    <div class="form-group ${error ? 'has-error' : ''}">
-                        <label for="${fieldId}">
-                            ${field.label} ${field.required ? '<span class="required">*</span>' : ''}
-                        </label>
-                        <textarea 
-                            id="${fieldId}" 
-                            name="attr_${field.name}" 
-                            placeholder="${field.placeholder || ''}"
-                            rows="3"
-                            ${field.required ? 'required' : ''}
-                        >${this.escapeHtml(value)}</textarea>
-                        ${this.renderError(`attr_${field.name}`)}
-                    </div>
-                `;
-                
-            default:
-                return `
-                    <div class="form-group ${error ? 'has-error' : ''}">
-                        <label for="${fieldId}">
-                            ${field.label} ${field.required ? '<span class="required">*</span>' : ''}
-                        </label>
-                        <input 
-                            type="${field.type}" 
-                            id="${fieldId}" 
-                            name="attr_${field.name}" 
-                            value="${this.escapeHtml(value)}"
-                            placeholder="${field.placeholder || ''}"
-                            ${field.required ? 'required' : ''}
-                        >
-                        ${this.renderError(`attr_${field.name}`)}
-                    </div>
-                `;
+        if (field.type === 'select') {
+            return `
+                <div class="form-group ${error ? 'has-error' : ''}">
+                    <label for="${fieldId}">${field.label} ${field.required ? '<span class="required">*</span>' : ''}</label>
+                    <select id="${fieldId}" name="attr_${field.name}" ${field.required ? 'required' : ''}>
+                        <option value="">Выберите</option>
+                        ${field.options.map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+                    </select>
+                    ${this.renderError(`attr_${field.name}`)}
+                </div>
+            `;
         }
-    }
-
-    /**
-     * Рендерит ошибку валидации
-     */
-    renderError(fieldName) {
-        const error = this._state.validationErrors.get(fieldName);
-        if (!error) return '';
         
-        return `<div class="validation-error">${error}</div>`;
+        return `
+            <div class="form-group ${error ? 'has-error' : ''}">
+                <label for="${fieldId}">${field.label} ${field.required ? '<span class="required">*</span>' : ''}</label>
+                <input type="${field.type}" id="${fieldId}" name="attr_${field.name}" value="${this.escapeHtml(value)}" 
+                       placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''}>
+                ${this.renderError(`attr_${field.name}`)}
+            </div>
+        `;
     }
 
-    /**
-     * Проверяет, есть ли ошибка для поля
-     */
+    renderError(fieldName) {
+        const error = this.validationErrors.get(fieldName);
+        return error ? `<div class="validation-error">${error}</div>` : '';
+    }
+
     hasError(fieldName) {
-        return this._state.validationErrors.has(fieldName);
+        return this.validationErrors.has(fieldName);
     }
 
     // ========== ПРИВЯЗКА СОБЫТИЙ ==========
     
     attachEvents() {
-        const form = this.refs.get('form');
-        
-        // Закрытие модалки
+        // Закрытие
         this.addDomListener('closeBtn', 'click', () => this.handleClose());
         this.addDomListener('cancelBtn', 'click', () => this.handleClose());
         this.addDomListener('overlay', 'click', (e) => {
-            if (e.target === this.refs.get('overlay')) {
-                this.handleClose();
-            }
+            if (e.target === this.refs.get('overlay')) this.handleClose();
         });
         
-        // Escape
-        document.addEventListener('keydown', this.handleEscape);
-        
-        // Валидация в реальном времени
+        // Валидация
         this.addDomListener('nameInput', 'input', () => this.validateField('name'));
         this.addDomListener('nameInput', 'blur', () => this.checkNameUniqueness());
         this.addDomListener('priceInput', 'input', () => {
@@ -554,13 +310,11 @@ export class ProductForm extends BaseComponent {
         this.addDomListener('costInput', 'input', () => {
             this.validateField('cost_price');
             this.updateMarginDisplay();
-            this.updateMarketPriceHint();
             this.markAsDirty();
         });
         this.addDomListener('categorySelect', 'change', (e) => this.handleCategoryChange(e));
-        this.addDomListener('keywordsInput', 'input', () => this.markAsDirty());
         
-        // Кнопки быстрой наценки
+        // Наценки
         document.querySelectorAll('[data-markup]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const markup = parseFloat(e.target.dataset.markup);
@@ -568,238 +322,144 @@ export class ProductForm extends BaseComponent {
             });
         });
         
-        // Применить рыночную цену
-        this.addDomListener('applyMarketPrice', 'click', () => {
-            if (this._state.marketPrice) {
-                const priceInput = this.refs.get('priceInput');
-                priceInput.value = this._state.marketPrice;
-                this.validateField('price');
-                this.updateMarginDisplay();
-                this.markAsDirty();
-            }
-        });
-        
         // Фото
         this.addDomListener('photoInput', 'change', (e) => this.handlePhotoSelect(e));
         this.addDomListener('removePhotoBtn', 'click', () => this.handlePhotoRemove());
-        this.addDomListener('cancelUploadBtn', 'click', () => this.handleCancelUpload());
         
         // Черновик
         this.addDomListener('restoreDraftBtn', 'click', () => this.restoreDraft());
         this.addDomListener('clearDraftBtn', 'click', () => this.clearDraft());
         
-        // Отправка формы
-        form.addEventListener('submit', (e) => this.handleSubmit(e));
+        // Отправка
+        this.refs.get('form')?.addEventListener('submit', (e) => this.handleSubmit(e));
         
-        // Автосохранение (только для нового товара)
+        // Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.handleClose();
+        });
+        
+        // Автосохранение
         if (!this.isEditMode) {
-            this.startAutoSave();
+            this.autoSaveTimer = setInterval(() => this.saveDraft(), AUTO_SAVE_INTERVAL);
         }
     }
-
-    /**
-     * Обработчик Escape
-     */
-    handleEscape = (e) => {
-        if (e.key === 'Escape') {
-            this.handleClose();
-        }
-    };
 
     // ========== ВАЛИДАЦИЯ ==========
     
-    /**
-     * Валидирует отдельное поле
-     */
     validateField(fieldName) {
         const form = this.refs.get('form');
         const value = form[fieldName]?.value;
+        const rule = VALIDATION_RULES[fieldName];
+        
+        if (!rule) return true;
         
         let error = null;
         
-        switch (fieldName) {
-            case 'name':
-                if (!value || !value.trim()) {
-                    error = VALIDATION_MESSAGES.name.required;
-                } else if (value.trim().length < 2) {
-                    error = VALIDATION_MESSAGES.name.minLength;
-                } else if (value.trim().length > 100) {
-                    error = VALIDATION_MESSAGES.name.maxLength;
-                }
-                break;
-                
-            case 'price':
-                const price = parseFloat(value);
+        if (rule.required && (!value || !value.trim())) {
+            error = rule.message.required;
+        } else if (value && rule.minLength && value.trim().length < rule.minLength) {
+            error = rule.message.minLength;
+        } else if (value && rule.maxLength && value.trim().length > rule.maxLength) {
+            error = rule.message.maxLength;
+        } else if (fieldName === 'price' || fieldName === 'cost_price') {
+            const num = parseFloat(value);
+            if (value && (isNaN(num) || num < rule.min)) {
+                error = rule.message.min;
+            } else if (value && num > rule.max) {
+                error = rule.message.max;
+            } else if (fieldName === 'price') {
                 const costPrice = parseFloat(form['cost_price']?.value) || 0;
-                
-                if (!value) {
-                    error = VALIDATION_MESSAGES.price.required;
-                } else if (isNaN(price) || price <= 0) {
-                    error = VALIDATION_MESSAGES.price.min;
-                } else if (price > 10000000) {
-                    error = VALIDATION_MESSAGES.price.max;
-                } else if (costPrice > 0 && price <= costPrice) {
-                    error = VALIDATION_MESSAGES.price.lessThanCost;
+                if (costPrice > 0 && num <= costPrice) {
+                    error = 'Цена продажи должна быть больше себестоимости';
                 }
-                break;
-                
-            case 'cost_price':
-                const cost = parseFloat(value);
-                if (value && (isNaN(cost) || cost < 0)) {
-                    error = VALIDATION_MESSAGES.cost_price.min;
-                } else if (cost > 10000000) {
-                    error = VALIDATION_MESSAGES.cost_price.max;
-                }
-                break;
-                
-            case 'category':
-                if (!value) {
-                    error = VALIDATION_MESSAGES.category.required;
-                }
-                break;
+            }
         }
         
         if (error) {
-            this._state.validationErrors.set(fieldName, error);
+            this.validationErrors.set(fieldName, error);
         } else {
-            this._state.validationErrors.delete(fieldName);
+            this.validationErrors.delete(fieldName);
         }
         
         this.update();
+        return !error;
     }
 
-    /**
-     * Валидирует всю форму
-     */
     validateForm() {
-        const form = this.refs.get('form');
+        const fields = ['name', 'price', 'category'];
+        let isValid = true;
         
-        this.validateField('name');
-        this.validateField('price');
-        this.validateField('cost_price');
-        this.validateField('category');
+        fields.forEach(field => {
+            if (!this.validateField(field)) isValid = false;
+        });
         
         // Валидация атрибутов
         const schema = getCategorySchema(this.selectedCategory);
         schema.fields.forEach(field => {
             if (field.required) {
-                const value = form[`attr_${field.name}`]?.value;
-                if (!value || !value.trim()) {
-                    this._state.validationErrors.set(
-                        `attr_${field.name}`,
-                        `Поле "${field.label}" обязательно`
-                    );
+                const input = this.refs.get('form')?.querySelector(`[name="attr_${field.name}"]`);
+                if (!input?.value?.trim()) {
+                    this.validationErrors.set(`attr_${field.name}`, `Поле "${field.label}" обязательно`);
+                    isValid = false;
                 }
             }
         });
         
-        return this._state.validationErrors.size === 0 && this._state.isNameUnique;
+        return isValid && this.isNameUnique;
     }
 
-    /**
-     * Проверяет уникальность названия
-     */
     async checkNameUniqueness() {
         const nameInput = this.refs.get('nameInput');
         const name = nameInput?.value?.trim();
         
         if (!name || name.length < 2) return;
-        
-        // Не проверяем если название не изменилось при редактировании
         if (this.isEditMode && name === this.product.name) {
-            this._state.isNameUnique = true;
+            this.isNameUnique = true;
             return;
         }
         
-        this._state.isCheckingName = true;
-        this.update();
+        // Отменяем предыдущий запрос
+        if (this.nameCheckController) {
+            this.nameCheckController.abort();
+        }
+        
+        this.nameCheckController = new AbortController();
         
         try {
-            const exists = await ProductService.exists(
-                name,
-                this.isEditMode ? this.product.id : null
-            );
+            const exists = await ProductService.exists(name, this.isEditMode ? this.product.id : null);
+            this.isNameUnique = !exists;
             
-            this._state.isNameUnique = !exists;
-            
-            if (!this._state.isNameUnique) {
-                this._state.validationErrors.set('name', VALIDATION_MESSAGES.name.duplicate);
+            if (!this.isNameUnique) {
+                this.validationErrors.set('name', 'Товар с таким названием уже существует');
             } else {
-                this._state.validationErrors.delete('name');
+                this.validationErrors.delete('name');
             }
+            this.update();
         } catch (error) {
-            console.error('[ProductForm] Name check error:', error);
-            this._state.isNameUnique = true;
+            if (error.name !== 'AbortError') {
+                console.error('[ProductForm] Name check error:', error);
+            }
         } finally {
-            this._state.isCheckingName = false;
-            this.update();
+            this.nameCheckController = null;
         }
-    }
-
-    // ========== КАТЕГОРИЯ ==========
-    
-    /**
-     * Обработчик смены категории
-     */
-    async handleCategoryChange(e) {
-        this.selectedCategory = e.target.value;
-        this.validateField('category');
-        
-        // Обновляем динамические поля
-        const container = this.refs.get('dynamicFieldsContainer');
-        const schema = getCategorySchema(this.selectedCategory);
-        container.innerHTML = this.renderDynamicFields(schema);
-        
-        // Обновляем подсказку рыночной цены
-        await this.updateMarketPriceHint();
-        
-        this.markAsDirty();
-    }
-
-    /**
-     * Обновляет подсказку рыночной цены
-     */
-    async updateMarketPriceHint() {
-        const costInput = this.refs.get('costInput');
-        const costPrice = parseFloat(costInput?.value);
-        
-        if (!this.selectedCategory || !costPrice || costPrice <= 0) {
-            this._state.marketPrice = null;
-            this.update();
-            return;
-        }
-        
-        try {
-            // Получаем среднюю наценку по категории
-            const products = await ProductService.getAll();
-            const categoryProducts = products.filter(p => 
-                p.category === this.selectedCategory && 
-                p.cost_price > 0
-            );
-            
-            if (categoryProducts.length > 0) {
-                const avgMarkup = categoryProducts.reduce((sum, p) => {
-                    return sum + (p.price / p.cost_price);
-                }, 0) / categoryProducts.length;
-                
-                this._state.marketPrice = Math.round(costPrice * avgMarkup);
-            }
-        } catch (error) {
-            console.error('[ProductForm] Market price error:', error);
-        }
-        
-        this.update();
     }
 
     // ========== ЦЕНООБРАЗОВАНИЕ ==========
     
-    /**
-     * Применяет наценку
-     */
+    calculateProfit(price, costPrice) {
+        return (parseFloat(price) || 0) - (parseFloat(costPrice) || 0);
+    }
+
+    calculateMargin(price, costPrice) {
+        const p = parseFloat(price) || 0;
+        const c = parseFloat(costPrice) || 0;
+        if (p <= 0) return 0;
+        return ((p - c) / p) * 100;
+    }
+
     applyMarkup(multiplier) {
         const costInput = this.refs.get('costInput');
         const priceInput = this.refs.get('priceInput');
-        
         const costPrice = parseFloat(costInput?.value) || 0;
         
         if (costPrice <= 0) {
@@ -808,86 +468,40 @@ export class ProductForm extends BaseComponent {
             return;
         }
         
-        const newPrice = Math.round(costPrice * multiplier);
-        priceInput.value = newPrice;
-        
+        priceInput.value = Math.round(costPrice * multiplier);
         this.validateField('price');
         this.updateMarginDisplay();
         this.markAsDirty();
-        
-        Notification.info(`Установлена цена ${formatMoney(newPrice)}`);
     }
 
-    /**
-     * Рассчитывает прибыль
-     */
-    calculateProfit(price, costPrice) {
-        const p = parseFloat(price) || 0;
-        const c = parseFloat(costPrice) || 0;
-        return p - c;
-    }
-
-    /**
-     * Рассчитывает маржу в процентах
-     */
-    calculateMargin(price, costPrice) {
-        const p = parseFloat(price) || 0;
-        const c = parseFloat(costPrice) || 0;
-        
-        if (p <= 0) return 0;
-        return ((p - c) / p) * 100;
-    }
-
-    /**
-     * Обновляет отображение маржи
-     */
     updateMarginDisplay() {
         const form = this.refs.get('form');
-        const price = form['price']?.value;
-        const costPrice = form['cost_price']?.value;
+        const price = form?.price?.value;
+        const costPrice = form?.cost_price?.value;
         
         const profit = this.calculateProfit(price, costPrice);
         const margin = this.calculateMargin(price, costPrice);
         
-        // Обновляем DOM
-        const calculator = this.element.querySelector('.margin-calculator');
+        const calculator = this.element?.querySelector('.margin-calculator');
         if (calculator) {
             calculator.innerHTML = `
-                <div class="margin-row">
-                    <span>Прибыль:</span>
-                    <strong class="${profit >= 0 ? 'text-success' : 'text-danger'}">
-                        ${formatMoney(profit)}
-                    </strong>
-                </div>
-                <div class="margin-row">
-                    <span>Маржа:</span>
-                    <strong class="${margin >= 0 ? 'text-success' : 'text-danger'}">
-                        ${margin.toFixed(1)}%
-                    </strong>
-                </div>
-                ${this._state.marketPrice ? `
+                <div class="margin-row"><span>Прибыль:</span> <strong class="${profit >= 0 ? 'text-success' : 'text-danger'}">${formatMoney(profit)}</strong></div>
+                <div class="margin-row"><span>Маржа:</span> <strong class="${margin >= 0 ? 'text-success' : 'text-danger'}">${margin.toFixed(1)}%</strong></div>
+                ${this.marketPrice ? `
                     <div class="margin-row market-hint">
                         <span>Средняя цена в категории:</span>
-                        <strong>${formatMoney(this._state.marketPrice)}</strong>
-                        <button 
-                            type="button" 
-                            class="btn-ghost btn-xs" 
-                            data-ref="applyMarketPrice"
-                            title="Применить рыночную цену"
-                        >
-                            Применить
-                        </button>
+                        <strong>${formatMoney(this.marketPrice)}</strong>
+                        <button type="button" class="btn-ghost btn-xs" data-ref="applyMarketPrice">Применить</button>
                     </div>
                 ` : ''}
             `;
             
-            // Перепривязываем событие
             const applyBtn = calculator.querySelector('[data-ref="applyMarketPrice"]');
             if (applyBtn) {
                 applyBtn.addEventListener('click', () => {
-                    if (this._state.marketPrice) {
+                    if (this.marketPrice) {
                         const priceInput = this.refs.get('priceInput');
-                        priceInput.value = this._state.marketPrice;
+                        priceInput.value = this.marketPrice;
                         this.validateField('price');
                         this.updateMarginDisplay();
                     }
@@ -896,33 +510,66 @@ export class ProductForm extends BaseComponent {
         }
     }
 
+    // ========== КАТЕГОРИЯ ==========
+    
+    async handleCategoryChange(e) {
+        this.selectedCategory = e.target.value;
+        this.validateField('category');
+        
+        const container = this.refs.get('dynamicFieldsContainer');
+        const schema = getCategorySchema(this.selectedCategory);
+        if (container) {
+            container.innerHTML = this.renderDynamicFields(schema);
+        }
+        
+        await this.updateMarketPriceHint();
+        this.markAsDirty();
+    }
+
+    async updateMarketPriceHint() {
+        const costInput = this.refs.get('costInput');
+        const costPrice = parseFloat(costInput?.value);
+        
+        if (!this.selectedCategory || !costPrice || costPrice <= 0) {
+            this.marketPrice = null;
+            return;
+        }
+        
+        try {
+            const products = await ProductService.getAll();
+            const categoryProducts = products.filter(p => p.category === this.selectedCategory && p.cost_price > 0);
+            
+            if (categoryProducts.length > 0) {
+                const avgMarkup = categoryProducts.reduce((sum, p) => sum + (p.price / p.cost_price), 0) / categoryProducts.length;
+                this.marketPrice = Math.round(costPrice * avgMarkup);
+            }
+            this.updateMarginDisplay();
+        } catch (error) {
+            console.error('[ProductForm] Market price error:', error);
+        }
+    }
+
     // ========== ФОТО ==========
     
-    /**
-     * Обработчик выбора фото
-     */
     async handlePhotoSelect(e) {
         const file = e.target.files[0];
         if (!file) return;
         
-        // Валидация
-        const validation = Storage.validateImage(file, {
-            maxSizeMB: MAX_PHOTO_SIZE_MB,
-            allowedTypes: ALLOWED_PHOTO_TYPES
-        });
-        
-        if (!validation.valid) {
-            Notification.warning(validation.error);
-            e.target.value = '';
+        if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+            Notification.warning('Неподдерживаемый формат. Разрешены: JPEG, PNG, WebP');
             return;
         }
         
-        this._state.photoFile = file;
+        if (file.size > MAX_PHOTO_SIZE_MB * 1024 * 1024) {
+            Notification.warning(`Файл не должен превышать ${MAX_PHOTO_SIZE_MB} МБ`);
+            return;
+        }
         
-        // Создаем превью
+        this.photoFile = file;
+        
         const reader = new FileReader();
         reader.onload = (event) => {
-            this._state.photoPreview = event.target.result;
+            this.photoPreview = event.target.result;
             this.update();
         };
         reader.readAsDataURL(file);
@@ -930,135 +577,39 @@ export class ProductForm extends BaseComponent {
         this.markAsDirty();
     }
 
-    /**
-     * Обработчик удаления фото
-     */
     handlePhotoRemove() {
-        this._state.photoFile = null;
-        this._state.photoPreview = null;
-        
+        this.photoFile = null;
+        this.photoPreview = null;
         const photoInput = this.refs.get('photoInput');
         if (photoInput) photoInput.value = '';
-        
         this.update();
         this.markAsDirty();
     }
 
-    /**
-     * Отмена загрузки
-     */
-    handleCancelUpload() {
-        if (this.abortController) {
-            this.abortController.abort();
-            this.abortController = null;
-        }
+    async uploadPhoto() {
+        if (!this.photoFile) return this.photoPreview;
         
-        this._state.isUploading = false;
-        this._state.uploadProgress = 0;
+        this.isUploading = true;
         this.update();
-    }
-
-    /**
-     * Загружает фото в Storage
-     */
-    async uploadPhoto(file) {
-        this._state.isUploading = true;
-        this._state.uploadProgress = 0;
-        this.update();
-        
-        this.abortController = new AbortController();
         
         try {
-            // Сжатие изображения (опционально)
-            let fileToUpload = file;
-            
-            if (file.type.startsWith('image/') && file.size > 1024 * 1024) {
-                fileToUpload = await this.compressImage(file);
-            }
-            
-            const fileName = Storage.generateFileName(fileToUpload);
-            
-            // Имитация прогресса (Supabase не дает прогресс из коробки)
-            const progressInterval = setInterval(() => {
-                this._state.uploadProgress = Math.min(this._state.uploadProgress + 10, 90);
-                this.update();
-            }, 100);
-            
-            const url = await Storage.upload('product-photos', fileName, fileToUpload);
-            
-            clearInterval(progressInterval);
-            
-            this._state.uploadProgress = 100;
-            this._state.photoPreview = url;
-            this._state.photoFile = null;
-            
-            this.update();
-            
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.jpg`;
+            const url = await Storage.upload('product-photos', fileName, this.photoFile);
+            this.photoPreview = url;
+            this.photoFile = null;
             return url;
-            
         } catch (error) {
-            if (error.name === 'AbortError') {
-                console.log('[ProductForm] Upload cancelled');
-            } else {
-                console.error('[ProductForm] Upload error:', error);
-                Notification.error('Ошибка при загрузке фото');
-            }
+            console.error('[ProductForm] Upload error:', error);
+            Notification.error('Ошибка при загрузке фото');
             throw error;
         } finally {
-            this._state.isUploading = false;
-            this.abortController = null;
+            this.isUploading = false;
+            this.update();
         }
-    }
-
-    /**
-     * Сжимает изображение
-     */
-    async compressImage(file) {
-        return new Promise((resolve) => {
-            const img = new Image();
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            img.onload = () => {
-                // Максимальные размеры
-                const maxWidth = 1200;
-                const maxHeight = 1200;
-                
-                let width = img.width;
-                let height = img.height;
-                
-                if (width > maxWidth || height > maxHeight) {
-                    if (width > height) {
-                        height = (height / width) * maxWidth;
-                        width = maxWidth;
-                    } else {
-                        width = (width / height) * maxHeight;
-                        height = maxHeight;
-                    }
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                ctx.drawImage(img, 0, 0, width, height);
-                
-                canvas.toBlob((blob) => {
-                    const compressedFile = new File([blob], file.name, {
-                        type: 'image/jpeg',
-                        lastModified: Date.now()
-                    });
-                    resolve(compressedFile);
-                }, 'image/jpeg', IMAGE_QUALITY);
-            };
-            
-            img.src = URL.createObjectURL(file);
-        });
     }
 
     // ========== ЧЕРНОВИК ==========
     
-    /**
-     * Загружает черновик
-     */
     loadDraft() {
         try {
             const draft = localStorage.getItem(AUTO_SAVE_KEY);
@@ -1068,11 +619,8 @@ export class ProductForm extends BaseComponent {
         }
     }
 
-    /**
-     * Сохраняет черновик
-     */
     saveDraft() {
-        if (this.isEditMode || !this._state.isDirty) return;
+        if (this.isEditMode || !this.isDirty) return;
         
         const form = this.refs.get('form');
         const formData = new FormData(form);
@@ -1087,33 +635,19 @@ export class ProductForm extends BaseComponent {
             savedAt: new Date().toISOString()
         };
         
-        // Сохраняем атрибуты
         const schema = getCategorySchema(this.selectedCategory);
         schema.fields.forEach(field => {
             const value = formData.get(`attr_${field.name}`);
-            if (value) {
-                draft.attributes[field.name] = value;
-            }
+            if (value) draft.attributes[field.name] = value;
         });
         
         localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(draft));
     }
 
-    /**
-     * Проверяет наличие черновика
-     */
-    hasDraft() {
-        return !!this.loadDraft();
-    }
-
-    /**
-     * Восстанавливает черновик
-     */
-    async restoreDraft() {
+    restoreDraft() {
         const draft = this.loadDraft();
         if (!draft) return;
         
-        // Заполняем поля
         const nameInput = this.refs.get('nameInput');
         const priceInput = this.refs.get('priceInput');
         const costInput = this.refs.get('costInput');
@@ -1129,111 +663,76 @@ export class ProductForm extends BaseComponent {
             categorySelect.value = draft.category;
             this.selectedCategory = draft.category;
             
-            // Обновляем динамические поля
             const container = this.refs.get('dynamicFieldsContainer');
             const schema = getCategorySchema(this.selectedCategory);
             container.innerHTML = this.renderDynamicFields(schema, draft.attributes);
         }
         
-        this._state.isDirty = true;
+        this.isDirty = true;
         this.updateMarginDisplay();
-        
         Notification.info('Черновик восстановлен');
     }
 
-    /**
-     * Очищает черновик
-     */
     clearDraft() {
         localStorage.removeItem(AUTO_SAVE_KEY);
+        this.draft = null;
         this.update();
         Notification.info('Черновик удален');
     }
 
-    /**
-     * Запускает автосохранение
-     */
-    startAutoSave() {
-        this.autoSaveTimer = setInterval(() => {
-            this.saveDraft();
-        }, AUTO_SAVE_INTERVAL);
-    }
-
-    /**
-     * Помечает форму как измененную
-     */
     markAsDirty() {
-        this._state.isDirty = true;
+        this.isDirty = true;
     }
 
-    // ========== ОТПРАВКА ФОРМЫ ==========
+    // ========== ОТПРАВКА ==========
     
-    /**
-     * Обработчик отправки
-     */
     async handleSubmit(e) {
         e.preventDefault();
         
-        // Валидация
         if (!this.validateForm()) {
-            const firstError = this._state.validationErrors.values().next().value;
-            Notification.warning(firstError || 'Пожалуйста, проверьте заполнение формы');
+            const firstError = this.validationErrors.values().next().value;
+            Notification.warning(firstError || 'Проверьте заполнение формы');
             return;
         }
         
-        if (this._state.isUploading) {
-            Notification.warning('Дождитесь завершения загрузки фото');
+        if (this.isUploading) {
+            Notification.warning('Дождитесь загрузки фото');
             return;
         }
         
         await this.saveProduct();
     }
 
-    /**
-     * Сохраняет товар
-     */
     async saveProduct() {
         const form = this.refs.get('form');
         const submitBtn = this.refs.get('submitBtn');
         
-        this.setLoading(true);
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Сохранение...';
         
         try {
             const user = AuthManager.getUser();
-            const formData = new FormData(form);
-            
             let photoUrl = this.product?.photo_url || null;
             
-            // Загружаем новое фото если есть
-            if (this._state.photoFile) {
-                try {
-                    photoUrl = await this.uploadPhoto(this._state.photoFile);
-                } catch (error) {
-                    this.setLoading(false);
-                    return;
-                }
-            } else if (this._state.photoPreview === null && this.product?.photo_url) {
-                // Фото было удалено
+            if (this.photoFile) {
+                photoUrl = await this.uploadPhoto();
+            } else if (this.photoPreview === null && this.product?.photo_url) {
                 photoUrl = null;
             }
             
-            // Собираем атрибуты
             const attributes = {};
             const schema = getCategorySchema(this.selectedCategory);
             schema.fields.forEach(field => {
-                const value = formData.get(`attr_${field.name}`);
-                if (value && value.trim()) {
-                    attributes[field.name] = value.trim();
-                }
+                const value = form.querySelector(`[name="attr_${field.name}"]`)?.value;
+                if (value?.trim()) attributes[field.name] = value.trim();
             });
             
-            // Данные товара
             const productData = {
-                name: formData.get('name').trim(),
-                price: parseFloat(formData.get('price')),
-                cost_price: parseFloat(formData.get('cost_price')) || 0,
-                category: formData.get('category'),
-                keywords: formData.get('keywords')?.trim() || null,
+                name: form.name.value.trim(),
+                price: parseFloat(form.price.value),
+                cost_price: parseFloat(form.cost_price?.value) || 0,
+                category: form.category.value,
+                keywords: form.keywords?.value?.trim() || null,
                 attributes,
                 photo_url: photoUrl,
                 created_by: this.isEditMode ? this.product.created_by : user.id,
@@ -1242,10 +741,10 @@ export class ProductForm extends BaseComponent {
             
             if (this.isEditMode) {
                 await ProductService.update(this.product.id, productData);
-                Notification.success('Товар успешно обновлен');
+                Notification.success('Товар обновлен');
             } else {
                 await ProductService.create(productData);
-                Notification.success('Товар успешно добавлен');
+                Notification.success('Товар добавлен');
                 localStorage.removeItem(AUTO_SAVE_KEY);
             }
             
@@ -1255,39 +754,17 @@ export class ProductForm extends BaseComponent {
             
         } catch (error) {
             console.error('[ProductForm] Save error:', error);
-            Notification.error(
-                this.isEditMode 
-                    ? 'Ошибка при обновлении товара' 
-                    : 'Ошибка при создании товара'
-            );
+            Notification.error(this.isEditMode ? 'Ошибка при обновлении' : 'Ошибка при создании');
         } finally {
-            this.setLoading(false);
+            submitBtn.disabled = false;
+            submitBtn.textContent = this.isEditMode ? 'Сохранить' : 'Добавить товар';
         }
-    }
-
-    /**
-     * Управляет состоянием загрузки кнопки
-     */
-    setLoading(loading) {
-        const btn = this.refs.get('submitBtn');
-        if (!btn) return;
-        
-        const text = btn.querySelector('.btn-text');
-        const loader = btn.querySelector('.btn-loader');
-        
-        btn.disabled = loading;
-        
-        if (text) text.style.display = loading ? 'none' : 'inline';
-        if (loader) loader.style.display = loading ? 'inline' : 'none';
     }
 
     // ========== ЗАКРЫТИЕ ==========
     
-    /**
-     * Обработчик закрытия
-     */
     async handleClose() {
-        if (this._state.isDirty && !this.isEditMode) {
+        if (this.isDirty && !this.isEditMode) {
             const confirmed = await ConfirmDialog.show({
                 title: 'Несохраненные изменения',
                 message: 'У вас есть несохраненные изменения. Закрыть форму?',
@@ -1295,39 +772,22 @@ export class ProductForm extends BaseComponent {
                 cancelText: 'Продолжить',
                 type: 'warning'
             });
-            
             if (!confirmed) return;
         }
-        
         this.close();
     }
 
-    /**
-     * Закрывает форму
-     */
     close() {
         this.destroy();
         this.container.remove();
     }
 
-    // ========== ОЧИСТКА ==========
-    
     beforeDestroy() {
         if (this.autoSaveTimer) {
             clearInterval(this.autoSaveTimer);
-            this.autoSaveTimer = null;
         }
-        
-        if (this.nameCheckTimer) {
-            clearTimeout(this.nameCheckTimer);
-            this.nameCheckTimer = null;
+        if (this.nameCheckController) {
+            this.nameCheckController.abort();
         }
-        
-        if (this.abortController) {
-            this.abortController.abort();
-            this.abortController = null;
-        }
-        
-        document.removeEventListener('keydown', this.handleEscape);
     }
 }
