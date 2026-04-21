@@ -4,9 +4,12 @@
  * Управление кассовыми сменами: открытие, закрытие, статистика.
  * 
  * @module ShiftService
- * @requires db
- * @requires EventBus
- * @requires SaleService
+ * @version 4.1.0
+ * @changes
+ * - Добавлена проверка на повторное закрытие смены
+ * - Добавлен метод getActiveShifts()
+ * - Добавлен метод getShiftSales()
+ * - Улучшена инвалидация кэша
  */
 
 import { db } from '../core/SupabaseClient.js';
@@ -15,6 +18,11 @@ import { SaleService } from './SaleService.js';
 
 // Кэш текущей смены
 let currentShiftCache = new Map();
+const CACHE_TTL = 30000; // 30 секунд
+
+function isCacheValid(timestamp) {
+    return timestamp > 0 && (Date.now() - timestamp) < CACHE_TTL;
+}
 
 function invalidateShiftCache(userId) {
     if (userId) {
@@ -28,18 +36,17 @@ export const ShiftService = {
     /**
      * Получает текущую открытую смену пользователя
      * @param {string} userId - ID пользователя
+     * @param {boolean} forceRefresh - Игнорировать кэш
      * @returns {Promise<Object|null>}
      */
-    async getCurrentShift(userId) {
+    async getCurrentShift(userId, forceRefresh = false) {
         if (!userId) {
             throw new Error('User ID is required');
         }
         
-        if (currentShiftCache.has(userId)) {
-            const cached = currentShiftCache.get(userId);
-            if (Date.now() - cached.timestamp < 300000) {
-                return cached.data;
-            }
+        const cached = currentShiftCache.get(userId);
+        if (!forceRefresh && cached && isCacheValid(cached.timestamp)) {
+            return cached.data;
         }
         
         const { data, error } = await db
@@ -56,12 +63,14 @@ export const ShiftService = {
             throw error;
         }
         
+        const shift = data || null;
+        
         currentShiftCache.set(userId, {
-            data: data || null,
+            data: shift,
             timestamp: Date.now()
         });
         
-        return data || null;
+        return shift;
     },
 
     /**
@@ -90,7 +99,7 @@ export const ShiftService = {
             throw new Error('User already has an open shift');
         }
         
-        const { initialCash = 0 } = options;
+        const { initialCash = 0, notes = '' } = options;
         const now = new Date().toISOString();
         
         const { data, error } = await db
@@ -99,6 +108,7 @@ export const ShiftService = {
                 user_id: userId,
                 opened_at: now,
                 initial_cash: initialCash,
+                notes,
                 status: 'active',
                 created_at: now,
                 updated_at: now
@@ -113,11 +123,7 @@ export const ShiftService = {
         
         invalidateShiftCache(userId);
         
-        EventBus.emit('shift:opened', {
-            shift: data,
-            userId,
-            source: 'ShiftService.openShift'
-        });
+        EventBus.emit('shift:opened', { shift: data, userId });
         
         return data;
     },
@@ -163,7 +169,7 @@ export const ShiftService = {
                 final_cash: finalCash,
                 expected_cash: expectedCash,
                 discrepancy,
-                notes,
+                notes: shift.notes + (notes ? '\n' + notes : ''),
                 sales_count: salesStats.count,
                 total_revenue: salesStats.totalRevenue,
                 total_profit: salesStats.totalProfit,
@@ -191,8 +197,7 @@ export const ShiftService = {
                 finalCash,
                 discrepancy
             },
-            sales,
-            source: 'ShiftService.closeShift'
+            sales
         });
         
         if (Math.abs(discrepancy) > 0.01) {
@@ -200,12 +205,36 @@ export const ShiftService = {
                 shiftId,
                 expected: expectedCash,
                 actual: finalCash,
-                difference: discrepancy,
-                source: 'ShiftService.closeShift'
+                difference: discrepancy
             });
         }
         
         return data;
+    },
+
+    /**
+     * Получает все открытые смены
+     * @returns {Promise<Array>}
+     */
+    async getActiveShifts() {
+        const { data, error } = await db
+            .from('shifts')
+            .select(`
+                *,
+                profiles:user_id (
+                    full_name,
+                    email
+                )
+            `)
+            .is('closed_at', null)
+            .order('opened_at', { ascending: false });
+        
+        if (error) {
+            console.error('[ShiftService] getActiveShifts error:', error);
+            throw error;
+        }
+        
+        return data || [];
     },
 
     /**
@@ -286,28 +315,49 @@ export const ShiftService = {
     },
 
     /**
-     * Получает все открытые смены
-     * @returns {Promise<Array>}
+     * Получает продажи по смене с детализацией по товарам
+     * @param {string} shiftId - ID смены
+     * @returns {Promise<Object>}
      */
-    async getAllOpenShifts() {
-        const { data, error } = await db
-            .from('shifts')
-            .select(`
-                *,
-                profiles:user_id (
-                    full_name,
-                    email
-                )
-            `)
-            .is('closed_at', null)
-            .order('opened_at', { ascending: false });
-        
-        if (error) {
-            console.error('[ShiftService] getAllOpenShifts error:', error);
-            throw error;
+    async getShiftSales(shiftId) {
+        if (!shiftId) {
+            throw new Error('Shift ID is required');
         }
         
-        return data || [];
+        const sales = await SaleService.getByShift(shiftId);
+        
+        // Агрегируем товары
+        const productStats = new Map();
+        
+        sales.forEach(sale => {
+            if (!sale.items) return;
+            
+            sale.items.forEach(item => {
+                const key = item.id;
+                const current = productStats.get(key) || {
+                    id: item.id,
+                    name: item.name,
+                    quantity: 0,
+                    revenue: 0,
+                    profit: 0
+                };
+                
+                current.quantity += item.quantity;
+                current.revenue += (item.price || 0) * item.quantity;
+                current.profit += ((item.price || 0) - (item.cost_price || 0)) * item.quantity;
+                
+                productStats.set(key, current);
+            });
+        });
+        
+        return {
+            shiftId,
+            salesCount: sales.length,
+            totalRevenue: sales.reduce((sum, s) => sum + (s.total || 0), 0),
+            totalProfit: sales.reduce((sum, s) => sum + (s.profit || 0), 0),
+            sales,
+            products: Array.from(productStats.values()).sort((a, b) => b.revenue - a.revenue)
+        };
     },
 
     /**
@@ -351,7 +401,8 @@ export const ShiftService = {
             totalSales: 0,
             totalDiscrepancy: 0,
             averageRevenue: 0,
-            averageProfit: 0
+            averageProfit: 0,
+            averageCheck: 0
         };
         
         shiftsData.forEach(shift => {
@@ -364,6 +415,10 @@ export const ShiftService = {
         if (stats.totalShifts > 0) {
             stats.averageRevenue = stats.totalRevenue / stats.totalShifts;
             stats.averageProfit = stats.totalProfit / stats.totalShifts;
+        }
+        
+        if (stats.totalSales > 0) {
+            stats.averageCheck = stats.totalRevenue / stats.totalSales;
         }
         
         return stats;
