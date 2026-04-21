@@ -559,3 +559,23 @@
         height: 250px;
     }
 }
+/* ========== RECOMMENDATIONS LIST ========== */
+.recommendations-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.recommendations-list li {
+    padding: var(--spacing-3) var(--spacing-4);
+    margin-bottom: var(--spacing-2);
+    background: var(--color-slate-50);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--color-primary);
+    color: var(--color-text);
+    font-size: var(--font-size-sm);
+}
+
+.recommendations-list li:last-child {
+    margin-bottom: 0;
+}
