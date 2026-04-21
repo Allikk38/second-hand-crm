@@ -9,10 +9,12 @@
  * - Cart (корзина)
  * 
  * @module CashierPage
- * @version 4.0.0
+ * @version 4.1.0
  * @changes
- * - Полный рефакторинг: разделение на контроллер и компоненты
- * - Использование CashierState для управления состоянием
+ * - Упрощена загрузка данных
+ * - Добавлена обработка ошибок
+ * - Вынесены константы
+ * - Улучшена читаемость
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -27,7 +29,6 @@ import { ShiftService } from '../../services/ShiftService.js';
 import { SaleService } from '../../services/SaleService.js';
 import { AuthManager } from '../auth/AuthManager.js';
 import { Notification } from '../common/Notification.js';
-import { getCategoryName } from '../../utils/categorySchema.js';
 
 // ========== КОНСТАНТЫ ==========
 const STORAGE_KEY = 'cashier_ui_state';
@@ -90,16 +91,13 @@ export class CashierPage extends BaseComponent {
             <div class="cashier-layout">
                 <div class="products-panel">
                     <div data-ref="shiftStatsContainer"></div>
-                    <div data-ref="searchContainer"></div>
                     <div data-ref="categoryNavContainer"></div>
                     <div data-ref="productGridContainer" class="products-container"></div>
                 </div>
-                
                 <div class="cart-panel">
                     <div data-ref="cartContainer"></div>
                 </div>
             </div>
-            
             <div data-ref="quickViewModal" class="quick-view-modal hidden"></div>
         `;
     }
@@ -117,8 +115,10 @@ export class CashierPage extends BaseComponent {
     async attachEvents() {
         // Монтируем ShiftOpener
         const shiftContainer = this.refs.get('shiftContainer');
-        this.shiftOpener = new ShiftOpener(shiftContainer);
-        await this.shiftOpener.mount();
+        if (shiftContainer) {
+            this.shiftOpener = new ShiftOpener(shiftContainer);
+            await this.shiftOpener.mount();
+        }
         
         if (CashierState.hasOpenShift()) {
             await this.mountCashierComponents();
@@ -126,15 +126,11 @@ export class CashierPage extends BaseComponent {
         
         // Подписки на события
         this.unsubscribers.push(
-            this.subscribe('shift:opened', (data) => this.handleShiftOpened(data)),
+            this.subscribe('shift:opened', () => this.handleShiftOpened()),
             this.subscribe('shift:closed', () => this.handleShiftClosed()),
             this.subscribe('sale:completed', () => this.handleSaleCompleted()),
             this.subscribe('product:created', () => this.refreshProducts()),
-            this.subscribe('product:updated', () => this.refreshProducts())
-        );
-        
-        // Подписка на события корзины
-        this.unsubscribers.push(
+            this.subscribe('product:updated', () => this.refreshProducts()),
             this.subscribe('cart:checkout', ({ items, total, discount, paymentMethod }) => {
                 this.handleCheckout(items, total, discount, paymentMethod);
             })
@@ -148,35 +144,49 @@ export class CashierPage extends BaseComponent {
     }
     
     async mountCashierComponents() {
-        // Панель статистики
-        const statsContainer = this.refs.get('shiftStatsContainer');
-        this.shiftPanel = new ShiftPanel(statsContainer);
-        await this.shiftPanel.mount();
-        
-        // Навигация по категориям
-        const categoryNavContainer = this.refs.get('categoryNavContainer');
-        this.categoryNav = new CategoryNav(categoryNavContainer, {
-            onCategorySelect: (category) => this.handleCategorySelect(category),
-            onSearch: (query) => this.handleSearch(query),
-            onViewModeChange: (mode) => this.handleViewModeChange(mode)
-        });
-        await this.categoryNav.mount();
-        
-        // Сетка товаров
-        const productGridContainer = this.refs.get('productGridContainer');
-        this.productGrid = new ProductGrid(productGridContainer, {
-            onAddToCart: (id) => this.handleAddToCart(id),
-            onQuickView: (id) => this.showQuickView(id)
-        });
-        await this.productGrid.mount();
-        
-        // Корзина
-        const cartContainer = this.refs.get('cartContainer');
-        this.cart = new Cart(cartContainer);
-        await this.cart.mount();
-        
-        // Запускаем обновление статистики
-        this.startStatsUpdate();
+        try {
+            // Панель статистики
+            const statsContainer = this.refs.get('shiftStatsContainer');
+            if (statsContainer) {
+                this.shiftPanel = new ShiftPanel(statsContainer);
+                await this.shiftPanel.mount();
+            }
+            
+            // Навигация по категориям
+            const categoryNavContainer = this.refs.get('categoryNavContainer');
+            if (categoryNavContainer) {
+                this.categoryNav = new CategoryNav(categoryNavContainer, {
+                    onCategorySelect: (category) => this.handleCategorySelect(category),
+                    onSearch: (query) => this.handleSearch(query),
+                    onViewModeChange: (mode) => this.handleViewModeChange(mode)
+                });
+                await this.categoryNav.mount();
+            }
+            
+            // Сетка товаров
+            const productGridContainer = this.refs.get('productGridContainer');
+            if (productGridContainer) {
+                this.productGrid = new ProductGrid(productGridContainer, {
+                    onAddToCart: (id) => this.handleAddToCart(id),
+                    onQuickView: (id) => this.showQuickView(id)
+                });
+                await this.productGrid.mount();
+            }
+            
+            // Корзина
+            const cartContainer = this.refs.get('cartContainer');
+            if (cartContainer) {
+                this.cart = new Cart(cartContainer);
+                await this.cart.mount();
+            }
+            
+            // Запускаем обновление статистики
+            this.startStatsUpdate();
+            
+        } catch (error) {
+            console.error('[CashierPage] Mount components error:', error);
+            Notification.error('Ошибка при загрузке кассы');
+        }
     }
     
     // ========== ЗАГРУЗКА ДАННЫХ ==========
@@ -218,7 +228,7 @@ export class CashierPage extends BaseComponent {
     
     async refreshProducts() {
         try {
-            const products = await ProductService.getInStock();
+            const products = await ProductService.getInStock(true);
             CashierState.set('products', products);
             CashierState.buildCategories();
             CashierState.filterProducts();
@@ -244,10 +254,10 @@ export class CashierPage extends BaseComponent {
         }
     }
     
-    // ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
+    // ========== ОБРАБОТЧИКИ ==========
     
     handleHotkey(e) {
-        if (e.key === HOTKEYS.SEARCH && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.key === HOTKEYS.SEARCH && !e.ctrlKey && !e.altKey) {
             e.preventDefault();
             this.categoryNav?.focusSearch();
         }
@@ -287,8 +297,7 @@ export class CashierPage extends BaseComponent {
             return;
         }
         
-        const state = CashierState.getState();
-        const product = state.products.find(p => p.id === id);
+        const product = CashierState.get('products').find(p => p.id === id);
         
         if (!product) return;
         
@@ -301,16 +310,13 @@ export class CashierPage extends BaseComponent {
     }
     
     showQuickView(id) {
-        const state = CashierState.getState();
-        const product = state.products.find(p => p.id === id);
-        if (!product) return;
-        
-        // TODO: Реализовать QuickView компонент
-        Notification.info(`Быстрый просмотр: ${product.name}`);
+        const product = CashierState.get('products').find(p => p.id === id);
+        if (product) {
+            Notification.info(`Быстрый просмотр: ${product.name}`);
+        }
     }
     
-    async handleShiftOpened(data) {
-        CashierState.set('currentShift', data.shift);
+    async handleShiftOpened() {
         await this.loadInitialData();
         await this.update();
         await this.mountCashierComponents();
@@ -325,7 +331,6 @@ export class CashierPage extends BaseComponent {
     async handleSaleCompleted() {
         await this.updateShiftStats();
         await this.refreshProducts();
-        CashierState.set('recentlyAdded', []);
     }
     
     async handleCheckout(items, total, discount, paymentMethod) {
@@ -342,9 +347,9 @@ export class CashierPage extends BaseComponent {
             CashierState.clearCart();
             
             const topProducts = await SaleService.getTopProducts(QUICK_ITEMS_COUNT);
-            const state = CashierState.getState();
+            const products = CashierState.get('products');
             CashierState.set('popularProducts', 
-                topProducts.map(tp => state.products.find(p => p.id === tp.id)).filter(Boolean)
+                topProducts.map(tp => products.find(p => p.id === tp.id)).filter(Boolean)
             );
             
         } catch (error) {
@@ -391,6 +396,10 @@ export class CashierPage extends BaseComponent {
         }
     }
     
+    formatMoney(amount) {
+        return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format(amount);
+    }
+    
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
@@ -399,7 +408,6 @@ export class CashierPage extends BaseComponent {
         }
         
         this.unsubscribers.forEach(unsub => unsub());
-        
         document.removeEventListener('keydown', this.handleHotkey);
         
         this.saveUIState();
