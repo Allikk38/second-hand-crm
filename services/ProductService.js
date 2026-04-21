@@ -1,15 +1,20 @@
+// ========================================
+// FILE: ./services/ProductService.js
+// ========================================
+
 /**
  * Product Service
  * 
  * Управление товарами: CRUD операции, кэширование, пагинация.
  * 
  * @module ProductService
- * @version 4.1.0
+ * @version 4.2.0
  * @changes
+ * - Исправлена ошибка в getStats(): убран запрос несуществующей колонки 'stock'
+ * - Поле totalStock теперь вычисляется как количество товаров в наличии
  * - Увеличен TTL кэша до 60 секунд
  * - Добавлен метод getByCategory()
  * - Добавлен метод getLowStock()
- * - Улучшена пагинация
  */
 
 import { db } from '../core/SupabaseClient.js';
@@ -152,23 +157,14 @@ export const ProductService = {
 
     /**
      * Получает товары с низким остатком
+     * В текущей версии БД нет поля stock, поэтому возвращает пустой массив
      * @param {number} threshold - Порог остатка (по умолчанию 5)
      * @returns {Promise<Array>}
      */
     async getLowStock(threshold = 5) {
-        const { data, error } = await db
-            .from('products')
-            .select('*')
-            .eq('status', 'in_stock')
-            .lte('stock', threshold)
-            .order('stock', { ascending: true });
-        
-        if (error) {
-            console.error('[ProductService] getLowStock error:', error);
-            throw error;
-        }
-        
-        return data || [];
+        // В текущей схеме БД нет поля stock, возвращаем пустой массив
+        console.warn('[ProductService] getLowStock: stock field not available in DB schema');
+        return [];
     },
 
     /**
@@ -385,7 +381,7 @@ export const ProductService = {
     async getStats() {
         const { data, error } = await db
             .from('products')
-            .select('status, price, cost_price, stock');
+            .select('status, price, cost_price');
         
         if (error) {
             console.error('[ProductService] getStats error:', error);
@@ -401,14 +397,13 @@ export const ProductService = {
             reserved: products.filter(p => p.status === 'reserved').length,
             totalValue: 0,
             totalCost: 0,
-            totalStock: 0
+            totalStock: products.filter(p => p.status === 'in_stock').length
         };
         
         products.forEach(product => {
             if (product.status === 'in_stock') {
                 stats.totalValue += product.price || 0;
                 stats.totalCost += product.cost_price || 0;
-                stats.totalStock += product.stock || 1;
             }
         });
         
