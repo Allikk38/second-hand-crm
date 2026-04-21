@@ -5,11 +5,9 @@
  * Хедер упрощен, навигация представлена в виде вкладок над контентной областью.
  * 
  * @module AppLayout
- * @version 3.2.0
+ * @version 3.2.1
  * @changes
- * - Полный редизайн: навигация в виде вкладок, интегрированных с контентом.
- * - Перемещение навигации из хедера в область над page-container.
- * - Упрощение хедера (только логотип/заголовок и кнопка выхода).
+ * - Добавлены отладочные логи и проверки на null для диагностики проблемы открытия страницы склада.
  */
 
 import { AppState } from './AppState.js';
@@ -68,8 +66,13 @@ const LOGOUT_ICON = `
 
 export class AppLayout {
     constructor(container) {
+        if (!container) {
+            console.error('[AppLayout] Container is null or undefined');
+            throw new Error('AppLayout: container is required');
+        }
         this.container = container;
         this.unsubscribe = null;
+        console.log('[AppLayout] Initialized with container:', container.id || 'no-id');
     }
     
     /**
@@ -77,6 +80,7 @@ export class AppLayout {
      */
     render() {
         const currentPath = AppState.get('currentPage') || '/inventory';
+        console.log('[AppLayout] Rendering layout, currentPath:', currentPath);
         
         this.container.innerHTML = `
             <div class="app">
@@ -105,6 +109,7 @@ export class AppLayout {
             </div>
         `;
         
+        console.log('[AppLayout] Layout HTML rendered');
         this.attachEvents();
         this.subscribeToState();
     }
@@ -128,17 +133,25 @@ export class AppLayout {
      */
     attachEvents() {
         // Навигация
-        this.container.querySelectorAll('[data-nav]').forEach(btn => {
+        const navButtons = this.container.querySelectorAll('[data-nav]');
+        console.log('[AppLayout] Attaching events to', navButtons.length, 'nav buttons');
+        
+        navButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const path = e.currentTarget.dataset.path;
+                console.log('[AppLayout] Nav clicked, navigating to:', path);
                 Router.navigate(path);
             });
         });
         
         // Выход
-        this.container.querySelector('[data-action="logout"]')?.addEventListener('click', () => {
-            EventBus.emit('auth:logout');
-        });
+        const logoutBtn = this.container.querySelector('[data-action="logout"]');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                console.log('[AppLayout] Logout clicked');
+                EventBus.emit('auth:logout');
+            });
+        }
     }
     
     /**
@@ -146,6 +159,7 @@ export class AppLayout {
      */
     subscribeToState() {
         this.unsubscribe = AppState.subscribe('currentPage', (newPath) => {
+            console.log('[AppLayout] State changed: currentPage =', newPath);
             this.updateActiveTabItem(newPath);
         });
     }
@@ -168,7 +182,13 @@ export class AppLayout {
      * Получает контейнер для страниц
      */
     getPageContainer() {
-        return document.getElementById('page-container');
+        const container = document.getElementById('page-container');
+        if (!container) {
+            console.error('[AppLayout] page-container not found in DOM!');
+        } else {
+            console.log('[AppLayout] page-container found');
+        }
+        return container;
     }
     
     /**
