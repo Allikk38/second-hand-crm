@@ -3,12 +3,6 @@
  * 
  * Управление продажами: создание, отмена, статистика.
  * 
- * Архитектурные решения:
- * - Транзакционное создание продажи (обновление статусов товаров)
- * - Валидация наличия товаров перед продажей
- * - Расчет финансовых показателей
- * - Публикация детальных событий для аналитики
- * 
  * @module SaleService
  * @requires db
  * @requires EventBus
@@ -23,21 +17,14 @@ export const SaleService = {
     /**
      * Создает новую продажу
      * @param {Object} saleData - Данные продажи
-     * @param {string} saleData.shiftId - ID смены
-     * @param {Array} saleData.items - Товары в продаже
-     * @param {number} saleData.total - Итоговая сумма
-     * @param {number} saleData.discount - Скидка в процентах
-     * @param {string} saleData.paymentMethod - Способ оплаты
      * @returns {Promise<Object>}
      */
     async create({ shiftId, items, total, discount = 0, paymentMethod }) {
-        // Валидация
         if (!shiftId) throw new Error('Shift ID is required');
         if (!items || items.length === 0) throw new Error('No items in sale');
         if (!paymentMethod) throw new Error('Payment method is required');
         if (total < 0) throw new Error('Total cannot be negative');
         
-        // Проверяем наличие товаров
         const itemIds = items.map(item => item.id);
         const products = await ProductService.getAll();
         
@@ -61,7 +48,6 @@ export const SaleService = {
             throw error;
         }
         
-        // Рассчитываем себестоимость
         const itemsWithCost = items.map(item => {
             const product = products.find(p => p.id === item.id);
             return {
@@ -77,7 +63,6 @@ export const SaleService = {
         const profit = total - totalCost;
         const margin = total > 0 ? (profit / total * 100) : 0;
         
-        // Создаем запись о продаже
         const { data: sale, error } = await db
             .from('sales')
             .insert({
@@ -98,13 +83,9 @@ export const SaleService = {
             throw error;
         }
         
-        // Обновляем статусы товаров
         await ProductService.bulkUpdateStatus(itemIds, 'sold');
-        
-        // Инвалидируем кэш товаров
         ProductService.clearCache();
         
-        // Публикуем событие
         EventBus.emit('sale:completed', {
             sale,
             items: itemsWithCost,
@@ -118,11 +99,15 @@ export const SaleService = {
 
     /**
      * Получает продажи за период
-     * @param {Date|string} startDate - Начало периода
-     * @param {Date|string} endDate - Конец периода
+     * @param {string} startDate - ISO строка даты
+     * @param {string} endDate - ISO строка даты
      * @returns {Promise<Array>}
      */
     async getByPeriod(startDate, endDate) {
+        // Приводим даты к ISO строке если переданы объекты Date
+        const start = typeof startDate === 'string' ? startDate : startDate.toISOString();
+        const end = typeof endDate === 'string' ? endDate : endDate.toISOString();
+        
         const { data, error } = await db
             .from('sales')
             .select(`
@@ -134,8 +119,8 @@ export const SaleService = {
                     closed_at
                 )
             `)
-            .gte('created_at', startDate)
-            .lte('created_at', endDate)
+            .gte('created_at', start)
+            .lte('created_at', end)
             .order('created_at', { ascending: false });
         
         if (error) {
@@ -143,7 +128,7 @@ export const SaleService = {
             throw error;
         }
         
-        return data;
+        return data || [];
     },
 
     /**
@@ -163,7 +148,7 @@ export const SaleService = {
             throw error;
         }
         
-        return data;
+        return data || [];
     },
 
     /**
@@ -199,7 +184,7 @@ export const SaleService = {
     },
 
     /**
-     * Отменяет продажу (возвращает товары в наличие)
+     * Отменяет продажу
      * @param {string} id - ID продажи
      * @returns {Promise<void>}
      */
@@ -210,11 +195,9 @@ export const SaleService = {
             throw new Error(`Sale with id ${id} not found`);
         }
         
-        // Возвращаем товары в наличие
         const itemIds = sale.items.map(item => item.id);
         await ProductService.bulkUpdateStatus(itemIds, 'in_stock');
         
-        // Удаляем запись о продаже (или помечаем как отмененную)
         const { error } = await db
             .from('sales')
             .delete()
@@ -243,9 +226,17 @@ export const SaleService = {
         
         let query = db.from('sales').select('total, discount, profit, payment_method, created_at');
         
-        if (startDate) query = query.gte('created_at', startDate);
-        if (endDate) query = query.lte('created_at', endDate);
-        if (shiftId) query = query.eq('shift_id', shiftId);
+        if (startDate) {
+            const start = typeof startDate === 'string' ? startDate : startDate.toISOString();
+            query = query.gte('created_at', start);
+        }
+        if (endDate) {
+            const end = typeof endDate === 'string' ? endDate : endDate.toISOString();
+            query = query.lte('created_at', end);
+        }
+        if (shiftId) {
+            query = query.eq('shift_id', shiftId);
+        }
         
         const { data, error } = await query;
         
@@ -254,8 +245,10 @@ export const SaleService = {
             throw error;
         }
         
+        const salesData = data || [];
+        
         const stats = {
-            count: data.length,
+            count: salesData.length,
             totalRevenue: 0,
             totalDiscount: 0,
             totalProfit: 0,
@@ -263,14 +256,13 @@ export const SaleService = {
             byPaymentMethod: {}
         };
         
-        data.forEach(sale => {
+        salesData.forEach(sale => {
             stats.totalRevenue += sale.total || 0;
             stats.totalProfit += sale.profit || 0;
             
             const method = sale.payment_method || 'unknown';
             stats.byPaymentMethod[method] = (stats.byPaymentMethod[method] || 0) + 1;
             
-            // Расчет суммы скидки (обратный расчет)
             if (sale.discount) {
                 const originalTotal = sale.total / (1 - sale.discount / 100);
                 stats.totalDiscount += originalTotal - sale.total;
@@ -299,9 +291,10 @@ export const SaleService = {
             throw error;
         }
         
+        const salesData = data || [];
         const productStats = new Map();
         
-        data.forEach(sale => {
+        salesData.forEach(sale => {
             if (!sale.items) return;
             
             sale.items.forEach(item => {
