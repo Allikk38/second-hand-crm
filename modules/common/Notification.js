@@ -1,8 +1,16 @@
 /**
- * Модуль уведомлений
- * Показывает красивые всплывающие сообщения вместо alert()
+ * Notification Module
+ * 
+ * Показывает всплывающие уведомления.
+ * Без анимаций, только статичные сообщения.
  * 
  * @module Notification
+ * @version 2.0.0
+ * @changes
+ * - Использование CSS-классов вместо инлайн-стилей
+ * - Убраны анимации
+ * - Добавлена поддержка HTML в сообщениях
+ * - Улучшена система очереди уведомлений
  */
 
 import { EventBus } from '../../core/EventBus.js';
@@ -10,83 +18,202 @@ import { EventBus } from '../../core/EventBus.js';
 class NotificationClass {
     constructor() {
         this.container = null;
-        this.timeout = 3000;
+        this.defaultDuration = 4000;
+        this.queue = [];
+        this.isShowing = false;
         this.createContainer();
     }
 
+    /**
+     * Создает контейнер для уведомлений
+     */
     createContainer() {
         if (document.getElementById('notification-container')) return;
         
         this.container = document.createElement('div');
         this.container.id = 'notification-container';
-        this.container.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        `;
         document.body.appendChild(this.container);
     }
 
-    show(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.style.cssText = `
-            padding: 12px 20px;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            min-width: 280px;
-            animation: slideIn 0.3s ease;
-            border-left: 4px solid ${this.getBorderColor(type)};
-        `;
-        notification.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 10px;">
-                <span style="flex: 1;">${message}</span>
-                <button style="background: none; border: none; cursor: pointer; font-size: 18px; opacity: 0.5;">×</button>
-            </div>
-        `;
+    /**
+     * Показывает уведомление
+     * @param {string|Object} message - Текст сообщения или объект с настройками
+     * @param {string} type - Тип уведомления (success, error, warning, info)
+     * @param {Object} options - Дополнительные опции
+     */
+    show(message, type = 'info', options = {}) {
+        let config;
         
-        this.container.appendChild(notification);
+        if (typeof message === 'object') {
+            config = message;
+        } else {
+            config = {
+                message,
+                type,
+                title: options.title || this.getDefaultTitle(type),
+                duration: options.duration || this.defaultDuration,
+                html: options.html || false
+            };
+        }
         
-        const closeBtn = notification.querySelector('button');
-        closeBtn.addEventListener('click', () => this.remove(notification));
-        
-        setTimeout(() => this.remove(notification), this.timeout);
+        this.queue.push(config);
+        this.processQueue();
     }
 
-    getBorderColor(type) {
-        const colors = {
-            success: '#2e7d32',
-            error: '#c62828',
-            warning: '#f57c00',
-            info: '#0070f3'
+    /**
+     * Получает заголовок по умолчанию для типа уведомления
+     * @private
+     */
+    getDefaultTitle(type) {
+        const titles = {
+            success: 'Успешно',
+            error: 'Ошибка',
+            warning: 'Внимание',
+            info: 'Информация'
         };
-        return colors[type] || colors.info;
+        return titles[type] || 'Уведомление';
     }
 
+    /**
+     * Обрабатывает очередь уведомлений
+     * @private
+     */
+    async processQueue() {
+        if (this.isShowing || this.queue.length === 0) return;
+        
+        this.isShowing = true;
+        const notification = this.queue.shift();
+        
+        await this.render(notification);
+        
+        this.isShowing = false;
+        this.processQueue();
+    }
+
+    /**
+     * Рендерит уведомление
+     * @private
+     */
+    render(config) {
+        return new Promise((resolve) => {
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${config.type}`;
+            
+            const iconHtml = this.getIconHtml(config.type);
+            const contentHtml = config.html 
+                ? config.message 
+                : this.escapeHtml(config.message);
+            
+            notification.innerHTML = `
+                <div class="notification-icon"></div>
+                <div class="notification-content">
+                    <div class="notification-title">${this.escapeHtml(config.title)}</div>
+                    <div class="notification-message">${contentHtml}</div>
+                </div>
+                <button class="notification-close" aria-label="Закрыть">×</button>
+            `;
+            
+            this.container.appendChild(notification);
+            
+            // Обработчик закрытия
+            const closeBtn = notification.querySelector('.notification-close');
+            closeBtn.addEventListener('click', () => {
+                this.remove(notification);
+                resolve();
+            });
+            
+            // Авто-закрытие
+            if (config.duration > 0) {
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        this.remove(notification);
+                        resolve();
+                    }
+                }, config.duration);
+            }
+        });
+    }
+
+    /**
+     * Получает HTML иконки для типа уведомления
+     * @private
+     */
+    getIconHtml(type) {
+        const icons = {
+            success: '✓',
+            error: '✕',
+            warning: '⚠',
+            info: 'ℹ'
+        };
+        return icons[type] || icons.info;
+    }
+
+    /**
+     * Удаляет уведомление
+     * @private
+     */
     remove(notification) {
-        notification.style.animation = 'slideOut 0.3s ease';
-        setTimeout(() => notification.remove(), 300);
+        if (notification && notification.parentNode) {
+            notification.remove();
+        }
     }
 
-    success(message) {
-        this.show(message, 'success');
+    /**
+     * Экранирует HTML спецсимволы
+     * @private
+     */
+    escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 
-    error(message) {
-        this.show(message, 'error');
+    /**
+     * Показывает успешное уведомление
+     * @param {string} message - Сообщение
+     * @param {Object} options - Опции
+     */
+    success(message, options = {}) {
+        this.show(message, 'success', options);
     }
 
-    warning(message) {
-        this.show(message, 'warning');
+    /**
+     * Показывает уведомление об ошибке
+     * @param {string} message - Сообщение
+     * @param {Object} options - Опции
+     */
+    error(message, options = {}) {
+        this.show(message, 'error', options);
     }
 
-    info(message) {
-        this.show(message, 'info');
+    /**
+     * Показывает предупреждение
+     * @param {string} message - Сообщение
+     * @param {Object} options - Опции
+     */
+    warning(message, options = {}) {
+        this.show(message, 'warning', options);
+    }
+
+    /**
+     * Показывает информационное уведомление
+     * @param {string} message - Сообщение
+     * @param {Object} options - Опции
+     */
+    info(message, options = {}) {
+        this.show(message, 'info', options);
+    }
+
+    /**
+     * Очищает все уведомления
+     */
+    clearAll() {
+        if (this.container) {
+            this.container.innerHTML = '';
+        }
+        this.queue = [];
+        this.isShowing = false;
     }
 }
 
