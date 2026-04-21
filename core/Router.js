@@ -5,15 +5,27 @@
  * Поддерживает динамическую загрузку страниц и middleware (права доступа).
  * 
  * @module Router
- * @version 3.0.1
+ * @version 3.1.0
  * @changes
- * - Добавлены отладочные логи и обработка случая, когда loader возвращает null.
- * - Улучшена обработка ошибок при загрузке страницы.
+ * - Добавлена защита от циклических редиректов
+ * - Улучшена обработка ошибок при загрузке модулей
+ * - Добавлены методы back() и forward()
+ * - Ленивая загрузка PermissionManager (избегаем циклических зависимостей)
  */
 
 import { AppState } from './AppState.js';
 import { EventBus } from './EventBus.js';
-import { PermissionManager } from './PermissionManager.js';
+
+// Ленивый импорт PermissionManager (избегаем циклических зависимостей)
+let PermissionManager = null;
+
+async function getPermissionManager() {
+    if (!PermissionManager) {
+        const module = await import('./PermissionManager.js');
+        PermissionManager = module.PermissionManager;
+    }
+    return PermissionManager;
+}
 
 class RouterClass {
     constructor() {
@@ -21,6 +33,9 @@ class RouterClass {
         this.middlewares = [];
         this.currentRoute = null;
         this.defaultRoute = '/inventory';
+        this._navigating = false;
+        this._lastNavigateTime = 0;
+        this._redirectCount = 0;
         
         console.log('[Router] Initialized, default route:', this.defaultRoute);
         
@@ -35,8 +50,14 @@ class RouterClass {
      * @param {string} config.title - Заголовок страницы
      * @param {Function} config.loader - Функция загрузки компонента
      * @param {string[]} config.permissions - Требуемые права
+     * @returns {RouterClass} Для цепочки вызовов
      */
     register(path, config) {
+        if (!path || !config || !config.title) {
+            console.error('[Router] Invalid route registration:', { path, config });
+            return this;
+        }
+        
         console.log('[Router] Registering route:', path, config.title);
         this.routes.set(path, {
             ...config,
@@ -47,8 +68,15 @@ class RouterClass {
     
     /**
      * Добавляет middleware для проверки перед загрузкой маршрута
+     * @param {Function} middleware - Функция middleware
+     * @returns {RouterClass} Для цепочки вызовов
      */
     use(middleware) {
+        if (typeof middleware !== 'function') {
+            console.error('[Router] Middleware must be a function');
+            return this;
+        }
+        
         console.log('[Router] Adding middleware');
         this.middlewares.push(middleware);
         return this;
@@ -67,37 +95,97 @@ class RouterClass {
     
     /**
      * Навигация на указанный путь
+     * @param {string} path - Путь для перехода
+     * @param {Object} options - Опции { replace, silent }
+     * @returns {Promise<void>}
      */
-    async navigate(path, options = { replace: false }) {
-        console.log('[Router] navigate() called with path:', path);
+    async navigate(path, options = { replace: false, silent: false }) {
+        // Защита от параллельной навигации
+        if (this._navigating) {
+            console.warn('[Router] Navigation already in progress, skipping:', path);
+            return;
+        }
+        
+        // Защита от слишком частой навигации
+        const now = Date.now();
+        if (now - this._lastNavigateTime < 100) {
+            console.warn('[Router] Navigation too frequent, skipping:', path);
+            return;
+        }
+        this._lastNavigateTime = now;
+        
+        this._navigating = true;
+        
+        try {
+            await this._doNavigate(path, options);
+        } finally {
+            this._navigating = false;
+        }
+    }
+    
+    /**
+     * Внутренний метод навигации
+     * @private
+     */
+    async _doNavigate(path, options) {
+        console.log('[Router] Navigating to:', path);
+        
+        // Защита от циклических редиректов
+        this._redirectCount++;
+        if (this._redirectCount > 10) {
+            console.error('[Router] Too many redirects, stopping at:', path);
+            this._redirectCount = 0;
+            EventBus.emit('router:error', { 
+                error: new Error('Too many redirects'),
+                path 
+            });
+            return;
+        }
         
         const route = this.routes.get(path);
         
         if (!route) {
             console.warn(`[Router] Route not found: ${path}, redirecting to ${this.defaultRoute}`);
-            return this.navigate(this.defaultRoute);
+            this._redirectCount = 0;
+            return this.navigate(this.defaultRoute, { replace: true });
         }
         
         // Проверяем middleware
         for (const middleware of this.middlewares) {
-            const result = await middleware(route);
-            if (result === false) {
-                console.warn(`[Router] Middleware blocked route: ${path}`);
+            try {
+                const result = await middleware(route, path);
+                if (result === false) {
+                    console.warn(`[Router] Middleware blocked route: ${path}`);
+                    this._redirectCount = 0;
+                    return;
+                }
+                if (typeof result === 'string') {
+                    console.log(`[Router] Middleware redirecting to: ${result}`);
+                    return this.navigate(result, { replace: true });
+                }
+            } catch (error) {
+                console.error('[Router] Middleware error:', error);
+                EventBus.emit('router:error', { error, route, path });
+                this._redirectCount = 0;
                 return;
-            }
-            if (typeof result === 'string') {
-                console.log(`[Router] Middleware redirecting to: ${result}`);
-                return this.navigate(result);
             }
         }
         
         // Проверяем права доступа
         if (route.permissions && route.permissions.length > 0) {
-            const hasPermission = route.permissions.some(p => PermissionManager.can(p));
-            if (!hasPermission) {
-                console.warn(`[Router] Access denied to ${path}, missing permissions:`, route.permissions);
-                EventBus.emit('router:access-denied', { route, path });
-                return;
+            try {
+                const permManager = await getPermissionManager();
+                const hasPermission = route.permissions.some(p => permManager.can(p));
+                
+                if (!hasPermission) {
+                    console.warn(`[Router] Access denied to ${path}, missing permissions:`, route.permissions);
+                    EventBus.emit('router:access-denied', { route, path });
+                    this._redirectCount = 0;
+                    return;
+                }
+            } catch (error) {
+                console.error('[Router] Permission check error:', error);
+                // В случае ошибки проверки прав — не блокируем навигацию
             }
         }
         
@@ -105,7 +193,7 @@ class RouterClass {
         const hashPath = path.startsWith('/') ? path.slice(1) : path;
         if (options.replace) {
             window.location.replace(`#${hashPath}`);
-        } else if (window.location.hash.slice(1) !== hashPath) {
+        } else if (window.location.hash.slice(1) !== hashPath && !options.silent) {
             window.location.hash = hashPath;
         }
         
@@ -116,7 +204,7 @@ class RouterClass {
         
         // Загружаем страницу
         AppState.set('isLoading', true);
-        EventBus.emit('router:before-load', { route });
+        EventBus.emit('router:before-load', { route, path });
         
         try {
             const container = document.getElementById('page-container');
@@ -135,33 +223,65 @@ class RouterClass {
                     throw new Error(`Loader for ${route.path} returned null or undefined`);
                 }
                 
+                if (typeof component.mount !== 'function') {
+                    throw new Error(`Component for ${route.path} has no mount() method`);
+                }
+                
                 console.log('[Router] Mounting component...');
                 await component.mount();
                 console.log('[Router] Component mounted successfully');
             } else {
                 console.warn('[Router] No loader defined for route:', route.path);
+                container.innerHTML = '<div class="empty-state">Страница в разработке</div>';
             }
             
-            EventBus.emit('router:after-load', { route });
+            EventBus.emit('router:after-load', { route, path });
+            this._redirectCount = 0;
+            
         } catch (error) {
             console.error('[Router] Failed to load route:', error);
-            EventBus.emit('router:error', { route, error });
+            EventBus.emit('router:error', { route, path, error });
             
             // Показываем ошибку в контейнере
             const container = document.getElementById('page-container');
             if (container) {
                 container.innerHTML = `
-                    <div class="error-state" style="padding: 40px; text-align: center;">
-                        <div style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;">⚠️</div>
-                        <h3 style="margin-bottom: 12px; color: var(--color-text);">Ошибка загрузки страницы</h3>
-                        <p style="color: var(--color-text-secondary); margin-bottom: 8px;">${error.message}</p>
-                        <button class="btn-primary" onclick="location.reload()" style="margin-top: 16px;">Обновить</button>
+                    <div class="error-state">
+                        <div class="error-state-icon">⚠️</div>
+                        <h3>Ошибка загрузки страницы</h3>
+                        <p>${this.escapeHtml(error.message)}</p>
+                        <button class="btn-primary" onclick="location.reload()">Обновить</button>
                     </div>
                 `;
             }
         } finally {
             AppState.set('isLoading', false);
         }
+    }
+    
+    /**
+     * Экранирует HTML спецсимволы
+     * @private
+     */
+    escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+    
+    /**
+     * Перейти назад в истории
+     */
+    back() {
+        window.history.back();
+    }
+    
+    /**
+     * Перейти вперед в истории
+     */
+    forward() {
+        window.history.forward();
     }
     
     /**
@@ -174,16 +294,27 @@ class RouterClass {
     
     /**
      * Получить текущий маршрут
+     * @returns {Object|null}
      */
     getCurrentRoute() {
-        return this.currentRoute;
+        return this.currentRoute ? { ...this.currentRoute } : null;
     }
     
     /**
      * Получить все зарегистрированные маршруты
+     * @returns {Array}
      */
     getRoutes() {
-        return Array.from(this.routes.values());
+        return Array.from(this.routes.values()).map(r => ({ ...r }));
+    }
+    
+    /**
+     * Проверить, существует ли маршрут
+     * @param {string} path
+     * @returns {boolean}
+     */
+    hasRoute(path) {
+        return this.routes.has(path);
     }
 }
 
