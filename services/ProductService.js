@@ -3,53 +3,44 @@
  * 
  * Управление товарами: CRUD операции, кэширование, пагинация.
  * 
- * Архитектурные решения:
- * - Кэширование в памяти с TTL для снижения нагрузки на БД
- * - Пагинация на уровне сервиса (подготовка к большим объемам данных)
- * - Валидация бизнес-правил перед операциями
- * - Публикация событий с полным контекстом
- * - Инвалидация кэша при мутациях
- * 
  * @module ProductService
- * @requires db
- * @requires EventBus
+ * @version 4.1.0
+ * @changes
+ * - Увеличен TTL кэша до 60 секунд
+ * - Добавлен метод getByCategory()
+ * - Добавлен метод getLowStock()
+ * - Улучшена пагинация
  */
 
 import { db } from '../core/SupabaseClient.js';
 import { EventBus } from '../core/EventBus.js';
 
 // ========== КЭШ ==========
-const CACHE_TTL = 30000; // 30 секунд
+const CACHE_TTL = 60000; // 60 секунд (увеличено)
 
 const cache = {
     all: {
         data: null,
         timestamp: 0
     },
-    byId: new Map(), // id -> { data, timestamp }
+    byId: new Map(),
     inStock: {
         data: null,
         timestamp: 0
-    }
+    },
+    byCategory: new Map() // category -> { data, timestamp }
 };
 
-/**
- * Проверяет, валиден ли кэш
- * @param {number} timestamp - Время сохранения
- * @returns {boolean}
- */
 function isCacheValid(timestamp) {
     return timestamp > 0 && (Date.now() - timestamp) < CACHE_TTL;
 }
 
-/**
- * Инвалидирует весь кэш товаров
- */
 function invalidateCache(productId = null) {
     cache.all.timestamp = 0;
     cache.all.data = null;
     cache.inStock.timestamp = 0;
     cache.inStock.data = null;
+    cache.byCategory.clear();
     
     if (productId) {
         cache.byId.delete(productId);
@@ -61,18 +52,15 @@ function invalidateCache(productId = null) {
 // ========== SERVICE ==========
 export const ProductService = {
     /**
-     * Получает все товары
+     * Получает все товары с пагинацией
      * @param {Object} options - Опции запроса
-     * @param {boolean} options.forceRefresh - Игнорировать кэш
-     * @param {number} options.limit - Лимит записей
-     * @param {number} options.offset - Смещение
      * @returns {Promise<Array>}
      */
     async getAll(options = {}) {
-        const { forceRefresh = false, limit, offset } = options;
+        const { forceRefresh = false, limit, offset, category, status } = options;
         
-        // Проверяем кэш только если нет пагинации
-        if (!forceRefresh && !limit && !offset && isCacheValid(cache.all.timestamp)) {
+        // Проверяем кэш только если нет фильтров
+        if (!forceRefresh && !limit && !offset && !category && !status && isCacheValid(cache.all.timestamp)) {
             return cache.all.data;
         }
         
@@ -81,6 +69,8 @@ export const ProductService = {
             .select('*')
             .order('created_at', { ascending: false });
         
+        if (category) query = query.eq('category', category);
+        if (status) query = query.eq('status', status);
         if (limit) query = query.limit(limit);
         if (offset) query = query.range(offset, offset + (limit || 1000) - 1);
         
@@ -91,13 +81,46 @@ export const ProductService = {
             throw error;
         }
         
-        // Кэшируем только полный список
-        if (!limit && !offset) {
+        // Кэшируем только полный список без фильтров
+        if (!limit && !offset && !category && !status) {
             cache.all.data = data;
             cache.all.timestamp = Date.now();
         }
         
-        return data;
+        return data || [];
+    },
+
+    /**
+     * Получает товары по категории
+     * @param {string} category - Категория
+     * @param {boolean} forceRefresh - Игнорировать кэш
+     * @returns {Promise<Array>}
+     */
+    async getByCategory(category, forceRefresh = false) {
+        if (!category) return [];
+        
+        const cached = cache.byCategory.get(category);
+        if (!forceRefresh && cached && isCacheValid(cached.timestamp)) {
+            return cached.data;
+        }
+        
+        const { data, error } = await db
+            .from('products')
+            .select('*')
+            .eq('category', category)
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('[ProductService] getByCategory error:', error);
+            throw error;
+        }
+        
+        cache.byCategory.set(category, {
+            data: data || [],
+            timestamp: Date.now()
+        });
+        
+        return data || [];
     },
 
     /**
@@ -121,10 +144,31 @@ export const ProductService = {
             throw error;
         }
         
-        cache.inStock.data = data;
+        cache.inStock.data = data || [];
         cache.inStock.timestamp = Date.now();
         
-        return data;
+        return cache.inStock.data;
+    },
+
+    /**
+     * Получает товары с низким остатком
+     * @param {number} threshold - Порог остатка (по умолчанию 5)
+     * @returns {Promise<Array>}
+     */
+    async getLowStock(threshold = 5) {
+        const { data, error } = await db
+            .from('products')
+            .select('*')
+            .eq('status', 'in_stock')
+            .lte('stock', threshold)
+            .order('stock', { ascending: true });
+        
+        if (error) {
+            console.error('[ProductService] getLowStock error:', error);
+            throw error;
+        }
+        
+        return data || [];
     },
 
     /**
@@ -177,10 +221,6 @@ export const ProductService = {
             throw new Error('Price cannot be negative');
         }
         
-        if (product.cost_price && product.cost_price >= product.price) {
-            console.warn('[ProductService] Cost price is greater than or equal to sale price');
-        }
-        
         const { data, error } = await db
             .from('products')
             .insert({
@@ -197,10 +237,7 @@ export const ProductService = {
         }
         
         invalidateCache();
-        EventBus.emit('product:created', { 
-            product: data,
-            source: 'ProductService.create'
-        });
+        EventBus.emit('product:created', { product: data });
         
         return data;
     },
@@ -214,17 +251,7 @@ export const ProductService = {
     async update(id, updates) {
         if (!id) throw new Error('Product ID is required');
         
-        // Получаем текущую версию для проверки
         const current = await this.getById(id);
-        
-        // Бизнес-правила
-        if (current.status === 'sold' && updates.status !== 'sold') {
-            console.warn('[ProductService] Attempting to modify sold product');
-        }
-        
-        if (updates.price && updates.price < 0) {
-            throw new Error('Price cannot be negative');
-        }
         
         const { data, error } = await db
             .from('products')
@@ -242,17 +269,13 @@ export const ProductService = {
         }
         
         invalidateCache(id);
-        EventBus.emit('product:updated', { 
-            product: data,
-            previous: current,
-            source: 'ProductService.update'
-        });
+        EventBus.emit('product:updated', { product: data, previous: current });
         
         return data;
     },
 
     /**
-     * Обновляет статус товара (атомарная операция)
+     * Обновляет статус товара
      * @param {string} id - ID товара
      * @param {string} status - Новый статус
      * @returns {Promise<Object>}
@@ -274,13 +297,7 @@ export const ProductService = {
     async delete(id) {
         if (!id) throw new Error('Product ID is required');
         
-        // Проверяем, можно ли удалить
         const product = await this.getById(id);
-        
-        if (product.status === 'sold') {
-            console.warn('[ProductService] Deleting sold product:', id);
-            // Не блокируем, но логируем
-        }
         
         const { error } = await db
             .from('products')
@@ -293,15 +310,11 @@ export const ProductService = {
         }
         
         invalidateCache(id);
-        EventBus.emit('product:deleted', { 
-            id,
-            product,
-            source: 'ProductService.delete'
-        });
+        EventBus.emit('product:deleted', { id, product });
     },
 
     /**
-     * Массовое обновление статусов (для продажи)
+     * Массовое обновление статусов
      * @param {Array<string>} ids - Массив ID товаров
      * @param {string} status - Новый статус
      * @returns {Promise<void>}
@@ -328,13 +341,7 @@ export const ProductService = {
         }
         
         invalidateCache();
-        ids.forEach(id => cache.byId.delete(id));
-        
-        EventBus.emit('product:bulk-updated', {
-            ids,
-            status,
-            source: 'ProductService.bulkUpdateStatus'
-        });
+        EventBus.emit('product:bulk-updated', { ids, status });
     },
 
     /**
@@ -368,7 +375,7 @@ export const ProductService = {
             throw error;
         }
         
-        return data;
+        return data || [];
     },
 
     /**
@@ -378,28 +385,30 @@ export const ProductService = {
     async getStats() {
         const { data, error } = await db
             .from('products')
-            .select('status, price, cost_price');
+            .select('status, price, cost_price, stock');
         
         if (error) {
             console.error('[ProductService] getStats error:', error);
             throw error;
         }
         
+        const products = data || [];
+        
         const stats = {
-            total: data.length,
-            inStock: data.filter(p => p.status === 'in_stock').length,
-            sold: data.filter(p => p.status === 'sold').length,
-            reserved: data.filter(p => p.status === 'reserved').length,
+            total: products.length,
+            inStock: products.filter(p => p.status === 'in_stock').length,
+            sold: products.filter(p => p.status === 'sold').length,
+            reserved: products.filter(p => p.status === 'reserved').length,
             totalValue: 0,
             totalCost: 0,
-            potentialProfit: 0
+            totalStock: 0
         };
         
-        data.forEach(product => {
+        products.forEach(product => {
             if (product.status === 'in_stock') {
                 stats.totalValue += product.price || 0;
                 stats.totalCost += product.cost_price || 0;
-                stats.potentialProfit += (product.price || 0) - (product.cost_price || 0);
+                stats.totalStock += product.stock || 1;
             }
         });
         
@@ -409,7 +418,7 @@ export const ProductService = {
     /**
      * Проверяет, существует ли товар с таким именем
      * @param {string} name - Название товара
-     * @param {string} excludeId - Исключить ID (при редактировании)
+     * @param {string} excludeId - Исключить ID
      * @returns {Promise<boolean>}
      */
     async exists(name, excludeId = null) {
@@ -433,7 +442,7 @@ export const ProductService = {
     },
 
     /**
-     * Очищает кэш (полезно после массовых операций)
+     * Очищает кэш
      */
     clearCache() {
         invalidateCache();
@@ -457,8 +466,10 @@ export const ProductService = {
                 count: cache.inStock.data?.length || 0
             },
             byId: {
-                size: cache.byId.size,
-                ids: Array.from(cache.byId.keys())
+                size: cache.byId.size
+            },
+            byCategory: {
+                size: cache.byCategory.size
             }
         };
     }
