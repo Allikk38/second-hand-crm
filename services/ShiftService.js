@@ -3,13 +3,6 @@
  * 
  * Управление кассовыми сменами: открытие, закрытие, статистика.
  * 
- * Архитектурные решения:
- * - Атомарные операции открытия/закрытия смены
- * - Автоматический подсчет статистики при закрытии
- * - Валидация состояния перед закрытием
- * - Кэширование текущей смены для быстрого доступа
- * - Публикация событий с полным контекстом для аудита
- * 
  * @module ShiftService
  * @requires db
  * @requires EventBus
@@ -20,13 +13,9 @@ import { db } from '../core/SupabaseClient.js';
 import { EventBus } from '../core/EventBus.js';
 import { SaleService } from './SaleService.js';
 
-// ========== КЭШ ТЕКУЩЕЙ СМЕНЫ ==========
-let currentShiftCache = new Map(); // userId -> shift
+// Кэш текущей смены
+let currentShiftCache = new Map();
 
-/**
- * Инвалидирует кэш смены для пользователя
- * @param {string} userId - ID пользователя
- */
 function invalidateShiftCache(userId) {
     if (userId) {
         currentShiftCache.delete(userId);
@@ -35,22 +24,19 @@ function invalidateShiftCache(userId) {
     }
 }
 
-// ========== SERVICE ==========
 export const ShiftService = {
     /**
      * Получает текущую открытую смену пользователя
      * @param {string} userId - ID пользователя
-     * @param {boolean} forceRefresh - Игнорировать кэш
      * @returns {Promise<Object|null>}
      */
-    async getCurrentShift(userId, forceRefresh = false) {
+    async getCurrentShift(userId) {
         if (!userId) {
             throw new Error('User ID is required');
         }
         
-        if (!forceRefresh && currentShiftCache.has(userId)) {
+        if (currentShiftCache.has(userId)) {
             const cached = currentShiftCache.get(userId);
-            // Проверяем, не устарел ли кэш (5 минут)
             if (Date.now() - cached.timestamp < 300000) {
                 return cached.data;
             }
@@ -92,7 +78,6 @@ export const ShiftService = {
      * Открывает новую смену
      * @param {string} userId - ID пользователя
      * @param {Object} options - Дополнительные опции
-     * @param {number} options.initialCash - Начальный остаток в кассе
      * @returns {Promise<Object>}
      */
     async openShift(userId, options = {}) {
@@ -100,7 +85,6 @@ export const ShiftService = {
             throw new Error('User ID is required');
         }
         
-        // Проверяем, нет ли уже открытой смены
         const existingShift = await this.getCurrentShift(userId);
         if (existingShift) {
             throw new Error('User already has an open shift');
@@ -142,8 +126,6 @@ export const ShiftService = {
      * Закрывает смену
      * @param {string} shiftId - ID смены
      * @param {Object} options - Опции закрытия
-     * @param {number} options.finalCash - Конечный остаток в кассе
-     * @param {string} options.notes - Заметки к смене
      * @returns {Promise<Object>}
      */
     async closeShift(shiftId, options = {}) {
@@ -151,7 +133,6 @@ export const ShiftService = {
             throw new Error('Shift ID is required');
         }
         
-        // Получаем смену
         const { data: shift, error: fetchError } = await db
             .from('shifts')
             .select('*')
@@ -167,19 +148,12 @@ export const ShiftService = {
             throw new Error('Shift is already closed');
         }
         
-        // Получаем статистику продаж за смену
         const salesStats = await SaleService.getStats({ shiftId });
-        
-        // Получаем список продаж для детализации
         const sales = await SaleService.getByShift(shiftId);
         
-        // Рассчитываем ожидаемый остаток в кассе
         const expectedCash = (shift.initial_cash || 0) + salesStats.totalRevenue;
-        
         const { finalCash = expectedCash, notes = '' } = options;
         const now = new Date().toISOString();
-        
-        // Рассчитываем расхождение
         const discrepancy = finalCash - expectedCash;
         
         const { data, error } = await db
@@ -194,8 +168,7 @@ export const ShiftService = {
                 total_revenue: salesStats.totalRevenue,
                 total_profit: salesStats.totalProfit,
                 status: 'closed',
-                updated_at: now,
-                closed_by: shift.user_id // Можно добавить audit trail
+                updated_at: now
             })
             .eq('id', shiftId)
             .select()
@@ -222,7 +195,6 @@ export const ShiftService = {
             source: 'ShiftService.closeShift'
         });
         
-        // Если есть расхождение, публикуем отдельное событие для аудита
         if (Math.abs(discrepancy) > 0.01) {
             EventBus.emit('shift:discrepancy', {
                 shiftId,
@@ -267,7 +239,7 @@ export const ShiftService = {
             throw error;
         }
         
-        return data;
+        return data || [];
     },
 
     /**
@@ -280,7 +252,6 @@ export const ShiftService = {
             throw new Error('Shift ID is required');
         }
         
-        // Получаем смену
         const { data: shift, error: shiftError } = await db
             .from('shifts')
             .select(`
@@ -298,10 +269,8 @@ export const ShiftService = {
             throw shiftError;
         }
         
-        // Получаем продажи за смену
         const sales = await SaleService.getByShift(shiftId);
         
-        // Группируем продажи по способам оплаты
         const paymentBreakdown = {};
         sales.forEach(sale => {
             const method = sale.payment_method || 'unknown';
@@ -317,7 +286,7 @@ export const ShiftService = {
     },
 
     /**
-     * Получает все открытые смены (для администратора)
+     * Получает все открытые смены
      * @returns {Promise<Array>}
      */
     async getAllOpenShifts() {
@@ -338,7 +307,7 @@ export const ShiftService = {
             throw error;
         }
         
-        return data;
+        return data || [];
     },
 
     /**
@@ -354,9 +323,17 @@ export const ShiftService = {
             .select('total_revenue, total_profit, sales_count, discrepancy')
             .not('closed_at', 'is', null);
         
-        if (startDate) query = query.gte('opened_at', startDate);
-        if (endDate) query = query.lte('closed_at', endDate);
-        if (userId) query = query.eq('user_id', userId);
+        if (startDate) {
+            const start = typeof startDate === 'string' ? startDate : startDate.toISOString();
+            query = query.gte('opened_at', start);
+        }
+        if (endDate) {
+            const end = typeof endDate === 'string' ? endDate : endDate.toISOString();
+            query = query.lte('closed_at', end);
+        }
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
         
         const { data, error } = await query;
         
@@ -365,8 +342,10 @@ export const ShiftService = {
             throw error;
         }
         
+        const shiftsData = data || [];
+        
         const stats = {
-            totalShifts: data.length,
+            totalShifts: shiftsData.length,
             totalRevenue: 0,
             totalProfit: 0,
             totalSales: 0,
@@ -375,7 +354,7 @@ export const ShiftService = {
             averageProfit: 0
         };
         
-        data.forEach(shift => {
+        shiftsData.forEach(shift => {
             stats.totalRevenue += shift.total_revenue || 0;
             stats.totalProfit += shift.total_profit || 0;
             stats.totalSales += shift.sales_count || 0;
@@ -391,80 +370,6 @@ export const ShiftService = {
     },
 
     /**
-     * Принудительно закрывает смену (административная функция)
-     * @param {string} shiftId - ID смены
-     * @param {string} reason - Причина принудительного закрытия
-     * @returns {Promise<Object>}
-     */
-    async forceCloseShift(shiftId, reason) {
-        if (!shiftId) {
-            throw new Error('Shift ID is required');
-        }
-        
-        if (!reason) {
-            throw new Error('Reason is required for force close');
-        }
-        
-        const now = new Date().toISOString();
-        
-        const { data, error } = await db
-            .from('shifts')
-            .update({
-                closed_at: now,
-                status: 'force_closed',
-                notes: `FORCE CLOSED: ${reason}`,
-                updated_at: now
-            })
-            .eq('id', shiftId)
-            .select()
-            .single();
-        
-        if (error) {
-            console.error('[ShiftService] forceCloseShift error:', error);
-            throw error;
-        }
-        
-        invalidateShiftCache(data.user_id);
-        
-        EventBus.emit('shift:force-closed', {
-            shift: data,
-            reason,
-            source: 'ShiftService.forceCloseShift'
-        });
-        
-        return data;
-    },
-
-    /**
-     * Обновляет заметки к смене
-     * @param {string} shiftId - ID смены
-     * @param {string} notes - Новые заметки
-     * @returns {Promise<Object>}
-     */
-    async updateNotes(shiftId, notes) {
-        if (!shiftId) {
-            throw new Error('Shift ID is required');
-        }
-        
-        const { data, error } = await db
-            .from('shifts')
-            .update({
-                notes,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', shiftId)
-            .select()
-            .single();
-        
-        if (error) {
-            console.error('[ShiftService] updateNotes error:', error);
-            throw error;
-        }
-        
-        return data;
-    },
-
-    /**
      * Получает текущую статистику по открытой смене
      * @param {string} shiftId - ID смены
      * @returns {Promise<Object>}
@@ -474,23 +379,26 @@ export const ShiftService = {
             throw new Error('Shift ID is required');
         }
         
-        const [shift, salesStats] = await Promise.all([
-            db.from('shifts').select('*').eq('id', shiftId).single(),
-            SaleService.getStats({ shiftId })
-        ]);
+        const { data: shift, error: shiftError } = await db
+            .from('shifts')
+            .select('*')
+            .eq('id', shiftId)
+            .single();
         
-        if (shift.error) {
-            console.error('[ShiftService] getCurrentShiftStats error:', shift.error);
-            throw shift.error;
+        if (shiftError) {
+            console.error('[ShiftService] getCurrentShiftStats error:', shiftError);
+            throw shiftError;
         }
         
-        const expectedCash = (shift.data.initial_cash || 0) + salesStats.totalRevenue;
+        const salesStats = await SaleService.getStats({ shiftId });
+        
+        const expectedCash = (shift.initial_cash || 0) + salesStats.totalRevenue;
         
         return {
             shiftId,
-            openedAt: shift.data.opened_at,
-            duration: Date.now() - new Date(shift.data.opened_at).getTime(),
-            initialCash: shift.data.initial_cash || 0,
+            openedAt: shift.opened_at,
+            duration: Date.now() - new Date(shift.opened_at).getTime(),
+            initialCash: shift.initial_cash || 0,
             salesCount: salesStats.count,
             totalRevenue: salesStats.totalRevenue,
             totalProfit: salesStats.totalProfit,
@@ -501,7 +409,7 @@ export const ShiftService = {
     },
 
     /**
-     * Очищает кэш смен (полезно при разлогине)
+     * Очищает кэш смен
      */
     clearCache() {
         invalidateShiftCache();
