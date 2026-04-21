@@ -1,27 +1,28 @@
-// ========================================
-// FILE: ./modules/inventory/InventoryPage.js
-// ========================================
-
 /**
  * Inventory Page Controller
  * 
  * Контроллер страницы склада. Координирует работу компонентов:
- * - InventoryState (состояние)
  * - InventoryTable (таблица)
  * - InventoryFilters (фильтры)
  * - InventoryStats (статистика)
  * 
+ * В новой архитектуре:
+ * - Использует единый Store вместо InventoryState
+ * - Прямое реактивное связывание через Store.state
+ * - Чистые функции для фильтрации и сортировки
+ * - Автоматическое сохранение фильтров через Store плагин
+ * 
  * @module InventoryPage
- * @version 4.3.2
+ * @version 5.0.0
  * @changes
- * - Исправлено: при ошибке загрузки НЕ очищается существующий список товаров
- * - Улучшена обработка ошибок в loadProducts()
- * - Добавлен cache-busting для ProductService
- * - Принудительный сброс кэша при удалении
+ * - Полный переход на Store (удален InventoryState)
+ * - Упрощена логика загрузки данных
+ * - Фильтрация и сортировка вынесены в чистые функции
+ * - Добавлена поддержка пакетных обновлений через Store.batch()
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
-import { InventoryState } from './inventoryState.js';
+import { Store } from '../../core/Store.js';
 import { InventoryTable } from './InventoryTable.js';
 import { InventoryFilters } from './InventoryFilters.js';
 import { InventoryStats } from './InventoryStats.js';
@@ -34,7 +35,7 @@ import { getCategoryName } from '../../utils/categorySchema.js';
 // ========== КОНСТАНТЫ ==========
 const PAGE_SIZE = 20;
 const STORAGE_KEY = 'inventory_filters';
-const CACHE_BUST = 'v=4.3.2';
+const CACHE_BUST = 'v=5.0.0';
 
 // Ленивая загрузка ProductService с cache-busting
 let ProductService = null;
@@ -46,6 +47,99 @@ async function getProductService() {
     return ProductService;
 }
 
+// ========== ЧИСТЫЕ ФУНКЦИИ ФИЛЬТРАЦИИ И СОРТИРОВКИ ==========
+
+/**
+ * Применяет фильтры к массиву товаров
+ * @param {Array} products - Массив товаров
+ * @param {Object} filters - Объект фильтров
+ * @returns {Array} Отфильтрованный массив
+ */
+function applyFilters(products, filters) {
+    const { searchQuery, selectedCategory, selectedStatus } = filters;
+    
+    return products.filter(p => {
+        // Поиск по названию и атрибутам
+        if (searchQuery) {
+            const query = searchQuery.toLowerCase();
+            const nameMatch = p.name.toLowerCase().includes(query);
+            const attrMatch = p.attributes && Object.values(p.attributes).some(
+                v => v && v.toString().toLowerCase().includes(query)
+            );
+            if (!nameMatch && !attrMatch) return false;
+        }
+        
+        // Фильтр по категории
+        if (selectedCategory && p.category !== selectedCategory) {
+            return false;
+        }
+        
+        // Фильтр по статусу
+        if (selectedStatus && p.status !== selectedStatus) {
+            return false;
+        }
+        
+        return true;
+    });
+}
+
+/**
+ * Применяет сортировку к массиву товаров
+ * @param {Array} products - Массив товаров
+ * @param {string} sortBy - Строка сортировки ('created_at-desc')
+ * @returns {Array} Отсортированный массив
+ */
+function applySort(products, sortBy) {
+    const [field, direction] = sortBy.split('-');
+    
+    return [...products].sort((a, b) => {
+        let aVal, bVal;
+        
+        switch (field) {
+            case 'price':
+                aVal = a.price || 0;
+                bVal = b.price || 0;
+                break;
+            case 'name':
+                aVal = a.name || '';
+                bVal = b.name || '';
+                break;
+            case 'created_at':
+            default:
+                aVal = new Date(a.created_at || 0).getTime();
+                bVal = new Date(b.created_at || 0).getTime();
+        }
+        
+        if (direction === 'asc') {
+            return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+        } else {
+            return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+        }
+    });
+}
+
+/**
+ * Группирует товары по категориям и подсчитывает количество
+ * @param {Array} products - Массив товаров
+ * @returns {Array} Массив категорий с количеством
+ */
+function buildCategoriesFromProducts(products) {
+    const categoryCounts = new Map();
+    
+    products.forEach(p => {
+        const cat = p.category || 'other';
+        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+    });
+    
+    return Array.from(categoryCounts.entries())
+        .map(([value, count]) => ({
+            value,
+            label: getCategoryName(value),
+            count
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+}
+
 export class InventoryPage extends BaseComponent {
     constructor(container) {
         super(container);
@@ -54,9 +148,6 @@ export class InventoryPage extends BaseComponent {
         this.table = null;
         this.filters = null;
         this.stats = null;
-        
-        // Таймеры
-        this.searchDebounceTimer = null;
         
         // Права (проверяем после загрузки)
         this.permissions = {
@@ -67,6 +158,9 @@ export class InventoryPage extends BaseComponent {
         
         // Отписки
         this.unsubscribers = [];
+        
+        // Флаг первичной загрузки
+        this.isFirstLoad = true;
     }
     
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
@@ -84,10 +178,10 @@ export class InventoryPage extends BaseComponent {
         await this.loadProducts(true);
         
         // Строим категории для фильтра
-        await this.buildCategories();
+        await this.updateCategories();
         
-        const state = InventoryState.getState();
-        const selectedCount = state.selectedCount || 0;
+        const inventory = Store.state.inventory;
+        const selectedCount = inventory.selectedIds.size;
         const hasSelected = selectedCount > 0;
         
         return `
@@ -118,7 +212,7 @@ export class InventoryPage extends BaseComponent {
                     <div class="bulk-actions-panel" data-ref="bulkActions">
                         <span class="selected-count">Выбрано: ${selectedCount}</span>
                         <button class="btn-secondary" data-ref="selectAllBtn">
-                            ${state.isAllSelected ? 'Снять выделение' : 'Выбрать все'}
+                            ${inventory.isAllSelected ? 'Снять выделение' : 'Выбрать все'}
                         </button>
                         ${this.permissions.canDelete ? `
                             <button class="btn-danger" data-ref="bulkDeleteBtn">
@@ -169,7 +263,7 @@ export class InventoryPage extends BaseComponent {
      */
     updatePermissions() {
         this.permissions = {
-            canCreate: PermissionManager.can('products:2026-04-21') || PermissionManager.can('products:create'),
+            canCreate: PermissionManager.can('products:create') || PermissionManager.can('products:2026-04-21'),
             canEdit: PermissionManager.can('products:edit'),
             canDelete: PermissionManager.can('products:delete')
         };
@@ -214,7 +308,7 @@ export class InventoryPage extends BaseComponent {
         this.addDomListener('clearSelectionBtn', 'click', () => this.handleClearSelection());
         this.addDomListener('bulkDeleteBtn', 'click', () => this.handleBulkDelete());
         
-        // Подписка на события сервиса
+        // Подписка на события сервиса через EventBus
         this.unsubscribers.push(
             this.subscribe('product:created', () => this.refresh()),
             this.subscribe('product:updated', () => this.refresh()),
@@ -222,144 +316,74 @@ export class InventoryPage extends BaseComponent {
             this.subscribe('product:bulk-updated', () => this.refresh())
         );
         
-        // Подписка на изменения состояния для обновления массовых действий
+        // Подписка на изменения Store для инвентаря
         this.unsubscribers.push(
-            InventoryState.subscribe((changes) => {
-                if (changes.some(c => c.key === 'selectedIds' || c.key === 'isAllSelected')) {
-                    this.updateBulkActions();
-                }
-            })
+            Store.subscribe('inventory.selectedIds', () => this.updateBulkActions()),
+            Store.subscribe('inventory.isAllSelected', () => this.updateBulkActions())
         );
     }
     
     // ========== ЗАГРУЗКА ДАННЫХ ==========
     
     async loadProducts(reset = false) {
-        const state = InventoryState.getState();
+        const inventory = Store.state.inventory;
         
         // Предотвращаем параллельную загрузку
-        if (state.isLoading) return;
-        
-        // Сохраняем текущие товары на случай ошибки
-        const previousProducts = state.products;
-        const previousPage = state.page;
-        const previousHasMore = state.hasMore;
+        if (inventory.isLoading) return;
         
         if (reset) {
-            InventoryState.setMultiple({
-                page: 0,
-                hasMore: true
+            Store.batch(() => {
+                inventory.page = 0;
+                inventory.hasMore = true;
             });
-            InventoryState.clearSelection();
+            Store.clearInventorySelection();
         }
         
-        InventoryState.set('isLoading', true);
+        inventory.isLoading = true;
         
         try {
             const ProductService = await getProductService();
             const options = {
                 limit: PAGE_SIZE,
-                offset: reset ? 0 : state.page * PAGE_SIZE
+                offset: reset ? 0 : inventory.page * PAGE_SIZE
             };
             
             let products = await ProductService.getAll(options);
             
-            // Применяем клиентскую фильтрацию и сортировку
-            products = this.applyFilters(products);
-            products = this.applySort(products);
+            // Применяем фильтрацию и сортировку (чистые функции)
+            const filters = {
+                searchQuery: inventory.searchQuery,
+                selectedCategory: inventory.selectedCategory,
+                selectedStatus: inventory.selectedStatus
+            };
+            
+            products = applyFilters(products, filters);
+            products = applySort(products, inventory.sortBy);
             
             if (reset) {
-                InventoryState.set('products', products);
+                inventory.products = products;
             } else {
-                const currentProducts = InventoryState.get('products');
-                InventoryState.set('products', [...currentProducts, ...products]);
+                inventory.products = [...inventory.products, ...products];
             }
             
-            InventoryState.set('hasMore', products.length === PAGE_SIZE);
-            InventoryState.set('page', (reset ? 0 : state.page) + 1);
+            inventory.hasMore = products.length === PAGE_SIZE;
+            inventory.page = (reset ? 0 : inventory.page) + 1;
             
-            // Обновляем счетчик
+            // Обновляем счетчик отфильтрованных товаров
             await this.updateFilteredCount();
+            
+            // Если это первая загрузка, сохраняем фильтры
+            if (this.isFirstLoad) {
+                this.isFirstLoad = false;
+            }
             
         } catch (error) {
             console.error('[InventoryPage] Load error:', error);
-            
-            // ВАЖНО: НЕ очищаем список при ошибке!
-            // Восстанавливаем предыдущее состояние
-            if (reset && previousProducts.length > 0) {
-                InventoryState.setMultiple({
-                    products: previousProducts,
-                    page: previousPage,
-                    hasMore: previousHasMore
-                });
-            }
-            
-            // Показываем уведомление
             Notification.error('Ошибка при загрузке товаров. Проверьте подключение.');
-            
-            // Пробрасываем ошибку дальше для логирования
             throw error;
         } finally {
-            InventoryState.set('isLoading', false);
+            inventory.isLoading = false;
         }
-    }
-    
-    applyFilters(products) {
-        const state = InventoryState.getState();
-        
-        return products.filter(p => {
-            // Поиск
-            if (state.searchQuery) {
-                const query = state.searchQuery.toLowerCase();
-                const nameMatch = p.name.toLowerCase().includes(query);
-                const attrMatch = p.attributes && Object.values(p.attributes).some(
-                    v => v && v.toString().toLowerCase().includes(query)
-                );
-                if (!nameMatch && !attrMatch) return false;
-            }
-            
-            // Категория
-            if (state.selectedCategory && p.category !== state.selectedCategory) {
-                return false;
-            }
-            
-            // Статус
-            if (state.selectedStatus && p.status !== state.selectedStatus) {
-                return false;
-            }
-            
-            return true;
-        });
-    }
-    
-    applySort(products) {
-        const state = InventoryState.getState();
-        const [field, direction] = state.sortBy.split('-');
-        
-        return [...products].sort((a, b) => {
-            let aVal, bVal;
-            
-            switch (field) {
-                case 'price':
-                    aVal = a.price || 0;
-                    bVal = b.price || 0;
-                    break;
-                case 'name':
-                    aVal = a.name || '';
-                    bVal = b.name || '';
-                    break;
-                case 'created_at':
-                default:
-                    aVal = new Date(a.created_at || 0).getTime();
-                    bVal = new Date(b.created_at || 0).getTime();
-            }
-            
-            if (direction === 'asc') {
-                return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-            } else {
-                return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-            }
-        });
     }
     
     async loadMore() {
@@ -370,36 +394,23 @@ export class InventoryPage extends BaseComponent {
         try {
             await this.loadProducts(true);
             await this.stats?.update();
-            await this.buildCategories();
+            await this.updateCategories();
         } catch (error) {
-            // Ошибка уже обработана в loadProducts
             console.error('[InventoryPage] Refresh error:', error);
         }
     }
     
-    async buildCategories() {
+    async updateCategories() {
         try {
             const ProductService = await getProductService();
             const products = await ProductService.getAll({ forceRefresh: false });
             
-            const categoryCounts = new Map();
-            products.forEach(p => {
-                const cat = p.category || 'other';
-                categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
-            });
+            const categories = buildCategoriesFromProducts(products);
+            Store.state.inventory.categories = categories;
             
-            const categories = Array.from(categoryCounts.entries())
-                .map(([value, count]) => ({
-                    value,
-                    label: getCategoryName(value),
-                    count
-                }))
-                .sort((a, b) => a.label.localeCompare(b.label));
-            
-            InventoryState.set('categories', categories);
             this.filters?.updateCategories(categories);
         } catch (error) {
-            console.error('[InventoryPage] Build categories error:', error);
+            console.error('[InventoryPage] Update categories error:', error);
         }
     }
     
@@ -407,8 +418,15 @@ export class InventoryPage extends BaseComponent {
         try {
             const ProductService = await getProductService();
             const products = await ProductService.getAll({ forceRefresh: false });
-            const filtered = this.applyFilters(products);
-            InventoryState.set('filteredCount', filtered.length);
+            
+            const filters = {
+                searchQuery: Store.state.inventory.searchQuery,
+                selectedCategory: Store.state.inventory.selectedCategory,
+                selectedStatus: Store.state.inventory.selectedStatus
+            };
+            
+            const filtered = applyFilters(products, filters);
+            Store.state.inventory.filteredCount = filtered.length;
         } catch (error) {
             console.error('[InventoryPage] Update filtered count error:', error);
         }
@@ -417,39 +435,41 @@ export class InventoryPage extends BaseComponent {
     // ========== ОБРАБОТЧИКИ ФИЛЬТРОВ ==========
     
     async handleSearch(query) {
-        InventoryState.set('searchQuery', query);
+        Store.state.inventory.searchQuery = query;
         this.saveFilters();
         await this.loadProducts(true);
     }
     
     async handleCategoryChange(category) {
-        InventoryState.set('selectedCategory', category);
+        Store.state.inventory.selectedCategory = category;
         this.saveFilters();
         await this.loadProducts(true);
     }
     
     async handleStatusChange(status) {
-        InventoryState.set('selectedStatus', status);
+        Store.state.inventory.selectedStatus = status;
         this.saveFilters();
         await this.loadProducts(true);
     }
     
     async handleSortChange(sort) {
-        InventoryState.set('sortBy', sort);
+        Store.state.inventory.sortBy = sort;
         this.saveFilters();
         
-        const products = InventoryState.get('products');
-        const sorted = this.applySort(products);
-        InventoryState.set('products', sorted);
+        const inventory = Store.state.inventory;
+        const sorted = applySort(inventory.products, sort);
+        inventory.products = sorted;
     }
     
     async handleClearFilters() {
-        InventoryState.setMultiple({
-            searchQuery: '',
-            selectedCategory: '',
-            selectedStatus: '',
-            sortBy: 'created_at-desc'
+        Store.batch(() => {
+            const inventory = Store.state.inventory;
+            inventory.searchQuery = '';
+            inventory.selectedCategory = '';
+            inventory.selectedStatus = '';
+            inventory.sortBy = 'created_at-desc';
         });
+        
         this.saveFilters();
         await this.loadProducts(true);
     }
@@ -457,16 +477,17 @@ export class InventoryPage extends BaseComponent {
     // ========== ОБРАБОТЧИКИ ВЫДЕЛЕНИЯ ==========
     
     handleSelectAll() {
-        const state = InventoryState.getState();
-        if (state.isAllSelected) {
-            InventoryState.clearSelection();
+        const inventory = Store.state.inventory;
+        
+        if (inventory.isAllSelected) {
+            Store.clearInventorySelection();
         } else {
-            InventoryState.selectAll();
+            Store.selectAllInventory();
         }
     }
     
     handleClearSelection() {
-        InventoryState.clearSelection();
+        Store.clearInventorySelection();
     }
     
     updateBulkActions() {
@@ -485,16 +506,14 @@ export class InventoryPage extends BaseComponent {
     }
     
     async handleEdit(id) {
-        const state = InventoryState.getState();
-        const product = state.products.find(p => p.id === id);
+        const product = Store.state.inventory.products.find(p => p.id === id);
         if (product) {
             this.openProductForm(product);
         }
     }
     
     async handleDelete(id) {
-        const state = InventoryState.getState();
-        const product = state.products.find(p => p.id === id);
+        const product = Store.state.inventory.products.find(p => p.id === id);
         if (!product) return;
         
         const confirmed = await ConfirmDialog.show({
@@ -509,13 +528,11 @@ export class InventoryPage extends BaseComponent {
         
         try {
             const ProductService = await getProductService();
-            // Принудительно сбрасываем кэш перед удалением
             ProductService.clearCache();
             
             await ProductService.delete(id);
             Notification.success(`Товар "${product.name}" удален`);
             
-            // Сбрасываем кэш после удаления
             ProductService.clearCache();
             
             await this.refresh();
@@ -526,7 +543,7 @@ export class InventoryPage extends BaseComponent {
     }
     
     async handleBulkDelete() {
-        const selectedCount = InventoryState.getSelectedCount();
+        const selectedCount = Store.getInventorySelectedCount();
         if (selectedCount === 0) return;
         
         const confirmed = await ConfirmDialog.show({
@@ -543,13 +560,13 @@ export class InventoryPage extends BaseComponent {
             const ProductService = await getProductService();
             ProductService.clearCache();
             
-            const ids = InventoryState.getSelectedIds();
+            const ids = Store.getInventorySelectedIds();
             for (const id of ids) {
                 await ProductService.delete(id);
             }
             
             Notification.success(`Удалено ${selectedCount} товаров`);
-            InventoryState.clearSelection();
+            Store.clearInventorySelection();
             
             ProductService.clearCache();
             
@@ -568,8 +585,16 @@ export class InventoryPage extends BaseComponent {
             
             const ProductService = await getProductService();
             const products = await ProductService.getAll({ forceRefresh: false });
-            const filtered = this.applyFilters(products);
-            const sorted = this.applySort(filtered);
+            
+            const inventory = Store.state.inventory;
+            const filters = {
+                searchQuery: inventory.searchQuery,
+                selectedCategory: inventory.selectedCategory,
+                selectedStatus: inventory.selectedStatus
+            };
+            
+            const filtered = applyFilters(products, filters);
+            const sorted = applySort(filtered, inventory.sortBy);
             
             const csv = this.generateCSV(sorted);
             this.downloadCSV(csv, `inventory_${new Date().toISOString().split('T')[0]}.csv`);
@@ -627,12 +652,12 @@ export class InventoryPage extends BaseComponent {
     // ========== ФИЛЬТРЫ В LOCALSTORAGE ==========
     
     saveFilters() {
-        const state = InventoryState.getState();
+        const inventory = Store.state.inventory;
         const filters = {
-            searchQuery: state.searchQuery,
-            selectedCategory: state.selectedCategory,
-            selectedStatus: state.selectedStatus,
-            sortBy: state.sortBy
+            searchQuery: inventory.searchQuery,
+            selectedCategory: inventory.selectedCategory,
+            selectedStatus: inventory.selectedStatus,
+            sortBy: inventory.sortBy
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(filters));
     }
@@ -642,7 +667,14 @@ export class InventoryPage extends BaseComponent {
             const stored = localStorage.getItem(STORAGE_KEY);
             if (stored) {
                 const filters = JSON.parse(stored);
-                InventoryState.setMultiple(filters);
+                const inventory = Store.state.inventory;
+                
+                Store.batch(() => {
+                    inventory.searchQuery = filters.searchQuery || '';
+                    inventory.selectedCategory = filters.selectedCategory || '';
+                    inventory.selectedStatus = filters.selectedStatus || '';
+                    inventory.sortBy = filters.sortBy || 'created_at-desc';
+                });
             }
         } catch (error) {
             console.error('[InventoryPage] Restore filters error:', error);
@@ -652,10 +684,6 @@ export class InventoryPage extends BaseComponent {
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
-        if (this.searchDebounceTimer) {
-            clearTimeout(this.searchDebounceTimer);
-        }
-        
         this.unsubscribers.forEach(unsub => unsub());
         this.unsubscribers = [];
         
