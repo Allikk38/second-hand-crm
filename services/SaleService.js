@@ -4,9 +4,12 @@
  * Управление продажами: создание, отмена, статистика.
  * 
  * @module SaleService
- * @requires db
- * @requires EventBus
- * @requires ProductService
+ * @version 4.1.0
+ * @changes
+ * - Добавлена проверка остатков на складе
+ * - Добавлен метод getTodaySales()
+ * - Добавлен метод getSalesBySeller()
+ * - Улучшена валидация
  */
 
 import { db } from '../core/SupabaseClient.js';
@@ -25,12 +28,23 @@ export const SaleService = {
         if (!paymentMethod) throw new Error('Payment method is required');
         if (total < 0) throw new Error('Total cannot be negative');
         
-        const itemIds = items.map(item => item.id);
-        const products = await ProductService.getAll();
+        // Проверяем количество товаров
+        for (const item of items) {
+            if (item.quantity <= 0) {
+                throw new Error(`Invalid quantity for product ${item.id}`);
+            }
+        }
         
+        // Получаем актуальные данные о товарах
+        const products = await ProductService.getAll({ forceRefresh: true });
+        
+        // Проверяем доступность и остатки
         const unavailableItems = [];
+        const stockIssues = [];
+        
         items.forEach(item => {
             const product = products.find(p => p.id === item.id);
+            
             if (!product) {
                 unavailableItems.push({ id: item.id, reason: 'not_found' });
             } else if (product.status !== 'in_stock') {
@@ -38,6 +52,13 @@ export const SaleService = {
                     id: item.id, 
                     name: product.name, 
                     reason: `status_${product.status}` 
+                });
+            } else if (product.stock !== undefined && product.stock < item.quantity) {
+                stockIssues.push({
+                    id: item.id,
+                    name: product.name,
+                    available: product.stock,
+                    requested: item.quantity
                 });
             }
         });
@@ -48,6 +69,13 @@ export const SaleService = {
             throw error;
         }
         
+        if (stockIssues.length > 0) {
+            const error = new Error('Insufficient stock for some items');
+            error.details = stockIssues;
+            throw error;
+        }
+        
+        // Рассчитываем себестоимость и прибыль
         const itemsWithCost = items.map(item => {
             const product = products.find(p => p.id === item.id);
             return {
@@ -63,6 +91,7 @@ export const SaleService = {
         const profit = total - totalCost;
         const margin = total > 0 ? (profit / total * 100) : 0;
         
+        // Создаем продажу
         const { data: sale, error } = await db
             .from('sales')
             .insert({
@@ -83,15 +112,31 @@ export const SaleService = {
             throw error;
         }
         
-        await ProductService.bulkUpdateStatus(itemIds, 'sold');
+        // Обновляем статусы товаров
+        const productIds = items.map(item => item.id);
+        await ProductService.bulkUpdateStatus(productIds, 'sold');
+        
+        // Обновляем остатки (если есть поле stock)
+        for (const item of items) {
+            const product = products.find(p => p.id === item.id);
+            if (product && product.stock !== undefined) {
+                await db
+                    .from('products')
+                    .update({ 
+                        stock: product.stock - item.quantity,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', item.id);
+            }
+        }
+        
         ProductService.clearCache();
         
         EventBus.emit('sale:completed', {
             sale,
             items: itemsWithCost,
             profit,
-            margin,
-            source: 'SaleService.create'
+            margin
         });
         
         return sale;
@@ -99,12 +144,11 @@ export const SaleService = {
 
     /**
      * Получает продажи за период
-     * @param {string} startDate - ISO строка даты
-     * @param {string} endDate - ISO строка даты
+     * @param {string|Date} startDate - Начало периода
+     * @param {string|Date} endDate - Конец периода
      * @returns {Promise<Array>}
      */
     async getByPeriod(startDate, endDate) {
-        // Приводим даты к ISO строке если переданы объекты Date
         const start = typeof startDate === 'string' ? startDate : startDate.toISOString();
         const end = typeof endDate === 'string' ? endDate : endDate.toISOString();
         
@@ -132,6 +176,20 @@ export const SaleService = {
     },
 
     /**
+     * Получает продажи за сегодня
+     * @returns {Promise<Array>}
+     */
+    async getTodaySales() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        return this.getByPeriod(today, tomorrow);
+    },
+
+    /**
      * Получает продажи по смене
      * @param {string} shiftId - ID смены
      * @returns {Promise<Array>}
@@ -145,6 +203,37 @@ export const SaleService = {
         
         if (error) {
             console.error('[SaleService] getByShift error:', error);
+            throw error;
+        }
+        
+        return data || [];
+    },
+
+    /**
+     * Получает продажи по продавцу
+     * @param {string} userId - ID пользователя
+     * @param {Object} options - Опции { startDate, endDate }
+     * @returns {Promise<Array>}
+     */
+    async getBySeller(userId, options = {}) {
+        let query = db
+            .from('sales')
+            .select('*, shifts!inner(user_id)')
+            .eq('shifts.user_id', userId);
+        
+        if (options.startDate) {
+            const start = typeof options.startDate === 'string' ? options.startDate : options.startDate.toISOString();
+            query = query.gte('created_at', start);
+        }
+        if (options.endDate) {
+            const end = typeof options.endDate === 'string' ? options.endDate : options.endDate.toISOString();
+            query = query.lte('created_at', end);
+        }
+        
+        const { data, error } = await query.order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('[SaleService] getBySeller error:', error);
             throw error;
         }
         
@@ -195,8 +284,23 @@ export const SaleService = {
             throw new Error(`Sale with id ${id} not found`);
         }
         
+        // Возвращаем товары в статус "в наличии"
         const itemIds = sale.items.map(item => item.id);
         await ProductService.bulkUpdateStatus(itemIds, 'in_stock');
+        
+        // Восстанавливаем остатки
+        for (const item of sale.items) {
+            const product = await ProductService.getById(item.id);
+            if (product && product.stock !== undefined) {
+                await db
+                    .from('products')
+                    .update({ 
+                        stock: product.stock + item.quantity,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', item.id);
+            }
+        }
         
         const { error } = await db
             .from('sales')
@@ -210,10 +314,7 @@ export const SaleService = {
         
         ProductService.clearCache();
         
-        EventBus.emit('sale:cancelled', {
-            sale,
-            source: 'SaleService.cancel'
-        });
+        EventBus.emit('sale:cancelled', { sale });
     },
 
     /**
@@ -222,7 +323,7 @@ export const SaleService = {
      * @returns {Promise<Object>}
      */
     async getStats(options = {}) {
-        const { startDate, endDate, shiftId } = options;
+        const { startDate, endDate, shiftId, userId } = options;
         
         let query = db.from('sales').select('total, discount, profit, payment_method, created_at');
         
@@ -236,6 +337,9 @@ export const SaleService = {
         }
         if (shiftId) {
             query = query.eq('shift_id', shiftId);
+        }
+        if (userId) {
+            query = query.eq('shifts.user_id', userId);
         }
         
         const { data, error } = await query;
