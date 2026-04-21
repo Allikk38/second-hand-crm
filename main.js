@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./main.js
+// ========================================
+
 /**
  * Second Hand CRM - Application Entry Point
  * 
@@ -5,8 +9,10 @@
  * и запускает приложение.
  * 
  * @module main
- * @version 4.1.0
+ * @version 4.2.0
  * @changes
+ * - Исправлена проверка прав доступа для страниц: теперь доступ открывается при наличии любого права из семейства (view, create, edit, delete)
+ * - Устранена проблема блокировки страницы склада при отсутствии явного права `products:view`
  * - Добавлена обработка ошибок загрузки модулей
  * - Добавлена проверка сети
  * - Вынесена регистрация маршрутов
@@ -182,34 +188,47 @@ class Application {
      * Регистрирует все маршруты приложения
      */
     registerRoutes() {
-        // Страница склада
+        // Страница склада (доступна при любых правах на товары)
         Router.register('/inventory', {
             title: 'Склад',
             loader: async (container) => {
                 const { InventoryPage } = await import('./modules/inventory/InventoryPage.js');
                 return new InventoryPage(container);
             },
-            permissions: ['products:view']
+            permissions: [
+                'products:view',
+                'products:create',
+                'products:edit',
+                'products:delete'
+            ]
         });
         
-        // Страница кассы
+        // Страница кассы (доступна при любых правах на продажи)
         Router.register('/cashier', {
             title: 'Касса',
             loader: async (container) => {
                 const { CashierPage } = await import('./modules/cashier/CashierPage.js');
                 return new CashierPage(container);
             },
-            permissions: ['sales:create']
+            permissions: [
+                'sales:view',
+                'sales:create',
+                'sales:delete',
+                'sales:edit'
+            ]
         });
         
-        // Страница отчетов
+        // Страница отчетов (доступна при любых правах на отчеты)
         Router.register('/reports', {
             title: 'Отчеты',
             loader: async (container) => {
                 const { ReportsPage } = await import('./modules/reports/ReportsPage.js');
                 return new ReportsPage(container);
             },
-            permissions: ['reports:view']
+            permissions: [
+                'reports:view',
+                'reports:export'
+            ]
         });
         
         // Редирект с корня на склад
