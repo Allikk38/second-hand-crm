@@ -1,133 +1,122 @@
+// ========================================
+// FILE: ./modules/cashier/ProductGrid.js
+// ========================================
+
 /**
  * Product Grid Component
  * 
- * Сетка товаров с группировкой по категориям.
- * Поддерживает режимы отображения "сетка" и "список".
+ * Отображает сетку товаров с группировкой по категориям.
+ * Поддерживает быстрое добавление в корзину.
+ * 
+ * Архитектурные решения:
+ * - Полный переход на глобальный `Store`.
+ * - Локальное управление раскрытием/скрытием категорий.
+ * - Оптимизированный рендеринг через обновление DOM, а не полную перерисовку.
  * 
  * @module ProductGrid
- * @version 1.0.0
+ * @version 5.0.0
+ * @changes
+ * - Удалена зависимость от `CashierState`.
+ * - Подключение к `Store.state.cashier`.
+ * - Обновлен дизайн карточек.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
-import { CashierState } from './cashierState.js';
+import { Store } from '../../core/Store.js';
 import { formatMoney } from '../../utils/formatters.js';
-import { getCategoryName, formatAttributes } from '../../utils/categorySchema.js';
+import { getCategoryName } from '../../utils/categorySchema.js';
 
 export class ProductGrid extends BaseComponent {
     constructor(container, options = {}) {
         super(container);
         this.options = {
             onAddToCart: null,
-            onQuickView: null,
             ...options
         };
         
-        this.unsubscribeState = null;
+        // Локальное состояние: какие категории развернуты
+        this.expandedCategories = new Set();
+        
+        this.unsubscribers = [];
     }
-    
+
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
     
     async render() {
-        const state = CashierState.getState();
-        const filteredProducts = state.filteredProducts;
-        const popularProducts = state.popularProducts || [];
-        const recentlyAdded = state.recentlyAdded || [];
-        const viewMode = state.viewMode;
-        const expandedCategories = state.expandedCategories;
-        const searchQuery = state.searchQuery;
+        const cashier = Store.state.cashier;
+        const filteredProducts = cashier.filteredProducts || [];
         
-        const groupedProducts = this.groupByCategory(filteredProducts);
+        // Группируем товары по категориям
+        const grouped = this.groupByCategory(filteredProducts);
         
+        // Если есть поисковый запрос - разворачиваем все категории
+        if (cashier.searchQuery) {
+            Object.keys(grouped).forEach(cat => this.expandedCategories.add(cat));
+        }
+
         return `
-            <div class="product-grid-container">
-                ${popularProducts.length > 0 ? `
-                    <div class="quick-items-section">
-                        <h4>🔥 Часто продаваемые</h4>
-                        <div class="quick-items-scroll">
-                            ${popularProducts.slice(0, 8).map(p => this.renderQuickItem(p)).join('')}
-                        </div>
+            <div class="products-grid-wrapper">
+                ${Object.keys(grouped).length === 0 ? this.renderEmpty() : `
+                    <div class="products-container">
+                        ${Object.entries(grouped).map(([category, products]) => 
+                            this.renderCategoryGroup(category, products)
+                        ).join('')}
                     </div>
-                ` : ''}
-                
-                ${recentlyAdded.length > 0 && !searchQuery ? `
-                    <div class="quick-items-section">
-                        <h4>🆕 Недавние</h4>
-                        <div class="quick-items-scroll">
-                            ${recentlyAdded.map(p => this.renderQuickItem(p)).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-                
-                <div class="products-container">
-                    ${Object.entries(groupedProducts).map(([category, products]) => 
-                        this.renderCategoryGroup(category, products, expandedCategories.has(category) || !!searchQuery, viewMode)
-                    ).join('')}
-                    
-                    ${filteredProducts.length === 0 ? this.renderEmptyState(searchQuery) : ''}
-                </div>
+                `}
             </div>
         `;
     }
-    
-    // ========== РЕНДЕРИНГ ==========
-    
-    renderCategoryGroup(category, products, isExpanded, viewMode) {
+
+    renderEmpty() {
+        const cashier = Store.state.cashier;
+        return `
+            <div class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <p>${cashier.searchQuery ? 'Товары не найдены' : 'Нет товаров в наличии'}</p>
+                ${cashier.searchQuery ? `
+                    <button class="btn-secondary" data-ref="clearSearchBtn">Сбросить поиск</button>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    renderCategoryGroup(category, products) {
+        const isExpanded = this.expandedCategories.has(category);
         const categoryName = getCategoryName(category);
         
         return `
-            <div class="category-group ${isExpanded ? 'expanded' : 'collapsed'}" data-category="${category}">
-                <div class="category-header" data-ref="categoryHeader" data-category="${category}">
-                    <button class="btn-icon btn-toggle" data-action="toggleCategory" data-category="${category}">
-                        ${isExpanded ? '▼' : '▶'}
-                    </button>
+            <div class="category-group" data-category="${category}">
+                <div class="category-header" data-action="toggleCategory" data-category="${category}">
+                    <span class="category-toggle">${isExpanded ? '▼' : '▶'}</span>
                     <span class="category-name">${categoryName}</span>
                     <span class="category-count">${products.length}</span>
                 </div>
-                <div class="category-products ${viewMode}" data-category="${category}">
-                    ${isExpanded ? products.map(p => this.renderProductCard(p)).join('') : ''}
-                </div>
+                ${isExpanded ? `
+                    <div class="category-products grid">
+                        ${products.map(p => this.renderProductCard(p)).join('')}
+                    </div>
+                ` : ''}
             </div>
         `;
     }
-    
+
     renderProductCard(product) {
         const isAvailable = product.status === 'in_stock';
-        const attributesText = formatAttributes(product.category, product.attributes);
-        const margin = product.cost_price && product.price 
-            ? ((product.price - product.cost_price) / product.price * 100).toFixed(0)
-            : null;
         
         return `
-            <div class="product-card ${!isAvailable ? 'product-sold' : ''}" 
-                 data-id="${product.id}"
-                 data-ref="productCard"
-                 title="${this.escapeHtml(product.name)}"
-            >
+            <div class="product-card ${!isAvailable ? 'product-sold' : ''}" data-id="${product.id}" data-action="addToCart">
                 <div class="product-photo">
                     ${product.photo_url 
                         ? `<img src="${product.photo_url}" alt="${this.escapeHtml(product.name)}" loading="lazy">` 
                         : '<span class="photo-placeholder">📦</span>'
                     }
-                    ${margin && margin > 30 ? `
-                        <span class="product-badge profit-badge">🔥</span>
-                    ` : ''}
                 </div>
                 <div class="product-info">
-                    <h4 class="product-name">${this.escapeHtml(product.name)}</h4>
-                    ${attributesText ? `
-                        <span class="product-attributes">${this.escapeHtml(attributesText)}</span>
-                    ` : ''}
+                    <div class="product-name" title="${this.escapeHtml(product.name)}">${this.escapeHtml(product.name)}</div>
                     <div class="product-footer">
                         <span class="product-price">${formatMoney(product.price)}</span>
                         ${isAvailable ? `
-                            <button 
-                                class="btn-add-to-cart" 
-                                data-action="addToCart" 
-                                data-id="${product.id}"
-                                title="Добавить в корзину"
-                            >
-                                +
-                            </button>
+                            <button class="btn-add-to-cart" data-action="addToCart" data-id="${product.id}">+</button>
                         ` : `
                             <span class="status-badge sold">Продан</span>
                         `}
@@ -136,110 +125,128 @@ export class ProductGrid extends BaseComponent {
             </div>
         `;
     }
-    
-    renderQuickItem(product) {
-        const isAvailable = product.status === 'in_stock';
-        
-        return `
-            <div class="quick-item ${!isAvailable ? 'sold' : ''}" 
-                 data-id="${product.id}"
-                 data-action="addToCart"
-            >
-                <div class="quick-item-photo">
-                    ${product.photo_url 
-                        ? `<img src="${product.photo_url}" alt="${this.escapeHtml(product.name)}">` 
-                        : '📦'
-                    }
-                </div>
-                <span class="quick-item-price">${formatMoney(product.price)}</span>
-            </div>
-        `;
-    }
-    
-    renderEmptyState(searchQuery) {
-        return `
-            <div class="empty-state">
-                <div class="empty-state-icon">🔍</div>
-                <p>${searchQuery ? 'Товары не найдены. Попробуйте изменить поисковый запрос.' : 'Нет товаров в наличии.'}</p>
-                ${searchQuery ? `
-                    <button class="btn-secondary" data-ref="clearSearchEmptyBtn">
-                        Сбросить поиск
-                    </button>
-                ` : ''}
-            </div>
-        `;
-    }
-    
+
     // ========== ПРИВЯЗКА СОБЫТИЙ ==========
     
     attachEvents() {
-        // Переключение категорий
+        // Делегирование событий
         this.container.addEventListener('click', (e) => {
-            const toggleBtn = e.target.closest('[data-action="toggleCategory"]');
-            if (toggleBtn) {
-                const category = toggleBtn.dataset.category;
-                CashierState.toggleCategory(category);
+            // Переключение категории
+            const header = e.target.closest('[data-action="toggleCategory"]');
+            if (header) {
+                const category = header.dataset.category;
+                this.toggleCategory(category);
                 return;
             }
             
+            // Добавление в корзину
             const addBtn = e.target.closest('[data-action="addToCart"]');
             if (addBtn) {
                 const id = addBtn.dataset.id;
-                if (this.options.onAddToCart) {
-                    this.options.onAddToCart(id);
+                const product = this.findProductById(id);
+                if (product && this.options.onAddToCart) {
+                    this.options.onAddToCart(product);
                 }
                 return;
             }
-            
-            const card = e.target.closest('[data-ref="productCard"]');
-            if (card && !e.target.closest('[data-action]')) {
-                const id = card.dataset.id;
-                if (this.options.onQuickView) {
-                    this.options.onQuickView(id);
-                }
-            }
         });
         
-        // Кнопка очистки поиска в пустом состоянии
-        this.addDomListener('clearSearchEmptyBtn', 'click', () => {
-            CashierState.set('searchQuery', '');
-            CashierState.filterProducts();
+        // Кнопка сброса поиска (в пустом состоянии)
+        this.addDomListener('clearSearchBtn', 'click', () => {
+            Store.state.cashier.searchQuery = '';
+            // CashierApp сам применит фильтры и вызовет обновление
         });
         
-        // Подписка на состояние
-        this.unsubscribeState = CashierState.subscribe((changes) => {
-            const shouldUpdate = changes.some(c => 
-                ['filteredProducts', 'viewMode', 'expandedCategories', 'popularProducts', 'recentlyAdded'].includes(c.key)
-            );
-            if (shouldUpdate) {
-                this.update();
-            }
-        });
+        // Подписка на изменения товаров в Store
+        this.unsubscribers.push(
+            Store.subscribe('cashier.filteredProducts', () => this.refresh())
+        );
     }
-    
+
     // ========== УТИЛИТЫ ==========
     
     groupByCategory(products) {
         const groups = {};
-        
         products.forEach(p => {
             const cat = p.category || 'other';
-            if (!groups[cat]) {
-                groups[cat] = [];
-            }
+            if (!groups[cat]) groups[cat] = [];
             groups[cat].push(p);
         });
-        
-        return Object.fromEntries(
-            Object.entries(groups).sort((a, b) => b[1].length - a[1].length)
-        );
+        return groups;
     }
-    
+
+    findProductById(id) {
+        return Store.state.cashier.products.find(p => p.id === id);
+    }
+
+    toggleCategory(category) {
+        if (this.expandedCategories.has(category)) {
+            this.expandedCategories.delete(category);
+        } else {
+            this.expandedCategories.add(category);
+        }
+        this.refresh();
+    }
+
+    /**
+     * Обновляет отображение без полной перерисовки (если возможно)
+     */
+    refresh() {
+        const cashier = Store.state.cashier;
+        const filteredProducts = cashier.filteredProducts || [];
+        const grouped = this.groupByCategory(filteredProducts);
+        
+        const container = this.element?.querySelector('.products-grid-wrapper');
+        if (!container) return;
+        
+        if (Object.keys(grouped).length === 0) {
+            container.innerHTML = this.renderEmpty();
+            this.cacheRefs();
+            return;
+        }
+        
+        // Проверяем, изменилась ли структура категорий
+        const existingGroups = container.querySelectorAll('.category-group');
+        if (existingGroups.length !== Object.keys(grouped).length) {
+            // Полная перерисовка
+            this.update();
+            return;
+        }
+        
+        // Обновляем только содержимое развернутых категорий
+        Object.entries(grouped).forEach(([category, products]) => {
+            const group = container.querySelector(`.category-group[data-category="${category}"]`);
+            if (!group) return;
+            
+            const isExpanded = this.expandedCategories.has(category);
+            const toggle = group.querySelector('.category-toggle');
+            const productsContainer = group.querySelector('.category-products');
+            
+            if (toggle) {
+                toggle.textContent = isExpanded ? '▼' : '▶';
+            }
+            
+            if (productsContainer) {
+                if (isExpanded) {
+                    productsContainer.innerHTML = products.map(p => this.renderProductCard(p)).join('');
+                } else {
+                    productsContainer.innerHTML = '';
+                }
+            }
+            
+            const countEl = group.querySelector('.category-count');
+            if (countEl) {
+                countEl.textContent = products.length;
+            }
+        });
+        
+        this.cacheRefs();
+    }
+
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
-        if (this.unsubscribeState) {
-            this.unsubscribeState();
-        }
+        this.unsubscribers.forEach(u => u());
+        this.unsubscribers = [];
     }
 }
