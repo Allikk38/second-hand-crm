@@ -9,14 +9,11 @@
  * и запускает приложение.
  * 
  * @module main
- * @version 4.2.0
+ * @version 4.2.1
  * @changes
+ * - Добавлен cache-busting параметр к импорту InventoryPage для принудительной загрузки свежей версии
  * - Исправлена проверка прав доступа для страниц: теперь доступ открывается при наличии любого права из семейства (view, create, edit, delete)
  * - Устранена проблема блокировки страницы склада при отсутствии явного права `products:view`
- * - Добавлена обработка ошибок загрузки модулей
- * - Добавлена проверка сети
- * - Вынесена регистрация маршрутов
- * - Добавлен graceful shutdown
  */
 
 // ========== IMPORTS (Core) ==========
@@ -34,6 +31,7 @@ import { Notification } from './modules/common/Notification.js';
 // ========== CONSTANTS ==========
 const LOAD_TIMEOUT = 10000; // 10 секунд
 const RETRY_DELAY = 3000; // 3 секунды
+const CACHE_BUST = 'v=4.2.1'; // Для принудительного обновления кэша
 
 // ========== APPLICATION CLASS ==========
 class Application {
@@ -192,7 +190,7 @@ class Application {
         Router.register('/inventory', {
             title: 'Склад',
             loader: async (container) => {
-                const { InventoryPage } = await import('./modules/inventory/InventoryPage.js');
+                const { InventoryPage } = await import(`./modules/inventory/InventoryPage.js?${CACHE_BUST}`);
                 return new InventoryPage(container);
             },
             permissions: [
@@ -207,7 +205,7 @@ class Application {
         Router.register('/cashier', {
             title: 'Касса',
             loader: async (container) => {
-                const { CashierPage } = await import('./modules/cashier/CashierPage.js');
+                const { CashierPage } = await import(`./modules/cashier/CashierPage.js?${CACHE_BUST}`);
                 return new CashierPage(container);
             },
             permissions: [
@@ -222,7 +220,7 @@ class Application {
         Router.register('/reports', {
             title: 'Отчеты',
             loader: async (container) => {
-                const { ReportsPage } = await import('./modules/reports/ReportsPage.js');
+                const { ReportsPage } = await import(`./modules/reports/ReportsPage.js?${CACHE_BUST}`);
                 return new ReportsPage(container);
             },
             permissions: [
@@ -244,6 +242,7 @@ class Application {
         Router.register('/login', {
             title: 'Вход',
             loader: async (container) => {
+                const { LoginForm } = await import(`./modules/auth/LoginForm.js?${CACHE_BUST}`);
                 new LoginForm(container).render();
                 return null;
             }
