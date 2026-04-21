@@ -1,10 +1,16 @@
 /**
- * CSS Reset
+ * CSS Reset - Business Professional
  * 
- * Нормализация и сброс стилей для всех элементов.
- * Основан на modern-normalize с дополнениями.
+ * Минимальный сброс стилей для бизнес-приложений.
+ * Без анимаций, только необходимая нормализация.
  * 
  * @stylesheet reset
+ * @version 4.0.0
+ * @changes
+ * - Убраны все анимации (scroll-behavior, transitions)
+ * - Упрощен скроллбар (без анимаций)
+ * - Убраны декоративные эффекты (selection, focus-visible)
+ * - Оставлена только базовая нормализация
  */
 
 /* ========== BOX SIZING ========== */
@@ -20,7 +26,6 @@ html {
     -webkit-text-size-adjust: 100%;
     -moz-tab-size: 4;
     tab-size: 4;
-    scroll-behavior: smooth;
 }
 
 /* ========== SECTIONS ========== */
@@ -137,19 +142,11 @@ button:disabled,
     cursor: not-allowed;
 }
 
-button:focus:not(:focus-visible),
-[type='button']:focus:not(:focus-visible),
-[type='reset']:focus:not(:focus-visible),
-[type='submit']:focus:not(:focus-visible) {
+button:focus,
+[type='button']:focus,
+[type='reset']:focus,
+[type='submit']:focus {
     outline: none;
-}
-
-button:focus-visible,
-[type='button']:focus-visible,
-[type='reset']:focus-visible,
-[type='submit']:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
 }
 
 ::-moz-focus-inner {
@@ -298,6 +295,7 @@ textarea {
 }
 
 /* ========== SCROLLBAR ========== */
+/* Минимальный, статичный скроллбар без анимаций */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -305,49 +303,26 @@ textarea {
 
 ::-webkit-scrollbar-track {
     background: var(--color-gray-100);
-    border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb {
     background: var(--color-gray-400);
     border-radius: var(--radius-full);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: var(--color-gray-500);
-    background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-corner {
     background: transparent;
 }
 
-/* ========== SELECTION ========== */
-::selection {
-    background-color: var(--color-primary);
-    color: var(--color-white);
+/* ========== БАЗОВАЯ ДОСТУПНОСТЬ ========== */
+/* Только для клавиатурной навигации, без анимаций */
+:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
 }
 
-::-moz-selection {
-    background-color: var(--color-primary);
-    color: var(--color-white);
-}
-
-/* ========== PLACEHOLDER ========== */
+/* ========== ПЛЕЙСХОЛДЕРЫ ========== */
 ::placeholder {
     color: var(--color-text-muted);
     opacity: 1;
-}
-
-/* ========== AUTOFILL ========== */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
-input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 30px var(--color-white) inset !important;
-    box-shadow: 0 0 0 30px var(--color-white) inset !important;
-    -webkit-text-fill-color: var(--color-text) !important;
-    caret-color: var(--color-text);
 }
