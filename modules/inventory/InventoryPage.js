@@ -12,11 +12,13 @@
  * - InventoryStats (статистика)
  * 
  * @module InventoryPage
- * @version 4.2.0
+ * @version 4.3.0
  * @changes
  * - Исправлена ошибка вызова state.getSelectedCount() → state.selectedCount
- * - Улучшена обработка выделения товаров
- * - Добавлена проверка загрузки прав доступа
+ * - Добавлен cache-busting для ProductService
+ * - Улучшена обработка ошибок при загрузке товаров
+ * - Добавлен принудительный сброс кэша при удалении
+ * - Исправлено: после ошибки загрузки товары не пропадают из интерфейса
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -24,7 +26,6 @@ import { InventoryState } from './inventoryState.js';
 import { InventoryTable } from './InventoryTable.js';
 import { InventoryFilters } from './InventoryFilters.js';
 import { InventoryStats } from './InventoryStats.js';
-import { ProductService } from '../../services/ProductService.js';
 import { PermissionManager } from '../../core/PermissionManager.js';
 import { ProductForm } from './ProductForm.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
@@ -34,6 +35,17 @@ import { getCategoryName } from '../../utils/categorySchema.js';
 // ========== КОНСТАНТЫ ==========
 const PAGE_SIZE = 20;
 const STORAGE_KEY = 'inventory_filters';
+const CACHE_BUST = 'v=4.3.0';
+
+// Ленивая загрузка ProductService с cache-busting
+let ProductService = null;
+async function getProductService() {
+    if (!ProductService) {
+        const module = await import(`../../services/ProductService.js?${CACHE_BUST}`);
+        ProductService = module.ProductService;
+    }
+    return ProductService;
+}
 
 export class InventoryPage extends BaseComponent {
     constructor(container) {
@@ -240,6 +252,7 @@ export class InventoryPage extends BaseComponent {
         InventoryState.set('isLoading', true);
         
         try {
+            const ProductService = await getProductService();
             const options = {
                 limit: PAGE_SIZE,
                 offset: state.page * PAGE_SIZE
@@ -267,6 +280,12 @@ export class InventoryPage extends BaseComponent {
         } catch (error) {
             console.error('[InventoryPage] Load error:', error);
             Notification.error('Ошибка при загрузке товаров');
+            
+            // В случае ошибки не оставляем страницу пустой
+            if (reset && state.products.length === 0) {
+                // Если это первая загрузка и произошла ошибка, показываем сообщение
+                InventoryState.set('products', []);
+            }
         } finally {
             InventoryState.set('isLoading', false);
         }
@@ -342,6 +361,7 @@ export class InventoryPage extends BaseComponent {
     
     async buildCategories() {
         try {
+            const ProductService = await getProductService();
             const products = await ProductService.getAll({ forceRefresh: false });
             
             const categoryCounts = new Map();
@@ -367,6 +387,7 @@ export class InventoryPage extends BaseComponent {
     
     async updateFilteredCount() {
         try {
+            const ProductService = await getProductService();
             const products = await ProductService.getAll({ forceRefresh: false });
             const filtered = this.applyFilters(products);
             InventoryState.set('filteredCount', filtered.length);
@@ -471,8 +492,16 @@ export class InventoryPage extends BaseComponent {
         if (!confirmed) return;
         
         try {
+            const ProductService = await getProductService();
+            // Принудительно сбрасываем кэш перед удалением
+            ProductService.clearCache();
+            
             await ProductService.delete(id);
             Notification.success(`Товар "${product.name}" удален`);
+            
+            // Сбрасываем кэш после удаления
+            ProductService.clearCache();
+            
             await this.refresh();
         } catch (error) {
             console.error('[InventoryPage] Delete error:', error);
@@ -495,6 +524,10 @@ export class InventoryPage extends BaseComponent {
         if (!confirmed) return;
         
         try {
+            const ProductService = await getProductService();
+            // Принудительно сбрасываем кэш перед удалением
+            ProductService.clearCache();
+            
             const ids = InventoryState.getSelectedIds();
             for (const id of ids) {
                 await ProductService.delete(id);
@@ -502,6 +535,10 @@ export class InventoryPage extends BaseComponent {
             
             Notification.success(`Удалено ${selectedCount} товаров`);
             InventoryState.clearSelection();
+            
+            // Сбрасываем кэш после удаления
+            ProductService.clearCache();
+            
             await this.refresh();
         } catch (error) {
             console.error('[InventoryPage] Bulk delete error:', error);
@@ -515,6 +552,7 @@ export class InventoryPage extends BaseComponent {
         try {
             Notification.info('Подготовка экспорта...');
             
+            const ProductService = await getProductService();
             const products = await ProductService.getAll({ forceRefresh: false });
             const filtered = this.applyFilters(products);
             const sorted = this.applySort(filtered);
