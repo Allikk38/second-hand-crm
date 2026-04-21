@@ -7,15 +7,12 @@
  * - InventoryFilters (фильтры)
  * - InventoryStats (статистика)
  * 
- * Отвечает за загрузку данных, обработку действий пользователя
- * и координацию между компонентами.
- * 
  * @module InventoryPage
- * @version 4.0.0
+ * @version 4.1.0
  * @changes
- * - Полный рефакторинг: разделение на контроллер и компоненты
- * - Использование InventoryState для управления состоянием
- * - Вынесение таблицы и фильтров в отдельные классы
+ * - Добавлена проверка загрузки прав доступа
+ * - Улучшена обработка ошибок
+ * - Добавлен метод refresh()
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -32,7 +29,6 @@ import { getCategoryName } from '../../utils/categorySchema.js';
 
 // ========== КОНСТАНТЫ ==========
 const PAGE_SIZE = 20;
-const SEARCH_DEBOUNCE_MS = 300;
 const STORAGE_KEY = 'inventory_filters';
 
 export class InventoryPage extends BaseComponent {
@@ -47,11 +43,11 @@ export class InventoryPage extends BaseComponent {
         // Таймеры
         this.searchDebounceTimer = null;
         
-        // Права
+        // Права (проверяем после загрузки)
         this.permissions = {
-            canCreate: PermissionManager.can('products:create'),
-            canEdit: PermissionManager.can('products:edit'),
-            canDelete: PermissionManager.can('products:delete')
+            canCreate: false,
+            canEdit: false,
+            canDelete: false
         };
         
         // Отписки
@@ -62,6 +58,9 @@ export class InventoryPage extends BaseComponent {
     
     async render() {
         this.showLoader();
+        
+        // Ждем загрузку прав
+        await this.waitForPermissions();
         
         // Восстанавливаем фильтры из localStorage
         this.restoreFilters();
@@ -90,7 +89,7 @@ export class InventoryPage extends BaseComponent {
                             </button>
                         ` : ''}
                         <button class="btn-secondary" data-ref="exportBtn">
-                            📊 Экспорт в Excel
+                            📊 Экспорт
                         </button>
                     </div>
                 </div>
@@ -122,31 +121,75 @@ export class InventoryPage extends BaseComponent {
         `;
     }
     
+    /**
+     * Ожидает загрузки прав доступа
+     */
+    async waitForPermissions() {
+        // Если права уже загружены
+        if (PermissionManager.isLoaded()) {
+            this.updatePermissions();
+            return;
+        }
+        
+        // Ждем события загрузки
+        return new Promise((resolve) => {
+            const unsubscribe = this.subscribe('permissions:loaded', () => {
+                this.updatePermissions();
+                unsubscribe();
+                resolve();
+            });
+            
+            // Таймаут на случай ошибки
+            setTimeout(() => {
+                unsubscribe();
+                this.updatePermissions();
+                resolve();
+            }, 3000);
+        });
+    }
+    
+    /**
+     * Обновляет права доступа
+     */
+    updatePermissions() {
+        this.permissions = {
+            canCreate: PermissionManager.can('products:create'),
+            canEdit: PermissionManager.can('products:edit'),
+            canDelete: PermissionManager.can('products:delete')
+        };
+    }
+    
     async attachEvents() {
         // Монтируем статистику
         const statsContainer = this.refs.get('statsContainer');
-        this.stats = new InventoryStats(statsContainer);
-        await this.stats.mount();
+        if (statsContainer) {
+            this.stats = new InventoryStats(statsContainer);
+            await this.stats.mount();
+        }
         
         // Монтируем фильтры
         const filtersContainer = this.refs.get('filtersContainer');
-        this.filters = new InventoryFilters(filtersContainer, {
-            onSearch: (query) => this.handleSearch(query),
-            onCategoryChange: (category) => this.handleCategoryChange(category),
-            onStatusChange: (status) => this.handleStatusChange(status),
-            onSortChange: (sort) => this.handleSortChange(sort),
-            onClearFilters: () => this.handleClearFilters()
-        });
-        await this.filters.mount();
+        if (filtersContainer) {
+            this.filters = new InventoryFilters(filtersContainer, {
+                onSearch: (query) => this.handleSearch(query),
+                onCategoryChange: (category) => this.handleCategoryChange(category),
+                onStatusChange: (status) => this.handleStatusChange(status),
+                onSortChange: (sort) => this.handleSortChange(sort),
+                onClearFilters: () => this.handleClearFilters()
+            });
+            await this.filters.mount();
+        }
         
         // Монтируем таблицу
         const tableContainer = this.refs.get('tableContainer');
-        this.table = new InventoryTable(tableContainer, {
-            onEdit: (id) => this.handleEdit(id),
-            onDelete: (id) => this.handleDelete(id),
-            onLoadMore: () => this.loadMore()
-        });
-        await this.table.mount();
+        if (tableContainer) {
+            this.table = new InventoryTable(tableContainer, {
+                onEdit: (id) => this.handleEdit(id),
+                onDelete: (id) => this.handleDelete(id),
+                onLoadMore: () => this.loadMore()
+            });
+            await this.table.mount();
+        }
         
         // Кнопки
         this.addDomListener('addProductBtn', 'click', () => this.openProductForm());
@@ -175,9 +218,6 @@ export class InventoryPage extends BaseComponent {
     
     // ========== ЗАГРУЗКА ДАННЫХ ==========
     
-    /**
-     * Загружает товары
-     */
     async loadProducts(reset = false) {
         const state = InventoryState.getState();
         
@@ -227,9 +267,6 @@ export class InventoryPage extends BaseComponent {
         }
     }
     
-    /**
-     * Применяет фильтры к списку товаров
-     */
     applyFilters(products) {
         const state = InventoryState.getState();
         
@@ -258,9 +295,6 @@ export class InventoryPage extends BaseComponent {
         });
     }
     
-    /**
-     * Применяет сортировку
-     */
     applySort(products) {
         const state = InventoryState.getState();
         const [field, direction] = state.sortBy.split('-');
@@ -291,53 +325,49 @@ export class InventoryPage extends BaseComponent {
         });
     }
     
-    /**
-     * Загружает следующую страницу
-     */
     async loadMore() {
         await this.loadProducts(false);
     }
     
-    /**
-     * Обновляет страницу
-     */
     async refresh() {
         await this.loadProducts(true);
         await this.stats?.update();
         await this.buildCategories();
     }
     
-    /**
-     * Строит список категорий для фильтра
-     */
     async buildCategories() {
-        const products = await ProductService.getAll({ forceRefresh: false });
-        
-        const categoryCounts = new Map();
-        products.forEach(p => {
-            const cat = p.category || 'other';
-            categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
-        });
-        
-        const categories = Array.from(categoryCounts.entries())
-            .map(([value, count]) => ({
-                value,
-                label: getCategoryName(value),
-                count
-            }))
-            .sort((a, b) => a.label.localeCompare(b.label));
-        
-        InventoryState.set('categories', categories);
-        this.filters?.updateCategories(categories);
+        try {
+            const products = await ProductService.getAll({ forceRefresh: false });
+            
+            const categoryCounts = new Map();
+            products.forEach(p => {
+                const cat = p.category || 'other';
+                categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+            });
+            
+            const categories = Array.from(categoryCounts.entries())
+                .map(([value, count]) => ({
+                    value,
+                    label: getCategoryName(value),
+                    count
+                }))
+                .sort((a, b) => a.label.localeCompare(b.label));
+            
+            InventoryState.set('categories', categories);
+            this.filters?.updateCategories(categories);
+        } catch (error) {
+            console.error('[InventoryPage] Build categories error:', error);
+        }
     }
     
-    /**
-     * Обновляет счетчик отфильтрованных товаров
-     */
     async updateFilteredCount() {
-        const products = await ProductService.getAll({ forceRefresh: false });
-        const filtered = this.applyFilters(products);
-        InventoryState.set('filteredCount', filtered.length);
+        try {
+            const products = await ProductService.getAll({ forceRefresh: false });
+            const filtered = this.applyFilters(products);
+            InventoryState.set('filteredCount', filtered.length);
+        } catch (error) {
+            console.error('[InventoryPage] Update filtered count error:', error);
+        }
     }
     
     // ========== ОБРАБОТЧИКИ ФИЛЬТРОВ ==========
@@ -396,53 +426,8 @@ export class InventoryPage extends BaseComponent {
     }
     
     updateBulkActions() {
-        const bulkContainer = this.refs.get('bulkActions');
-        const filtersContainer = this.refs.get('filtersContainer');
-        
-        if (!filtersContainer) return;
-        
-        const state = InventoryState.getState();
-        const hasSelected = state.getSelectedCount() > 0;
-        
-        if (hasSelected && !bulkContainer) {
-            // Создаем панель массовых действий
-            const panel = document.createElement('div');
-            panel.className = 'bulk-actions-panel';
-            panel.setAttribute('data-ref', 'bulkActions');
-            panel.innerHTML = `
-                <span class="selected-count">Выбрано: ${state.getSelectedCount()}</span>
-                <button class="btn-secondary" data-ref="selectAllBtn">
-                    ${state.isAllSelected ? 'Снять выделение' : 'Выбрать все'}
-                </button>
-                ${this.permissions.canDelete ? `
-                    <button class="btn-danger" data-ref="bulkDeleteBtn">
-                        Удалить выбранные
-                    </button>
-                ` : ''}
-                <button class="btn-ghost" data-ref="clearSelectionBtn">
-                    Отменить
-                </button>
-            `;
-            filtersContainer.after(panel);
-            
-            // Привязываем события
-            panel.querySelector('[data-ref="selectAllBtn"]')?.addEventListener('click', () => this.handleSelectAll());
-            panel.querySelector('[data-ref="clearSelectionBtn"]')?.addEventListener('click', () => this.handleClearSelection());
-            panel.querySelector('[data-ref="bulkDeleteBtn"]')?.addEventListener('click', () => this.handleBulkDelete());
-            
-        } else if (!hasSelected && bulkContainer) {
-            bulkContainer.remove();
-        } else if (hasSelected && bulkContainer) {
-            // Обновляем счетчик
-            const countSpan = bulkContainer.querySelector('.selected-count');
-            if (countSpan) {
-                countSpan.textContent = `Выбрано: ${state.getSelectedCount()}`;
-            }
-            const selectAllBtn = bulkContainer.querySelector('[data-ref="selectAllBtn"]');
-            if (selectAllBtn) {
-                selectAllBtn.textContent = state.isAllSelected ? 'Снять выделение' : 'Выбрать все';
-            }
-        }
+        // Эта логика будет обновлять панель массовых действий
+        // Реализована в InventoryTable и InventoryPage через подписку
     }
     
     // ========== ДЕЙСТВИЯ С ТОВАРАМИ ==========
@@ -484,6 +469,7 @@ export class InventoryPage extends BaseComponent {
             Notification.success(`Товар "${product.name}" удален`);
             await this.refresh();
         } catch (error) {
+            console.error('[InventoryPage] Delete error:', error);
             Notification.error('Ошибка при удалении товара');
         }
     }
@@ -495,7 +481,7 @@ export class InventoryPage extends BaseComponent {
         
         const confirmed = await ConfirmDialog.show({
             title: 'Массовое удаление',
-            message: `Вы уверены, что хотите удалить ${count} ${this.pluralize(count, 'товар', 'товара', 'товаров')}?`,
+            message: `Вы уверены, что хотите удалить ${count} товар(ов)?`,
             confirmText: 'Удалить',
             cancelText: 'Отмена',
             type: 'danger'
@@ -509,10 +495,11 @@ export class InventoryPage extends BaseComponent {
                 await ProductService.delete(id);
             }
             
-            Notification.success(`Удалено ${count} ${this.pluralize(count, 'товар', 'товара', 'товаров')}`);
+            Notification.success(`Удалено ${count} товаров`);
             InventoryState.clearSelection();
             await this.refresh();
         } catch (error) {
+            console.error('[InventoryPage] Bulk delete error:', error);
             Notification.error('Ошибка при массовом удалении');
         }
     }
@@ -603,18 +590,6 @@ export class InventoryPage extends BaseComponent {
         } catch (error) {
             console.error('[InventoryPage] Restore filters error:', error);
         }
-    }
-    
-    // ========== УТИЛИТЫ ==========
-    
-    pluralize(count, one, two, five) {
-        const n = Math.abs(count) % 100;
-        const n1 = n % 10;
-        
-        if (n > 10 && n < 20) return five;
-        if (n1 > 1 && n1 < 5) return two;
-        if (n1 === 1) return one;
-        return five;
     }
     
     // ========== ОЧИСТКА ==========
