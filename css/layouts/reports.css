@@ -1,9 +1,17 @@
 /**
- * Reports Layout
+ * Reports Layout - Analytical & Clean
  * 
- * Стили для страницы отчетов и аналитики.
+ * Строгий интерфейс для аналитики и отчетов.
+ * Акцент на KPI с цветовым кодированием, четкое разделение зон графиков.
+ * Убраны лишние анимации, добавлена визуальная иерархия данных.
  * 
  * @stylesheet reports
+ * @version 3.1.0
+ * @changes
+ * - Переработка KPI-карточек (левая полоса, моноширинные цифры)
+ * - Строгий стиль табов
+ * - Улучшение контраста графиков
+ * - Приглушение цветов алертов
  */
 
 /* ========== REPORTS PAGE ========== */
@@ -52,18 +60,38 @@
     width: 140px;
 }
 
-/* ========== REPORTS TABS ========== */
+/* ========== REPORTS TABS (СТРОГИЙ ПЕРЕКЛЮЧАТЕЛЬ) ========== */
 .reports-tabs {
     display: flex;
     gap: var(--spacing-1);
-    border-bottom: var(--border-width) solid var(--color-border);
-    padding-bottom: var(--spacing-1);
+    padding: var(--spacing-1);
+    background: var(--color-slate-100);
+    border-radius: var(--radius-lg);
+    width: fit-content;
+    border: 1px solid var(--color-border-light);
 }
 
 .reports-tabs .tab-btn {
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-4);
+    border-radius: var(--radius-md);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-secondary);
+    background: transparent;
+    transition: all var(--transition-fast);
+}
+
+.reports-tabs .tab-btn:hover {
+    background: var(--color-slate-200);
+    color: var(--color-text);
+}
+
+.reports-tabs .tab-btn.active {
+    background: var(--color-white);
+    color: var(--color-primary-dark);
+    box-shadow: var(--shadow-sm);
 }
 
 .tab-icon {
@@ -99,11 +127,18 @@
     background: var(--color-white);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
-    transition: all var(--transition-base);
+    border: 1px solid var(--color-border-light);
+    transition: box-shadow var(--transition-fast);
+    border-left: 4px solid var(--color-slate-400);
 }
 
+/* Цветовое кодирование KPI */
+.kpi-card:nth-child(1) { border-left-color: var(--color-primary); }
+.kpi-card:nth-child(2) { border-left-color: var(--color-success); }
+.kpi-card:nth-child(3) { border-left-color: var(--color-warning); }
+.kpi-card:nth-child(4) { border-left-color: var(--color-info); }
+
 .kpi-card:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-md);
 }
 
@@ -116,12 +151,15 @@
 
 .kpi-icon {
     font-size: 24px;
+    opacity: 0.7;
 }
 
 .kpi-title {
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     font-weight: var(--font-weight-medium);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .kpi-value {
@@ -129,6 +167,8 @@
     font-weight: var(--font-weight-bold);
     color: var(--color-text);
     margin-bottom: var(--spacing-2);
+    font-family: var(--font-family-mono);
+    letter-spacing: -0.02em;
 }
 
 .kpi-footer {
@@ -143,21 +183,23 @@
     padding: var(--spacing-0-5) var(--spacing-2);
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-semibold);
+    background: var(--color-slate-100);
+    color: var(--color-text-secondary);
 }
 
 .trend-up {
-    background: var(--color-success-bg);
-    color: var(--color-success);
+    background: rgba(22, 163, 74, 0.1);
+    color: var(--color-success-dark);
 }
 
 .trend-down {
-    background: var(--color-danger-bg);
-    color: var(--color-danger);
+    background: rgba(220, 38, 38, 0.1);
+    color: var(--color-danger-dark);
 }
 
 .trend-neutral {
-    background: var(--color-gray-100);
+    background: var(--color-slate-100);
     color: var(--color-text-muted);
 }
 
@@ -171,23 +213,30 @@
 
 .chart-card {
     padding: var(--spacing-5);
-    background: var(--color-white);
+    background: var(--color-slate-50);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-xs);
 }
 
 .chart-card h4 {
     margin-bottom: var(--spacing-4);
     font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
 }
 
 .chart-card.full-width {
     grid-column: 1 / -1;
+    background: var(--color-white);
 }
 
 .chart-container {
     position: relative;
     height: 200px;
+    background: var(--color-white);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-3);
+    border: 1px solid var(--color-border-light);
 }
 
 .chart-container.large {
@@ -207,14 +256,19 @@
     background: var(--color-white);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-border-light);
 }
 
 .card h4 {
     margin-bottom: var(--spacing-4);
     font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    text-transform: uppercase;
+    letter-spacing: var(--letter-spacing-wide);
+    font-size: var(--font-size-sm);
 }
 
-/* ========== ALERTS ========== */
+/* ========== ALERTS (СТРОГИЙ ВИД) ========== */
 .alerts-list {
     display: flex;
     flex-direction: column;
@@ -225,41 +279,48 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-3);
-    padding: var(--spacing-3);
+    padding: var(--spacing-3) var(--spacing-4);
     border-radius: var(--radius-md);
+    background: var(--color-white);
+    border-left: 4px solid;
+    box-shadow: var(--shadow-xs);
 }
 
 .alert-success {
-    background: var(--color-success-bg);
-    color: var(--color-success-dark);
+    border-left-color: var(--color-success);
+    background: rgba(22, 163, 74, 0.02);
 }
 
 .alert-warning {
-    background: var(--color-warning-bg);
-    color: var(--color-warning-dark);
+    border-left-color: var(--color-warning);
+    background: rgba(234, 88, 12, 0.02);
 }
 
 .alert-danger {
-    background: var(--color-danger-bg);
-    color: var(--color-danger-dark);
+    border-left-color: var(--color-danger);
+    background: rgba(220, 38, 38, 0.02);
 }
 
 .alert-info {
-    background: var(--color-info-bg);
-    color: var(--color-info-dark);
+    border-left-color: var(--color-info);
+    background: rgba(2, 132, 199, 0.02);
 }
 
 .alert-icon {
     font-size: 20px;
+    opacity: 0.8;
 }
 
 .alert-message {
     flex: 1;
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
 }
 
 .alert-value {
     font-weight: var(--font-weight-bold);
+    font-family: var(--font-family-mono);
 }
 
 /* ========== REPORT SUMMARY ========== */
@@ -272,9 +333,11 @@
 
 .summary-card {
     padding: var(--spacing-4);
-    background: var(--color-gray-50);
+    background: var(--color-white);
     border-radius: var(--radius-lg);
-    text-align: center;
+    text-align: left;
+    border: 1px solid var(--color-border-light);
+    box-shadow: var(--shadow-xs);
 }
 
 .summary-card .label {
@@ -291,6 +354,7 @@
     font-size: var(--font-size-2xl);
     font-weight: var(--font-weight-bold);
     color: var(--color-text);
+    font-family: var(--font-family-mono);
 }
 
 /* ========== TWO COLUMNS ========== */
@@ -312,7 +376,7 @@
     align-items: center;
     gap: var(--spacing-3);
     padding: var(--spacing-3) 0;
-    border-bottom: var(--border-width) solid var(--color-border-light);
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 .top-item:last-child {
@@ -325,7 +389,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-gray-100);
+    background: var(--color-slate-100);
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
@@ -335,6 +399,7 @@
 .top-item .name {
     flex: 1;
     font-weight: var(--font-weight-medium);
+    color: var(--color-text);
 }
 
 .top-item .value {
@@ -346,7 +411,8 @@
     min-width: 80px;
     text-align: right;
     font-weight: var(--font-weight-semibold);
-    color: var(--color-primary);
+    color: var(--color-text);
+    font-family: var(--font-family-mono);
 }
 
 /* ========== SLOW PRODUCTS ========== */
@@ -360,7 +426,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-3) 0;
-    border-bottom: var(--border-width) solid var(--color-border-light);
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 .slow-item:last-child {
@@ -369,11 +435,12 @@
 
 .slow-item .name {
     flex: 1;
+    font-weight: var(--font-weight-medium);
 }
 
 .slow-item .days {
     padding: var(--spacing-1) var(--spacing-2);
-    background: var(--color-warning-bg);
+    background: rgba(234, 88, 12, 0.1);
     color: var(--color-warning-dark);
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
@@ -384,6 +451,7 @@
     min-width: 80px;
     text-align: right;
     color: var(--color-text-secondary);
+    font-family: var(--font-family-mono);
 }
 
 /* ========== TABLE CARD ========== */
@@ -392,6 +460,7 @@
     background: var(--color-white);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-border-light);
 }
 
 .table-card h4 {
@@ -411,37 +480,43 @@
     background: var(--color-white);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
-    text-align: center;
+    text-align: left;
+    border: 1px solid var(--color-border-light);
 }
 
 .profit-card h4 {
     margin-bottom: var(--spacing-4);
     color: var(--color-text-secondary);
+    text-transform: uppercase;
+    font-size: var(--font-size-sm);
+    letter-spacing: var(--letter-spacing-wide);
 }
 
 .profit-value {
     font-size: var(--font-size-4xl);
     font-weight: var(--font-weight-bold);
+    font-family: var(--font-family-mono);
 }
 
 .profit-value.positive {
-    color: var(--color-success);
+    color: var(--color-success-dark);
 }
 
 .profit-value.negative {
-    color: var(--color-danger);
+    color: var(--color-danger-dark);
 }
 
 .profit-value.warning {
-    color: var(--color-warning);
+    color: var(--color-warning-dark);
 }
 
 .info-message {
     padding: var(--spacing-4);
-    background: var(--color-info-bg);
+    background: rgba(2, 132, 199, 0.05);
     border-radius: var(--radius-md);
-    color: var(--color-info-dark);
+    color: var(--color-text-secondary);
     text-align: center;
+    border-left: 4px solid var(--color-info);
 }
 
 /* ========== REPORTS RESPONSIVE ========== */
@@ -477,5 +552,10 @@
         overflow-x: auto;
         flex-wrap: nowrap;
         -webkit-overflow-scrolling: touch;
+        width: 100%;
+    }
+    
+    .chart-container {
+        height: 250px;
     }
 }
