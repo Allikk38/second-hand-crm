@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- PWA / Мобильные мета-теги -->
+    <meta name="theme-color" content="#0f172a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Касса SH CRM">
+    <meta name="format-detection" content="telephone=no">
+    
+    <!-- SEO -->
+    <meta name="description" content="Кассовый модуль Second Hand CRM. Профессиональное рабочее место кассира.">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <title>Касса | SH CRM</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230f172a'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3EК%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230f172a'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3EК%3C/text%3E%3C/svg%3E">
+    
+    <!-- Предзагрузка критических ресурсов -->
+    <link rel="preconnect" href="https://bhdwniiyrrujeoubrvle.supabase.co">
+    <link rel="preconnect" href="https://esm.sh">
+    <link rel="dns-prefetch" href="https://bhdwniiyrrujeoubrvle.supabase.co">
+    
+    <!-- КРИТИЧЕСКИЕ СТИЛИ (инлайн, мгновенная отрисовка скелета) -->
+    <style>
+        /* ========== CRITICAL RESET ========== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+            background: #f1f5f9;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        #cashier-root {
+            height: 100%;
+            width: 100%;
+        }
+        
+        /* ========== CASHIER LAYOUT SKELETON ========== */
+        .cashier-layout {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            height: 100vh;
+            width: 100%;
+            background: #f1f5f9;
+        }
+        
+        /* Левая панель (товары) */
+        .products-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            min-height: 0;
+            background: #f8fafc;
+            overflow: hidden;
+        }
+        
+        /* Шапка смены */
+        .shift-bar {
+            flex-shrink: 0;
+            height: 56px;
+            padding: 0 16px;
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .shift-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .shift-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #16a34a;
+        }
+        
+        .shift-indicator.closed {
+            color: #dc2626;
+        }
+        
+        .shift-stats {
+            display: flex;
+            gap: 24px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        
+        /* Панель поиска */
+        .search-bar {
+            flex-shrink: 0;
+            padding: 12px 16px;
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .search-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            color: #94a3b8;
+            font-size: 16px;
+            pointer-events: none;
+        }
+        
+        .search-input {
+            width: 100%;
+            height: 44px;
+            padding: 0 12px 0 40px;
+            background: #f1f5f9;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 15px;
+            color: #0f172a;
+            transition: all 150ms;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .search-input::placeholder {
+            color: #94a3b8;
+        }
+        
+        .scanner-hint {
+            position: absolute;
+            right: 12px;
+            font-size: 11px;
+            color: #94a3b8;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        
+        /* Панель категорий */
+        .category-bar {
+            flex-shrink: 0;
+            padding: 8px 16px;
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            gap: 4px;
+            overflow-x: auto;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .category-bar::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .category-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 100ms;
+            flex-shrink: 0;
+        }
+        
+        .category-tab:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+        
+        .category-tab.active {
+            background: #0f172a;
+            color: #ffffff;
+        }
+        
+        /* Сетка товаров */
+        .products-grid {
+            flex: 1;
+            min-height: 0;
+            padding: 16px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+            align-content: start;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .product-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 100ms;
+        }
+        
+        .product-card:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        }
+        
+        .product-card.sold {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        .product-photo {
+            aspect-ratio: 1;
+            background: #f1f5f9;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 10px;
+            font-size: 32px;
+            color: #94a3b8;
+        }
+        
+        .product-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #0f172a;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .product-price {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        
+        /* Правая панель (корзина) */
+        .cart-panel {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: #ffffff;
+            border-left: 1px solid #e2e8f0;
+            overflow: hidden;
+        }
+        
+        .cart-header {
+            flex-shrink: 0;
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .cart-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        
+        .cart-count {
+            font-size: 13px;
+            color: #64748b;
+            background: #f1f5f9;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+        
+        .cart-items {
+            flex: 1;
+            min-height: 0;
+            padding: 12px 16px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .cart-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: #94a3b8;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .cart-empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.3;
+        }
+        
+        .cart-footer {
+            flex-shrink: 0;
+            padding: 20px;
+            border-top: 1px solid #e2e8f0;
+            background: #f8fafc;
+        }
+        
+        .cart-total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 16px;
+        }
+        
+        .cart-total-label {
+            font-size: 16px;
+            font-weight: 500;
+            color: #0f172a;
+        }
+        
+        .cart-total-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        
+        .checkout-btn {
+            width: 100%;
+            height: 52px;
+            background: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 100ms;
+        }
+        
+        .checkout-btn:hover {
+            background: #1e293b;
+        }
+        
+        .checkout-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        /* Клавиатурные подсказки */
+        .keyboard-hints {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 12px;
+            font-size: 11px;
+            color: #94a3b8;
+        }
+        
+        .keyboard-hints kbd {
+            display: inline-block;
+            padding: 2px 6px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 10px;
+            margin: 0 2px;
+        }
+        
+        /* Закрытая смена */
+        .shift-closed-overlay {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            color: #64748b;
+        }
+        
+        .shift-closed-icon {
+            font-size: 64px;
+            margin-bottom: 24px;
+            opacity: 0.3;
+        }
+        
+        .shift-closed-overlay h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        
+        .shift-closed-overlay p {
+            margin-bottom: 24px;
+        }
+        
+        .open-shift-btn {
+            padding: 12px 32px;
+            background: #0f172a;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        /* Адаптивность */
+        @media (max-width: 768px) {
+            .cashier-layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr auto;
+            }
+            
+            .cart-panel {
+                max-height: 50vh;
+                border-left: none;
+                border-top: 1px solid #e2e8f0;
+            }
+            
+            .shift-stats {
+                display: none;
+            }
+            
+            .products-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .products-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Загрузка */
+        .loading-overlay {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 16px;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #0f172a;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Утилиты */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+    
+    <!-- Основные стили кассы (загружаются асинхронно) -->
+    <link rel="stylesheet" href="../../css/base/reset.css">
+    <link rel="stylesheet" href="../../css/base/variables.css">
+    <link rel="stylesheet" href="../../css/base/typography.css">
+    <link rel="stylesheet" href="../../css/components/buttons.css">
+    <link rel="stylesheet" href="../../css/components/forms.css">
+    <link rel="stylesheet" href="../../css/components/modal.css">
+    <link rel="stylesheet" href="../../css/components/notifications.css">
+    <link rel="stylesheet" href="../../css/pages/cashier.css">
+</head>
+<body>
+    <div id="cashier-root">
+        <!-- СКЕЛЕТ ИНТЕРФЕЙСА (отрисовывается мгновенно, пока грузится JS) -->
+        <div class="cashier-layout" id="cashier-skeleton">
+            <!-- Левая панель: Товары -->
+            <div class="products-panel">
+                <!-- Шапка смены -->
+                <div class="shift-bar">
+                    <div class="shift-info">
+                        <div class="shift-indicator closed" id="shift-indicator">
+                            <span>🔴</span>
+                            <span>Смена закрыта</span>
+                        </div>
+                    </div>
+                    <div class="shift-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Выручка</span>
+                            <span class="stat-value">0 ₽</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Продаж</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Средний чек</span>
+                            <span class="stat-value">0 ₽</span>
+                        </div>
+                    </div>
+                    <button class="open-shift-btn hidden" id="open-shift-skeleton-btn">
+                        Открыть смену
+                    </button>
+                </div>
+                
+                <!-- Панель поиска -->
+                <div class="search-bar">
+                    <div class="search-wrapper">
+                        <span class="search-icon">🔍</span>
+                        <input 
+                            type="text" 
+                            class="search-input" 
+                            placeholder="Поиск по названию, ID или штрихкоду..."
+                            id="search-skeleton-input"
+                            autocomplete="off"
+                            disabled
+                        >
+                        <span class="scanner-hint">Enter ↵</span>
+                    </div>
+                </div>
+                
+                <!-- Панель категорий -->
+                <div class="category-bar">
+                    <button class="category-tab active">Все</button>
+                    <button class="category-tab" disabled>Загрузка...</button>
+                </div>
+                
+                <!-- Сетка товаров (скелет) -->
+                <div class="products-grid" id="products-skeleton">
+                    <div class="loading-overlay">
+                        <div class="loading-spinner"></div>
+                        <span>Загрузка товаров...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Правая панель: Корзина -->
+            <div class="cart-panel">
+                <div class="cart-header">
+                    <h2>Корзина</h2>
+                    <span class="cart-count">0 поз.</span>
+                </div>
+                
+                <div class="cart-items">
+                    <div class="cart-empty">
+                        <div class="cart-empty-icon">🛒</div>
+                        <p>Корзина пуста</p>
+                        <p style="font-size: 12px; margin-top: 8px;">Нажмите на товар или отсканируйте штрихкод</p>
+                    </div>
+                </div>
+                
+                <div class="cart-footer">
+                    <div class="cart-total-row">
+                        <span class="cart-total-label">ИТОГО</span>
+                        <span class="cart-total-value">0 ₽</span>
+                    </div>
+                    
+                    <button class="checkout-btn" disabled>
+                        Оформить продажу
+                    </button>
+                    
+                    <div class="keyboard-hints">
+                        <span><kbd>↵</kbd> Поиск</span>
+                        <span><kbd>Ctrl</kbd>+<kbd>↵</kbd> Продать</span>
+                        <span><kbd>Esc</kbd> Очистить</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Закрытая смена (скрыто по умолчанию) -->
+        <div class="shift-closed-overlay hidden" id="shift-closed-overlay">
+            <div class="shift-closed-icon">🔒</div>
+            <h2>Смена закрыта</h2>
+            <p>Для начала работы откройте смену</p>
+            <button class="open-shift-btn" id="open-shift-overlay-btn">
+                Открыть смену
+            </button>
+        </div>
+    </div>
+    
+    <!-- Основной модуль приложения -->
+    <script type="module" src="../../js/pages/cashier/CashierApp.js"></script>
+    
+    <!-- Обработка ошибок загрузки -->
+    <script>
+        // Если JS не загрузился за 5 секунд, показываем ошибку
+        setTimeout(function() {
+            var skeleton = document.getElementById('cashier-skeleton');
+            var root = document.getElementById('cashier-root');
+            if (skeleton && root && !window.__cashierAppLoaded) {
+                root.innerHTML = `
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; padding: 20px; text-align: center; font-family: system-ui, sans-serif;">
+                        <div style="font-size: 64px; margin-bottom: 24px;">⚠️</div>
+                        <h2 style="margin-bottom: 12px; color: #0f172a;">Не удалось загрузить кассу</h2>
+                        <p style="color: #64748b; margin-bottom: 24px;">Проверьте подключение к интернету и обновите страницу</p>
+                        <button onclick="location.reload()" style="padding: 12px 32px; background: #0f172a; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer;">
+                            Обновить
+                        </button>
+                    </div>
+                `;
+            }
+        }, 5000);
+    </script>
+    
+    <!-- Noscript -->
+    <noscript>
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; padding: 20px; text-align: center; font-family: system-ui, sans-serif;">
+            <h1 style="margin-bottom: 16px; color: #0f172a;">Требуется JavaScript</h1>
+            <p style="color: #64748b;">Для работы кассы необходимо включить JavaScript в настройках браузера.</p>
+        </div>
+    </noscript>
+</body>
+</html>
