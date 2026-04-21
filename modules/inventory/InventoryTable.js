@@ -4,12 +4,22 @@
  * Отвечает за рендеринг таблицы товаров, обработку выделения,
  * действий со строками (редактировать, удалить) и бесконечный скролл.
  * 
+ * В новой архитектуре:
+ * - Использует единый Store вместо InventoryState
+ * - Прямое реактивное связывание через Store.state.inventory
+ * - Упрощена логика выделения через методы Store
+ * - Автоматическое обновление при изменении данных в Store
+ * 
  * @module InventoryTable
- * @version 1.0.0
+ * @version 5.0.0
+ * @changes
+ * - Полный переход на Store (удален InventoryState)
+ * - Упрощена обработка выделения через Store.isInventoryItemSelected()
+ * - Добавлена оптимизация рендеринга через batch-обновления
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
-import { InventoryState } from './inventoryState.js';
+import { Store } from '../../core/Store.js';
 import { formatMoney } from '../../utils/formatters.js';
 import { getCategoryName, formatAttributes } from '../../utils/categorySchema.js';
 
@@ -32,17 +42,17 @@ export class InventoryTable extends BaseComponent {
         };
         this.intersectionObserver = null;
         this.loadMoreTrigger = null;
-        this.unsubscribeState = null;
+        this.unsubscribers = [];
     }
     
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
     
     async render() {
-        const state = InventoryState.getState();
-        const products = state.products;
-        const isLoading = state.isLoading;
-        const hasMore = state.hasMore;
-        const isAllSelected = state.isAllSelected;
+        const inventory = Store.state.inventory;
+        const products = inventory.products;
+        const isLoading = inventory.isLoading;
+        const hasMore = inventory.hasMore;
+        const isAllSelected = inventory.isAllSelected;
         
         return `
             <div class="products-table-wrapper" data-ref="tableWrapper">
@@ -102,7 +112,7 @@ export class InventoryTable extends BaseComponent {
      */
     renderRow(product) {
         const attributesText = formatAttributes(product.category, product.attributes);
-        const isSelected = InventoryState.isSelected(product.id);
+        const isSelected = Store.isInventoryItemSelected(product.id);
         const margin = product.cost_price && product.price 
             ? ((product.price - product.cost_price) / product.price * 100).toFixed(0)
             : null;
@@ -193,9 +203,9 @@ export class InventoryTable extends BaseComponent {
         // Чекбокс "Выбрать все"
         this.addDomListener('selectAllCheckbox', 'change', (e) => {
             if (e.target.checked) {
-                InventoryState.selectAll();
+                Store.selectAllInventory();
             } else {
-                InventoryState.clearSelection();
+                Store.clearInventorySelection();
             }
             this.update();
         });
@@ -206,11 +216,15 @@ export class InventoryTable extends BaseComponent {
             tbody.addEventListener('change', (e) => {
                 if (e.target.classList.contains('product-checkbox')) {
                     const id = e.target.dataset.id;
+                    const selectedIds = Store.state.inventory.selectedIds;
+                    
                     if (e.target.checked) {
-                        InventoryState.select(id);
+                        selectedIds.add(id);
                     } else {
-                        InventoryState.deselect(id);
+                        selectedIds.delete(id);
+                        Store.state.inventory.isAllSelected = false;
                     }
+                    
                     this.updateSelectAllCheckbox();
                 }
             });
@@ -233,15 +247,14 @@ export class InventoryTable extends BaseComponent {
         // Бесконечный скролл
         this.setupInfiniteScroll();
         
-        // Подписка на изменения состояния
-        this.unsubscribeState = InventoryState.subscribe((changes) => {
-            const shouldUpdate = changes.some(c => 
-                ['products', 'isLoading', 'hasMore', 'selectedIds', 'isAllSelected'].includes(c.key)
-            );
-            if (shouldUpdate) {
-                this.update();
-            }
-        });
+        // Подписка на изменения Store
+        this.unsubscribers.push(
+            Store.subscribe('inventory.products', () => this.update()),
+            Store.subscribe('inventory.isLoading', () => this.update()),
+            Store.subscribe('inventory.hasMore', () => this.update()),
+            Store.subscribe('inventory.selectedIds', () => this.updateSelectAllCheckbox()),
+            Store.subscribe('inventory.isAllSelected', () => this.updateSelectAllCheckbox())
+        );
     }
     
     /**
@@ -254,8 +267,8 @@ export class InventoryTable extends BaseComponent {
         this.intersectionObserver = new IntersectionObserver(
             (entries) => {
                 entries.forEach(entry => {
-                    const state = InventoryState.getState();
-                    if (entry.isIntersecting && state.hasMore && !state.isLoading && this.options.onLoadMore) {
+                    const inventory = Store.state.inventory;
+                    if (entry.isIntersecting && inventory.hasMore && !inventory.isLoading && this.options.onLoadMore) {
                         this.options.onLoadMore();
                     }
                 });
@@ -275,11 +288,44 @@ export class InventoryTable extends BaseComponent {
     updateSelectAllCheckbox() {
         const checkbox = this.refs.get('selectAllCheckbox');
         if (checkbox) {
-            const state = InventoryState.getState();
-            const visibleIds = new Set(state.products.map(p => p.id));
-            const selectedVisible = state.getSelectedIds().filter(id => visibleIds.has(id));
-            checkbox.checked = selectedVisible.length === state.products.length && state.products.length > 0;
+            const inventory = Store.state.inventory;
+            const visibleIds = new Set(inventory.products.map(p => p.id));
+            const selectedVisible = Store.getInventorySelectedIds().filter(id => visibleIds.has(id));
+            
+            checkbox.checked = selectedVisible.length === inventory.products.length && inventory.products.length > 0;
         }
+    }
+    
+    // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
+    
+    /**
+     * Обновляет таблицу (публичный метод для внешнего вызова)
+     */
+    refresh() {
+        this.update();
+    }
+    
+    /**
+     * Очищает выделение
+     */
+    clearSelection() {
+        Store.clearInventorySelection();
+    }
+    
+    /**
+     * Получает выбранные ID
+     * @returns {string[]}
+     */
+    getSelectedIds() {
+        return Store.getInventorySelectedIds();
+    }
+    
+    /**
+     * Получает количество выбранных товаров
+     * @returns {number}
+     */
+    getSelectedCount() {
+        return Store.getInventorySelectedCount();
     }
     
     // ========== ОЧИСТКА ==========
@@ -289,8 +335,8 @@ export class InventoryTable extends BaseComponent {
             this.intersectionObserver.disconnect();
             this.intersectionObserver = null;
         }
-        if (this.unsubscribeState) {
-            this.unsubscribeState();
-        }
+        
+        this.unsubscribers.forEach(unsub => unsub());
+        this.unsubscribers = [];
     }
 }
