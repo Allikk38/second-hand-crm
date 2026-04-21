@@ -1,255 +1,176 @@
 /**
- * Responsive
+ * Responsive - Business Professional
  * 
- * Медиа-запросы для адаптивности на разных устройствах.
+ * Минимальные медиа-запросы для адаптивности.
+ * Без анимаций, только необходимые правила.
  * 
  * @stylesheet responsive
+ * @version 4.0.0
+ * @changes
+ * - Убраны сложные брейкпоинты
+ * - Убраны адаптивные утилиты с анимациями
+ * - Упрощены правила для печати
+ * - Только основные брейкпоинты
  */
 
 /* ========== BREAKPOINTS ========== */
 /* 
- * xs: 0-480px (мобильные)
- * sm: 481-640px (большие мобильные)
- * md: 641-768px (планшеты)
- * lg: 769-1024px (десктоп)
- * xl: 1025-1280px (большие десктопы)
- * 2xl: 1281px+ (очень большие экраны)
+ * sm: 640px (планшеты)
+ * md: 768px (планшеты landscape)
+ * lg: 1024px (десктопы)
+ * xl: 1280px (большие десктопы)
  */
 
-/* ========== MOBILE FIRST (базовые стили для мобильных) ========== */
-
-/* Планшеты и больше */
-@media (min-width: 641px) {
-    .md\:flex { display: flex; }
-    .md\:hidden { display: none; }
-    .md\:grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
-    .md\:grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
-    .md\:w-auto { width: auto; }
-}
-
-/* Десктопы и больше */
-@media (min-width: 769px) {
-    .lg\:flex { display: flex; }
-    .lg\:hidden { display: none; }
-    .lg\:grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
-    .lg\:grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-    .lg\:w-1\/2 { width: 50%; }
-    .lg\:w-1\/3 { width: 33.333333%; }
-    .lg\:w-2\/3 { width: 66.666667%; }
-}
-
-/* Большие десктопы */
-@media (min-width: 1025px) {
-    .xl\:flex { display: flex; }
-    .xl\:hidden { display: none; }
-    .xl\:grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-    .xl\:grid-cols-5 { grid-template-columns: repeat(5, 1fr); }
-}
-
-/* ========== MAX-WIDTH MEDIA QUERIES ========== */
-
-/* Максимум 1024px */
-@media (max-width: 1024px) {
+/* ========== ПЛАНШЕТЫ (640px и меньше) ========== */
+@media (max-width: 640px) {
+    .app-header {
+        padding: 0 var(--spacing-3);
+    }
+    
+    .app-header h1 {
+        font-size: var(--font-size-sm);
+    }
+    
+    .app-tabs {
+        padding: 0 var(--spacing-3);
+    }
+    
+    .app-tab {
+        padding: var(--spacing-1) var(--spacing-2);
+        font-size: var(--font-size-xs);
+    }
+    
+    .page-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--spacing-2);
+    }
+    
+    .header-right {
+        justify-content: flex-end;
+    }
+    
+    .filters-panel {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .bulk-actions-panel {
+        margin-left: 0;
+        justify-content: center;
+    }
+    
     .cashier-layout {
         grid-template-columns: 1fr;
+        grid-template-rows: 1fr auto;
     }
     
-    .cart {
-        position: static;
-        max-height: 400px;
-    }
-    
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .cart-panel {
+        max-height: 450px;
     }
     
     .charts-row {
         grid-template-columns: 1fr;
     }
     
-    .inventory-page .filters-panel {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .inventory-page .bulk-actions-panel {
-        margin-left: 0;
-    }
-}
-
-/* Максимум 768px */
-@media (max-width: 768px) {
-    body {
-        padding: var(--spacing-3);
-    }
-    
-    .app-header {
-        flex-direction: column;
-        gap: var(--spacing-4);
-        padding: var(--spacing-3) 0;
-    }
-    
-    .app-nav {
-        width: 100%;
-        justify-content: center;
-    }
-    
-    .nav-btn {
-        flex: 1;
-        padding: var(--spacing-2);
-        font-size: var(--font-size-xs);
-    }
-    
-    .products-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: var(--spacing-3);
-    }
-    
-    .modal {
-        min-width: auto;
-        width: 95vw;
-        padding: var(--spacing-4);
-    }
-    
-    .modal-header,
-    .modal-body,
-    .modal-footer {
-        padding: var(--spacing-4);
-    }
-    
-    .quick-view-content {
-        flex-direction: column;
-        width: 95%;
-        max-height: 90vh;
-    }
-    
-    .quick-view-photo {
-        max-height: 200px;
-    }
-    
-    .reports-header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .period-selector {
-        flex-wrap: wrap;
-    }
-    
-    .kpi-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .dashboard-bottom {
+        grid-template-columns: 1fr;
     }
     
     .two-columns {
         grid-template-columns: 1fr;
     }
     
-    .products-toolbar {
-        flex-direction: column;
-        align-items: stretch;
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ========== МОБИЛЬНЫЕ (480px и меньше) ========== */
+@media (max-width: 480px) {
+    .kpi-grid {
+        grid-template-columns: 1fr;
     }
     
-    .categories-header {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .category-tabs {
+    .reports-tabs {
         overflow-x: auto;
         flex-wrap: nowrap;
-    }
-    
-    .cart-item-main {
-        flex-wrap: wrap;
-    }
-    
-    .cart-item-actions {
         width: 100%;
+    }
+    
+    .products-table-wrapper {
+        overflow-x: auto;
+    }
+    
+    .products-table td {
+        padding: var(--spacing-2);
+    }
+    
+    .category-products.grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .shift-stats-panel .stats-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-2);
+    }
+    
+    .shift-stats-panel .stat-item {
+        display: flex;
         justify-content: space-between;
+        align-items: center;
+    }
+    
+    .shift-stats-panel .stat-label {
+        margin-bottom: 0;
     }
     
     .payment-methods {
         flex-direction: column;
     }
     
-    .table-container {
-        font-size: var(--font-size-xs);
-    }
-    
-    .data-table th,
-    .data-table td {
-        padding: var(--spacing-2);
-    }
-    
-    .products-table .attributes-cell {
-        display: none;
-    }
-    
-    .products-table .category-cell {
-        display: none;
-    }
-}
-
-/* Максимум 480px */
-@media (max-width: 480px) {
-    .products-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .nav-btn {
-        font-size: var(--font-size-xs);
-        padding: var(--spacing-1);
-    }
-    
-    .nav-btn-logout {
-        margin-left: var(--spacing-1);
-    }
-    
-    .kpi-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .shift-stats-panel .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .login-form {
-        margin: 50px auto;
-        padding: var(--spacing-5);
-    }
-    
-    #notification-container {
-        top: var(--spacing-2);
-        right: var(--spacing-2);
-        left: var(--spacing-2);
-    }
-    
     .modal {
+        max-height: 100vh;
+        border-radius: 0;
+        border: none;
+    }
+    
+    .quick-view-content {
         width: 100%;
+        max-height: 100vh;
         border-radius: 0;
     }
     
-    .confirm-dialog .actions {
-        flex-direction: column;
+    .fab-add-product {
+        bottom: 80px;
+        right: var(--spacing-3);
+        width: 48px;
+        height: 48px;
     }
     
-    .form-row {
-        grid-template-columns: 1fr;
-        gap: var(--spacing-3);
-    }
-    
-    .bulk-actions-panel {
-        flex-wrap: wrap;
-        justify-content: center;
+    .header-right .btn-primary {
+        display: none;
     }
 }
 
-/* ========== PRINT STYLES ========== */
+/* ========== ДЕСКТОПЫ (1024px и больше) ========== */
+@media (min-width: 1024px) {
+    .inventory-page,
+    .cashier-page,
+    .reports-page {
+        padding: var(--spacing-6);
+    }
+}
+
+/* ========== ПЕЧАТЬ ========== */
 @media print {
+    /* Скрываем навигацию и кнопки */
     .app-header,
-    .app-nav,
+    .app-tabs,
     .filters-panel,
     .bulk-actions-panel,
+    .fab-add-product,
+    .row-actions,
     .btn,
     .cart-panel,
     .shift-stats-panel,
@@ -257,47 +178,76 @@
     .category-tabs,
     .view-controls,
     .reports-tabs,
-    .header-right {
+    .header-right,
+    #notification-container {
         display: none !important;
     }
     
-    .cashier-layout {
-        display: block;
+    /* Основной контент */
+    .page-container {
+        overflow: visible;
+        height: auto;
+        padding: 0 !important;
     }
     
-    .products-panel {
+    .inventory-page,
+    .cashier-page,
+    .reports-page {
+        padding: 0 !important;
+        background: white !important;
+    }
+    
+    /* Таблицы */
+    .products-table-wrapper,
+    .table-container {
         box-shadow: none;
+        border: var(--border-width) solid var(--color-border);
+        overflow: visible;
     }
     
-    .product-card,
+    .products-table td,
+    .data-table td {
+        border: var(--border-width) solid var(--color-border-light);
+    }
+    
+    /* Карточки */
     .kpi-card,
     .chart-card,
     .card {
         box-shadow: none;
-        border: 1px solid #ccc;
+        border: var(--border-width) solid var(--color-border);
+        break-inside: avoid;
     }
     
-    body {
-        background: white;
-        padding: 1cm;
+    /* Статусы */
+    .status-badge {
+        border: var(--border-width) solid currentColor;
+        background: transparent !important;
     }
     
+    /* Ссылки */
     a[href]:after {
         content: " (" attr(href) ")";
+        font-size: 10px;
     }
 }
 
 /* ========== TOUCH DEVICES ========== */
 @media (hover: none) and (pointer: coarse) {
-    .product-actions {
-        opacity: 1;
-    }
-    
+    /* На тач-устройствах действия всегда видны */
+    .product-actions,
     .row-actions {
         opacity: 1;
     }
     
-    .btn:hover {
-        transform: none;
+    /* Увеличиваем зону нажатия */
+    .btn,
+    .category-tab,
+    .product-card {
+        min-height: 44px;
+    }
+    
+    .btn-icon {
+        min-width: 44px;
     }
 }
