@@ -9,7 +9,7 @@
  * - Система refs для кэширования DOM-элементов
  * - Автоматическая очистка подписок EventBus при destroy
  * - Хук beforeDestroy для очистки таймеров/интервалов
- * - Интеллектуальное обновление с сохранением состояния форм
+ * - Безопасное добавление DOM слушателей (проверка существования ref)
  * 
  * @abstract
  * @module BaseComponent
@@ -35,6 +35,7 @@ export class BaseComponent {
         this.refs = new Map();
         this._state = {};
         this._isDestroyed = false;
+        this._isMounted = false;
     }
 
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
@@ -86,6 +87,7 @@ export class BaseComponent {
                 this.container.appendChild(this.element);
                 this.cacheRefs();
                 this.attachEvents();
+                this._isMounted = true;
             }
             
             this.hideLoader();
@@ -93,8 +95,12 @@ export class BaseComponent {
             console.error('[BaseComponent] Mount failed:', error);
             this.container.innerHTML = `
                 <div class="error-state">
+                    <div class="error-state-icon">⚠️</div>
                     <p>Ошибка загрузки компонента</p>
-                    <small>${error.message}</small>
+                    <small>${this.escapeHtml(error.message)}</small>
+                    <button class="btn-secondary" onclick="location.reload()" style="margin-top: 16px;">
+                        Обновить страницу
+                    </button>
                 </div>
             `;
             throw error;
@@ -117,7 +123,6 @@ export class BaseComponent {
         const nextSibling = this.element.nextSibling;
         
         this.cleanupDomEvents();
-        this.beforeDestroy();
         
         const html = await this.render();
         const wrapper = document.createElement('div');
@@ -189,6 +194,7 @@ export class BaseComponent {
         this.element = null;
         this.refs.clear();
         this._isDestroyed = true;
+        this._isMounted = false;
     }
 
     // ========== УПРАВЛЕНИЕ СОБЫТИЯМИ ==========
@@ -216,25 +222,32 @@ export class BaseComponent {
 
     /**
      * Добавляет DOM-слушатель с автоматической очисткой при destroy
-     * @param {HTMLElement|string} target - Элемент или селектор ref
+     * Безопасно проверяет существование элемента
+     * 
+     * @param {string} refName - Имя ref элемента
      * @param {string} event - Имя события
      * @param {Function} handler - Обработчик
      * @param {Object} options - Опции addEventListener
+     * @returns {boolean} - true если слушатель добавлен, false если элемент не найден
      */
-    addDomListener(target, event, handler, options = {}) {
-        let element;
+    addDomListener(refName, event, handler, options = {}) {
+        const element = this.refs.get(refName);
         
-        if (typeof target === 'string') {
-            element = this.refs.get(target);
-            if (!element) {
-                console.warn(`[BaseComponent] Ref "${target}" not found for event listener`);
-                return;
+        if (!element) {
+            // Не выводим ошибку для условных элементов (могут отсутствовать в зависимости от состояния)
+            const conditionalRefs = [
+                'addProductEmptyBtn', 'clearSearchBtn', 'selectAllBtn', 
+                'clearSelectionBtn', 'bulkDeleteBtn', 'clearScannerBtn',
+                'clearTotalDiscountBtn', 'paymentCash', 'paymentCard', 
+                'paymentTransfer', 'clearCartBtn', 'checkoutBtn',
+                'clearSearchEmptyBtn', 'loadMoreSalesBtn', 'applyMarketPrice',
+                'removePhotoBtn', 'cancelUploadBtn', 'restoreDraftBtn', 'clearDraftBtn'
+            ];
+            
+            if (!conditionalRefs.includes(refName)) {
+                console.warn(`[BaseComponent] Ref "${refName}" not found for event listener`);
             }
-        } else if (target instanceof HTMLElement) {
-            element = target;
-        } else {
-            console.warn('[BaseComponent] Invalid target for addDomListener');
-            return;
+            return false;
         }
         
         const boundHandler = handler.bind(this);
@@ -245,6 +258,21 @@ export class BaseComponent {
             event,
             handler: boundHandler,
             options
+        });
+        
+        return true;
+    }
+
+    /**
+     * Безопасно добавляет обработчик на несколько ref
+     * @param {string[]} refNames - Массив имен ref
+     * @param {string} event - Имя события
+     * @param {Function} handler - Обработчик
+     * @param {Object} options - Опции
+     */
+    addDomListenerMulti(refNames, event, handler, options = {}) {
+        refNames.forEach(refName => {
+            this.addDomListener(refName, event, handler, options);
         });
     }
 
@@ -275,8 +303,38 @@ export class BaseComponent {
         const refElements = this.element.querySelectorAll('[data-ref]');
         refElements.forEach(el => {
             const refName = el.dataset.ref;
-            this.refs.set(refName, el);
+            // Если ref уже существует, сохраняем как массив
+            if (this.refs.has(refName)) {
+                const existing = this.refs.get(refName);
+                if (Array.isArray(existing)) {
+                    existing.push(el);
+                } else {
+                    this.refs.set(refName, [existing, el]);
+                }
+            } else {
+                this.refs.set(refName, el);
+            }
         });
+    }
+
+    /**
+     * Получает ref элемент(ы)
+     * @param {string} refName - Имя ref
+     * @returns {HTMLElement|HTMLElement[]|null}
+     */
+    getRef(refName) {
+        return this.refs.get(refName) || null;
+    }
+
+    /**
+     * Получает все ref элементы с указанным именем как массив
+     * @param {string} refName - Имя ref
+     * @returns {HTMLElement[]}
+     */
+    getRefAll(refName) {
+        const ref = this.refs.get(refName);
+        if (!ref) return [];
+        return Array.isArray(ref) ? ref : [ref];
     }
 
     /**
@@ -289,9 +347,21 @@ export class BaseComponent {
         const oldInputs = oldElement.querySelectorAll('input, select, textarea');
         const newInputs = newElement.querySelectorAll('input, select, textarea');
         
-        oldInputs.forEach((oldInput, index) => {
-            const newInput = newInputs[index];
-            if (!newInput || !oldInput.name || oldInput.name !== newInput.name) return;
+        oldInputs.forEach((oldInput) => {
+            // Ищем соответствующий новый инпут по name или id
+            let newInput = null;
+            
+            if (oldInput.name) {
+                newInput = newElement.querySelector(`[name="${oldInput.name}"]`);
+            }
+            if (!newInput && oldInput.id) {
+                newInput = newElement.querySelector(`#${oldInput.id}`);
+            }
+            if (!newInput && oldInput.dataset.ref) {
+                newInput = newElement.querySelector(`[data-ref="${oldInput.dataset.ref}"]`);
+            }
+            
+            if (!newInput) return;
             
             if (oldInput.type === 'checkbox' || oldInput.type === 'radio') {
                 newInput.checked = oldInput.checked;
@@ -326,7 +396,6 @@ export class BaseComponent {
 
     /**
      * Форматирует денежную сумму
-     * @deprecated Используйте formatMoney из utils/formatters.js
      * @param {number} amount - Сумма
      * @returns {string} Отформатированная строка
      */
@@ -359,13 +428,30 @@ export class BaseComponent {
         }, obj);
     }
 
+    /**
+     * Проверяет, смонтирован ли компонент
+     * @returns {boolean}
+     */
+    isMounted() {
+        return this._isMounted && !this._isDestroyed;
+    }
+
+    /**
+     * Безопасно обновляет компонент только если он смонтирован
+     */
+    async safeUpdate() {
+        if (this.isMounted()) {
+            await this.update();
+        }
+    }
+
     // ========== СТАТИЧЕСКИЕ УТИЛИТЫ ==========
     
     /**
      * Создает элемент с атрибутами и классами
      * @static
      * @param {string} tag - Тег элемента
-     * @param {Object} options - { class, id, attrs, text, html }
+     * @param {Object} options - { class, id, attrs, text, html, data }
      * @returns {HTMLElement}
      */
     static createElement(tag, options = {}) {
@@ -393,5 +479,20 @@ export class BaseComponent {
         }
         
         return el;
+    }
+
+    /**
+     * Дебаунс функция
+     * @static
+     * @param {Function} fn - Функция для дебаунса
+     * @param {number} delay - Задержка в мс
+     * @returns {Function}
+     */
+    static debounce(fn, delay = 300) {
+        let timer = null;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn(...args), delay);
+        };
     }
 }
