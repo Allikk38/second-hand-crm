@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./modules/inventory/InventoryPage.js
+// ========================================
+
 /**
  * Inventory Page Controller
  * 
@@ -8,11 +12,11 @@
  * - InventoryStats (статистика)
  * 
  * @module InventoryPage
- * @version 4.1.0
+ * @version 4.2.0
  * @changes
+ * - Исправлена ошибка вызова state.getSelectedCount() → state.selectedCount
+ * - Улучшена обработка выделения товаров
  * - Добавлена проверка загрузки прав доступа
- * - Улучшена обработка ошибок
- * - Добавлен метод refresh()
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -72,7 +76,8 @@ export class InventoryPage extends BaseComponent {
         await this.buildCategories();
         
         const state = InventoryState.getState();
-        const hasSelected = state.getSelectedCount() > 0;
+        const selectedCount = state.selectedCount || 0;
+        const hasSelected = selectedCount > 0;
         
         return `
             <div class="inventory-page">
@@ -100,7 +105,7 @@ export class InventoryPage extends BaseComponent {
                 <!-- Массовые действия -->
                 ${hasSelected ? `
                     <div class="bulk-actions-panel" data-ref="bulkActions">
-                        <span class="selected-count">Выбрано: ${state.getSelectedCount()}</span>
+                        <span class="selected-count">Выбрано: ${selectedCount}</span>
                         <button class="btn-secondary" data-ref="selectAllBtn">
                             ${state.isAllSelected ? 'Снять выделение' : 'Выбрать все'}
                         </button>
@@ -428,6 +433,7 @@ export class InventoryPage extends BaseComponent {
     updateBulkActions() {
         // Эта логика будет обновлять панель массовых действий
         // Реализована в InventoryTable и InventoryPage через подписку
+        this.update();
     }
     
     // ========== ДЕЙСТВИЯ С ТОВАРАМИ ==========
@@ -475,13 +481,12 @@ export class InventoryPage extends BaseComponent {
     }
     
     async handleBulkDelete() {
-        const state = InventoryState.getState();
-        const count = state.getSelectedCount();
-        if (count === 0) return;
+        const selectedCount = InventoryState.getSelectedCount();
+        if (selectedCount === 0) return;
         
         const confirmed = await ConfirmDialog.show({
             title: 'Массовое удаление',
-            message: `Вы уверены, что хотите удалить ${count} товар(ов)?`,
+            message: `Вы уверены, что хотите удалить ${selectedCount} товар(ов)?`,
             confirmText: 'Удалить',
             cancelText: 'Отмена',
             type: 'danger'
@@ -490,12 +495,12 @@ export class InventoryPage extends BaseComponent {
         if (!confirmed) return;
         
         try {
-            const ids = state.getSelectedIds();
+            const ids = InventoryState.getSelectedIds();
             for (const id of ids) {
                 await ProductService.delete(id);
             }
             
-            Notification.success(`Удалено ${count} товаров`);
+            Notification.success(`Удалено ${selectedCount} товаров`);
             InventoryState.clearSelection();
             await this.refresh();
         } catch (error) {
