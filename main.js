@@ -2,14 +2,15 @@
  * Second Hand CRM - Application Entry Point
  * 
  * Точка входа приложения. Инициализирует ядро, регистрирует маршруты
- * и запускает приложение. Вся логика вынесена в отдельные модули.
+ * и запускает приложение.
  * 
  * @module main
- * @version 4.0.0
+ * @version 4.1.0
  * @changes
- * - Полный архитектурный рефакторинг
- * - Разделение на Router, AppLayout, AppState
- * - Централизованная регистрация маршрутов
+ * - Добавлена обработка ошибок загрузки модулей
+ * - Добавлена проверка сети
+ * - Вынесена регистрация маршрутов
+ * - Добавлен graceful shutdown
  */
 
 // ========== IMPORTS (Core) ==========
@@ -22,9 +23,11 @@ import { PermissionManager } from './core/PermissionManager.js';
 // ========== IMPORTS (Services) ==========
 import { AuthManager } from './modules/auth/AuthManager.js';
 import { LoginForm } from './modules/auth/LoginForm.js';
+import { Notification } from './modules/common/Notification.js';
 
-// ========== IMPORTS (Pages) ==========
-import { InventoryPage } from './modules/inventory/InventoryPage.js';
+// ========== CONSTANTS ==========
+const LOAD_TIMEOUT = 10000; // 10 секунд
+const RETRY_DELAY = 3000; // 3 секунды
 
 // ========== APPLICATION CLASS ==========
 class Application {
@@ -32,12 +35,27 @@ class Application {
         this.root = document.getElementById('app-root');
         this.layout = null;
         this.isAuthenticated = false;
+        this.retryCount = 0;
+        this.maxRetries = 3;
+        this.loadTimer = null;
     }
     
     /**
      * Инициализация приложения
      */
     async init() {
+        // Скрываем начальный лоадер
+        this.hideInitialLoader();
+        
+        // Проверяем соединение
+        if (!this.checkNetwork()) {
+            this.showNetworkError();
+            return;
+        }
+        
+        // Устанавливаем таймаут загрузки
+        this.setLoadTimeout();
+        
         try {
             // Проверяем аутентификацию
             const user = await AuthManager.init();
@@ -52,9 +70,86 @@ class Application {
             }
             
             this.setupGlobalEvents();
+            this.clearLoadTimeout();
+            
         } catch (error) {
             console.error('[App] Initialization error:', error);
-            this.showLoginPage();
+            this.clearLoadTimeout();
+            this.handleInitError(error);
+        }
+    }
+    
+    /**
+     * Скрывает начальный лоадер
+     */
+    hideInitialLoader() {
+        const loader = document.getElementById('initial-loader');
+        if (loader) {
+            loader.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Проверка сетевого соединения
+     */
+    checkNetwork() {
+        return navigator.onLine;
+    }
+    
+    /**
+     * Показывает ошибку сети
+     */
+    showNetworkError() {
+        this.root.innerHTML = `
+            <div class="error-state" style="padding: 40px; text-align: center;">
+                <div class="error-state-icon">🌐</div>
+                <h3>Нет подключения к интернету</h3>
+                <p>Проверьте подключение и обновите страницу</p>
+                <button class="btn-primary" onclick="location.reload()">Обновить</button>
+            </div>
+        `;
+    }
+    
+    /**
+     * Устанавливает таймаут загрузки
+     */
+    setLoadTimeout() {
+        this.loadTimer = setTimeout(() => {
+            console.error('[App] Load timeout');
+            this.handleInitError(new Error('Timeout loading application'));
+        }, LOAD_TIMEOUT);
+    }
+    
+    /**
+     * Очищает таймаут загрузки
+     */
+    clearLoadTimeout() {
+        if (this.loadTimer) {
+            clearTimeout(this.loadTimer);
+            this.loadTimer = null;
+        }
+    }
+    
+    /**
+     * Обработка ошибки инициализации
+     */
+    handleInitError(error) {
+        if (this.retryCount < this.maxRetries) {
+            this.retryCount++;
+            console.log(`[App] Retry ${this.retryCount}/${this.maxRetries} in ${RETRY_DELAY}ms`);
+            
+            setTimeout(() => {
+                this.init();
+            }, RETRY_DELAY);
+        } else {
+            this.root.innerHTML = `
+                <div class="error-state" style="padding: 40px; text-align: center;">
+                    <div class="error-state-icon">⚠️</div>
+                    <h3>Не удалось загрузить приложение</h3>
+                    <p>${this.escapeHtml(error.message)}</p>
+                    <button class="btn-primary" onclick="location.reload()">Обновить</button>
+                </div>
+            `;
         }
     }
     
@@ -87,14 +182,17 @@ class Application {
      * Регистрирует все маршруты приложения
      */
     registerRoutes() {
-        // Страница склада (загружается сразу)
+        // Страница склада
         Router.register('/inventory', {
             title: 'Склад',
-            loader: async (container) => new InventoryPage(container),
+            loader: async (container) => {
+                const { InventoryPage } = await import('./modules/inventory/InventoryPage.js');
+                return new InventoryPage(container);
+            },
             permissions: ['products:view']
         });
         
-        // Страница кассы (ленивая загрузка)
+        // Страница кассы
         Router.register('/cashier', {
             title: 'Касса',
             loader: async (container) => {
@@ -104,7 +202,7 @@ class Application {
             permissions: ['sales:create']
         });
         
-        // Страница отчетов (ленивая загрузка)
+        // Страница отчетов
         Router.register('/reports', {
             title: 'Отчеты',
             loader: async (container) => {
@@ -122,6 +220,15 @@ class Application {
                 return null;
             }
         });
+        
+        // Страница входа
+        Router.register('/login', {
+            title: 'Вход',
+            loader: async (container) => {
+                new LoginForm(container).render();
+                return null;
+            }
+        });
     }
     
     /**
@@ -136,46 +243,94 @@ class Application {
         // Ошибка доступа
         EventBus.on('router:access-denied', ({ route }) => {
             console.warn(`[App] Access denied to ${route.path}`);
-            EventBus.emit('notification:show', {
-                type: 'error',
-                message: 'У вас нет доступа к этому разделу'
-            });
+            Notification.warning('У вас нет доступа к этому разделу');
         });
         
         // Ошибка загрузки страницы
-        EventBus.on('router:error', ({ error }) => {
+        EventBus.on('router:error', ({ error, path }) => {
+            console.error(`[App] Route error ${path}:`, error);
+            
             const container = this.layout?.getPageContainer();
             if (container) {
                 container.innerHTML = `
-                    <div class="error-state" style="padding: 40px; text-align: center;">
-                        <div style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;">⚠️</div>
-                        <h3 style="margin-bottom: 12px; color: var(--color-text);">Ошибка загрузки</h3>
-                        <p style="color: var(--color-text-secondary); margin-bottom: 24px;">Не удалось загрузить страницу</p>
+                    <div class="error-state">
+                        <div class="error-state-icon">⚠️</div>
+                        <h3>Ошибка загрузки страницы</h3>
+                        <p>${this.escapeHtml(error.message)}</p>
                         <button class="btn-primary" onclick="location.reload()">Обновить</button>
                     </div>
                 `;
+            } else {
+                Notification.error('Ошибка загрузки страницы');
             }
         });
+        
+        // Восстановление сети
+        window.addEventListener('online', () => {
+            Notification.info('Соединение восстановлено');
+            this.refreshCurrentPage();
+        });
+        
+        window.addEventListener('offline', () => {
+            Notification.warning('Потеряно соединение с интернетом');
+        });
+        
+        // Обработка ошибок
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('[App] Unhandled rejection:', event.reason);
+            Notification.error('Произошла ошибка. Попробуйте обновить страницу.');
+        });
+        
+        window.addEventListener('error', (event) => {
+            console.error('[App] Global error:', event.error);
+            // Не показываем уведомление на каждую ошибку
+        });
+    }
+    
+    /**
+     * Обновляет текущую страницу
+     */
+    async refreshCurrentPage() {
+        const currentPath = window.location.hash.slice(1) || '/inventory';
+        await Router.navigate(currentPath, { replace: true });
     }
     
     /**
      * Обработчик выхода из системы
      */
     async handleLogout() {
-        await AuthManager.signOut();
-        this.isAuthenticated = false;
-        AppState.reset();
-        PermissionManager.clear();
-        
-        window.location.hash = '';
-        this.showLoginPage();
+        try {
+            await AuthManager.signOut();
+            this.isAuthenticated = false;
+            AppState.reset();
+            PermissionManager.clear();
+            
+            window.location.hash = '';
+            this.showLoginPage();
+            
+            Notification.info('Вы вышли из системы');
+        } catch (error) {
+            console.error('[App] Logout error:', error);
+            Notification.error('Ошибка при выходе');
+        }
     }
     
     /**
      * Показывает страницу входа
      */
     showLoginPage() {
+        this.root.innerHTML = '';
         new LoginForm(this.root).render();
+    }
+    
+    /**
+     * Экранирует HTML спецсимволы
+     */
+    escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 }
 
