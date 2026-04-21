@@ -5,10 +5,24 @@
  * Хранит товары, корзину, фильтры и статистику смены.
  * 
  * @module cashierState
- * @version 1.0.0
+ * @version 4.1.0
+ * @changes
+ * - Добавлено кэширование вычислений корзины
+ * - Добавлена валидация остатков при добавлении
+ * - Упрощена структура
  */
 
 import { EventBus } from '../../core/EventBus.js';
+
+// Кэш для вычислений корзины
+let cartCache = {
+    subtotal: 0,
+    itemsDiscount: 0,
+    totalDiscountAmount: 0,
+    total: 0,
+    totalQuantity: 0,
+    version: 0
+};
 
 class CashierStateClass {
     constructor() {
@@ -47,6 +61,7 @@ class CashierStateClass {
         };
         
         this._subscribers = new Set();
+        this._cacheVersion = 0;
     }
     
     // ========== ГЕТТЕРЫ / СЕТТЕРЫ ==========
@@ -58,16 +73,33 @@ class CashierStateClass {
     set(key, value) {
         const oldValue = this._state[key];
         this._state[key] = value;
+        
+        // Инвалидируем кэш при изменении корзины
+        if (['cartItems', 'cartTotalDiscount', 'cartItemDiscounts'].includes(key)) {
+            this._invalidateCartCache();
+        }
+        
         this._notify([{ key, newValue: value, oldValue }]);
     }
     
     setMultiple(updates) {
         const changes = [];
+        let invalidateCache = false;
+        
         Object.entries(updates).forEach(([key, value]) => {
             const oldValue = this._state[key];
             this._state[key] = value;
             changes.push({ key, newValue: value, oldValue });
+            
+            if (['cartItems', 'cartTotalDiscount', 'cartItemDiscounts'].includes(key)) {
+                invalidateCache = true;
+            }
         });
+        
+        if (invalidateCache) {
+            this._invalidateCartCache();
+        }
+        
         this._notify(changes);
     }
     
@@ -97,6 +129,77 @@ class CashierStateClass {
         });
     }
     
+    // ========== КЭШ КОРЗИНЫ ==========
+    
+    _invalidateCartCache() {
+        this._cacheVersion++;
+        cartCache.version = this._cacheVersion;
+    }
+    
+    _getCachedOrCompute(computeFn) {
+        if (cartCache.version !== this._cacheVersion) {
+            cartCache = {
+                subtotal: this._computeSubtotal(),
+                itemsDiscount: this._computeItemsDiscount(),
+                totalDiscountAmount: 0,
+                total: 0,
+                totalQuantity: this._computeTotalQuantity(),
+                version: this._cacheVersion
+            };
+            cartCache.totalDiscountAmount = this._computeTotalDiscountAmount(cartCache.subtotal, cartCache.itemsDiscount);
+            cartCache.total = this._computeTotal(cartCache.subtotal, cartCache.itemsDiscount, cartCache.totalDiscountAmount);
+        }
+        
+        return computeFn(cartCache);
+    }
+    
+    _computeSubtotal() {
+        return this._state.cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    }
+    
+    _computeItemsDiscount() {
+        return this._state.cartItems.reduce((sum, item) => {
+            const discount = this._state.cartItemDiscounts.get(item.id) || 0;
+            if (discount > 0) {
+                return sum + (item.price * item.quantity * discount / 100);
+            }
+            return sum;
+        }, 0);
+    }
+    
+    _computeTotalDiscountAmount(subtotal, itemsDiscount) {
+        const subtotalAfterItems = subtotal - itemsDiscount;
+        return subtotalAfterItems * (this._state.cartTotalDiscount / 100);
+    }
+    
+    _computeTotal(subtotal, itemsDiscount, totalDiscountAmount) {
+        return Math.max(0, subtotal - itemsDiscount - totalDiscountAmount);
+    }
+    
+    _computeTotalQuantity() {
+        return this._state.cartItems.reduce((sum, item) => sum + item.quantity, 0);
+    }
+    
+    getCartTotalQuantity() {
+        return this._getCachedOrCompute(cache => cache.totalQuantity);
+    }
+    
+    getCartSubtotal() {
+        return this._getCachedOrCompute(cache => cache.subtotal);
+    }
+    
+    getCartItemsDiscountAmount() {
+        return this._getCachedOrCompute(cache => cache.itemsDiscount);
+    }
+    
+    getCartTotalDiscountAmount() {
+        return this._getCachedOrCompute(cache => cache.totalDiscountAmount);
+    }
+    
+    getCartTotal() {
+        return this._getCachedOrCompute(cache => cache.total);
+    }
+    
     // ========== СМЕНА ==========
     
     hasOpenShift() {
@@ -110,9 +213,20 @@ class CashierStateClass {
     // ========== КОРЗИНА ==========
     
     addToCart(product) {
+        // Проверка остатка (если есть поле stock)
+        if (product.stock !== undefined && product.stock <= 0) {
+            console.warn('[CashierState] Product out of stock:', product.name);
+            return false;
+        }
+        
         const existing = this._state.cartItems.find(i => i.id === product.id);
         
         if (existing) {
+            // Проверка лимита
+            if (product.stock !== undefined && existing.quantity >= product.stock) {
+                console.warn('[CashierState] Max stock reached:', product.name);
+                return false;
+            }
             existing.quantity += 1;
         } else {
             this._state.cartItems.push({
@@ -129,6 +243,7 @@ class CashierStateClass {
             }
         }
         
+        this._invalidateCartCache();
         this._notify([
             { key: 'cartItems', newValue: this._state.cartItems, oldValue: null },
             { key: 'recentlyAdded', newValue: this._state.recentlyAdded, oldValue: null }
@@ -142,6 +257,7 @@ class CashierStateClass {
         if (index !== -1) {
             this._state.cartItems.splice(index, 1);
             this._state.cartItemDiscounts.delete(id);
+            this._invalidateCartCache();
             this._notify([
                 { key: 'cartItems', newValue: this._state.cartItems, oldValue: null },
                 { key: 'cartItemDiscounts', newValue: this._state.cartItemDiscounts, oldValue: null }
@@ -154,17 +270,27 @@ class CashierStateClass {
     updateCartItemQuantity(id, quantity) {
         const item = this._state.cartItems.find(i => i.id === id);
         if (item) {
-            item.quantity = Math.max(1, Math.min(quantity, 999));
-            this._notify([{ key: 'cartItems', newValue: this._state.cartItems, oldValue: null }]);
+            const maxStock = item.stock || 999;
+            const newQuantity = Math.max(1, Math.min(quantity, maxStock));
+            if (item.quantity !== newQuantity) {
+                item.quantity = newQuantity;
+                this._invalidateCartCache();
+                this._notify([{ key: 'cartItems', newValue: this._state.cartItems, oldValue: null }]);
+            }
         }
     }
     
     setCartItemDiscount(id, discount) {
-        if (discount === 0) {
+        const maxDiscount = 30;
+        const validDiscount = Math.min(Math.max(0, discount), maxDiscount);
+        
+        if (validDiscount === 0) {
             this._state.cartItemDiscounts.delete(id);
         } else {
-            this._state.cartItemDiscounts.set(id, Math.min(discount, 30));
+            this._state.cartItemDiscounts.set(id, validDiscount);
         }
+        
+        this._invalidateCartCache();
         this._notify([{ key: 'cartItemDiscounts', newValue: this._state.cartItemDiscounts, oldValue: null }]);
     }
     
@@ -173,42 +299,14 @@ class CashierStateClass {
         this._state.cartTotalDiscount = 0;
         this._state.cartItemDiscounts.clear();
         this._state.cartPaymentMethod = 'cash';
+        
+        this._invalidateCartCache();
         this._notify([
             { key: 'cartItems', newValue: [], oldValue: null },
             { key: 'cartTotalDiscount', newValue: 0, oldValue: null },
-            { key: 'cartItemDiscounts', newValue: new Map(), oldValue: null }
+            { key: 'cartItemDiscounts', newValue: new Map(), oldValue: null },
+            { key: 'cartPaymentMethod', newValue: 'cash', oldValue: null }
         ]);
-    }
-    
-    getCartTotalQuantity() {
-        return this._state.cartItems.reduce((sum, item) => sum + item.quantity, 0);
-    }
-    
-    getCartSubtotal() {
-        return this._state.cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    }
-    
-    getCartItemsDiscountAmount() {
-        return this._state.cartItems.reduce((sum, item) => {
-            const discount = this._state.cartItemDiscounts.get(item.id) || 0;
-            if (discount > 0) {
-                return sum + (item.price * item.quantity * discount / 100);
-            }
-            return sum;
-        }, 0);
-    }
-    
-    getCartTotalDiscountAmount() {
-        const subtotalAfterItems = this.getCartSubtotal() - this.getCartItemsDiscountAmount();
-        return subtotalAfterItems * (this._state.cartTotalDiscount / 100);
-    }
-    
-    getCartTotal() {
-        const subtotal = this.getCartSubtotal();
-        const itemsDiscount = this.getCartItemsDiscountAmount();
-        const subtotalAfterItems = subtotal - itemsDiscount;
-        const totalDiscount = subtotalAfterItems * (this._state.cartTotalDiscount / 100);
-        return Math.max(0, subtotalAfterItems - totalDiscount);
     }
     
     // ========== ФИЛЬТРАЦИЯ ТОВАРОВ ==========
@@ -235,6 +333,7 @@ class CashierStateClass {
         
         this._state.filteredProducts = filtered;
         
+        // Разворачиваем категории при поиске
         if (this._state.searchQuery) {
             const categories = new Set(filtered.map(p => p.category));
             this._state.expandedCategories = categories;
@@ -257,6 +356,8 @@ class CashierStateClass {
         this._state.categories = Array.from(counts.entries())
             .map(([value, count]) => ({ value, count }))
             .sort((a, b) => b.count - a.count);
+        
+        this._notify([{ key: 'categories', newValue: this._state.categories, oldValue: null }]);
     }
     
     toggleCategory(category) {
@@ -283,6 +384,8 @@ class CashierStateClass {
             cartItemDiscounts: new Map(),
             scannerInput: ''
         };
+        
+        this._invalidateCartCache();
         this._notify([{ key: 'reset', newValue: null, oldValue: null }]);
     }
 }
