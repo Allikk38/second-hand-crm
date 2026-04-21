@@ -12,13 +12,12 @@
  * - InventoryStats (статистика)
  * 
  * @module InventoryPage
- * @version 4.3.0
+ * @version 4.3.2
  * @changes
- * - Исправлена ошибка вызова state.getSelectedCount() → state.selectedCount
+ * - Исправлено: при ошибке загрузки НЕ очищается существующий список товаров
+ * - Улучшена обработка ошибок в loadProducts()
  * - Добавлен cache-busting для ProductService
- * - Улучшена обработка ошибок при загрузке товаров
- * - Добавлен принудительный сброс кэша при удалении
- * - Исправлено: после ошибки загрузки товары не пропадают из интерфейса
+ * - Принудительный сброс кэша при удалении
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -35,7 +34,7 @@ import { getCategoryName } from '../../utils/categorySchema.js';
 // ========== КОНСТАНТЫ ==========
 const PAGE_SIZE = 20;
 const STORAGE_KEY = 'inventory_filters';
-const CACHE_BUST = 'v=4.3.0';
+const CACHE_BUST = 'v=4.3.2';
 
 // Ленивая загрузка ProductService с cache-busting
 let ProductService = null;
@@ -170,7 +169,7 @@ export class InventoryPage extends BaseComponent {
      */
     updatePermissions() {
         this.permissions = {
-            canCreate: PermissionManager.can('products:create'),
+            canCreate: PermissionManager.can('products:2026-04-21') || PermissionManager.can('products:create'),
             canEdit: PermissionManager.can('products:edit'),
             canDelete: PermissionManager.can('products:delete')
         };
@@ -238,12 +237,17 @@ export class InventoryPage extends BaseComponent {
     async loadProducts(reset = false) {
         const state = InventoryState.getState();
         
+        // Предотвращаем параллельную загрузку
         if (state.isLoading) return;
+        
+        // Сохраняем текущие товары на случай ошибки
+        const previousProducts = state.products;
+        const previousPage = state.page;
+        const previousHasMore = state.hasMore;
         
         if (reset) {
             InventoryState.setMultiple({
                 page: 0,
-                products: [],
                 hasMore: true
             });
             InventoryState.clearSelection();
@@ -255,7 +259,7 @@ export class InventoryPage extends BaseComponent {
             const ProductService = await getProductService();
             const options = {
                 limit: PAGE_SIZE,
-                offset: state.page * PAGE_SIZE
+                offset: reset ? 0 : state.page * PAGE_SIZE
             };
             
             let products = await ProductService.getAll(options);
@@ -272,20 +276,29 @@ export class InventoryPage extends BaseComponent {
             }
             
             InventoryState.set('hasMore', products.length === PAGE_SIZE);
-            InventoryState.set('page', state.page + 1);
+            InventoryState.set('page', (reset ? 0 : state.page) + 1);
             
             // Обновляем счетчик
             await this.updateFilteredCount();
             
         } catch (error) {
             console.error('[InventoryPage] Load error:', error);
-            Notification.error('Ошибка при загрузке товаров');
             
-            // В случае ошибки не оставляем страницу пустой
-            if (reset && state.products.length === 0) {
-                // Если это первая загрузка и произошла ошибка, показываем сообщение
-                InventoryState.set('products', []);
+            // ВАЖНО: НЕ очищаем список при ошибке!
+            // Восстанавливаем предыдущее состояние
+            if (reset && previousProducts.length > 0) {
+                InventoryState.setMultiple({
+                    products: previousProducts,
+                    page: previousPage,
+                    hasMore: previousHasMore
+                });
             }
+            
+            // Показываем уведомление
+            Notification.error('Ошибка при загрузке товаров. Проверьте подключение.');
+            
+            // Пробрасываем ошибку дальше для логирования
+            throw error;
         } finally {
             InventoryState.set('isLoading', false);
         }
@@ -354,9 +367,14 @@ export class InventoryPage extends BaseComponent {
     }
     
     async refresh() {
-        await this.loadProducts(true);
-        await this.stats?.update();
-        await this.buildCategories();
+        try {
+            await this.loadProducts(true);
+            await this.stats?.update();
+            await this.buildCategories();
+        } catch (error) {
+            // Ошибка уже обработана в loadProducts
+            console.error('[InventoryPage] Refresh error:', error);
+        }
     }
     
     async buildCategories() {
@@ -452,8 +470,6 @@ export class InventoryPage extends BaseComponent {
     }
     
     updateBulkActions() {
-        // Эта логика будет обновлять панель массовых действий
-        // Реализована в InventoryTable и InventoryPage через подписку
         this.update();
     }
     
@@ -525,7 +541,6 @@ export class InventoryPage extends BaseComponent {
         
         try {
             const ProductService = await getProductService();
-            // Принудительно сбрасываем кэш перед удалением
             ProductService.clearCache();
             
             const ids = InventoryState.getSelectedIds();
@@ -536,7 +551,6 @@ export class InventoryPage extends BaseComponent {
             Notification.success(`Удалено ${selectedCount} товаров`);
             InventoryState.clearSelection();
             
-            // Сбрасываем кэш после удаления
             ProductService.clearCache();
             
             await this.refresh();
