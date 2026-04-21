@@ -1,15 +1,16 @@
-// ========================================
-// FILE: ./css/components/modal.css
-// ========================================
-
 /**
- * Modal Component - Clean & Functional
+ * Modal - Business Professional
  * 
- * Строгие модальные окна. Четкое разделение зон, читаемый текст.
- * Никаких лишних анимаций и белого текста на белом фоне.
+ * Строгие модальные окна для бизнес-приложений.
+ * Без анимаций, без эффектов стекла.
  * 
  * @stylesheet modal
- * @version 3.0.0
+ * @version 4.0.0
+ * @changes
+ * - Убраны все анимации (fade, scale, slide)
+ * - Убран backdrop-filter (blur)
+ * - Упрощены оверлей и контейнер
+ * - Статичные, предсказуемые размеры
  */
 
 /* ========== MODAL OVERLAY ========== */
@@ -25,25 +26,28 @@
     justify-content: center;
     z-index: var(--z-modal-backdrop);
     padding: var(--spacing-4);
-    backdrop-filter: blur(2px);
 }
 
 /* ========== MODAL CONTAINER ========== */
 .modal {
     background: var(--color-white);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-xl);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
     width: 100%;
     max-width: 560px;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border);
 }
 
 .modal-sm {
     max-width: 400px;
+}
+
+.modal-lg {
+    max-width: 800px;
 }
 
 /* ========== MODAL HEADER ========== */
@@ -52,8 +56,9 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-4) var(--spacing-5);
-    border-bottom: 1px solid var(--color-border-light);
+    border-bottom: var(--border-width) solid var(--color-border);
     flex-shrink: 0;
+    background: var(--color-white);
 }
 
 .modal-header h3 {
@@ -75,11 +80,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background var(--transition-fast);
 }
 
 .modal-header .btn-close:hover {
-    background: var(--color-slate-100);
+    background: var(--color-gray-100);
     color: var(--color-text);
 }
 
@@ -100,8 +104,8 @@
 /* ========== MODAL FOOTER ========== */
 .modal-footer {
     padding: var(--spacing-4) var(--spacing-5);
-    border-top: 1px solid var(--color-border-light);
-    background: var(--color-slate-50);
+    border-top: var(--border-width) solid var(--color-border);
+    background: var(--color-gray-50);
     flex-shrink: 0;
 }
 
@@ -133,10 +137,11 @@
 }
 
 .product-form-modal .pricing-section {
-    background: var(--color-slate-50);
+    background: var(--color-gray-50);
     padding: var(--spacing-4);
     border-radius: var(--radius-md);
     margin: var(--spacing-4) 0;
+    border: var(--border-width) solid var(--color-border);
 }
 
 /* ========== QUICK VIEW MODAL ========== */
@@ -164,7 +169,6 @@
     right: 0;
     bottom: 0;
     background: var(--overlay-bg);
-    backdrop-filter: blur(2px);
     cursor: pointer;
 }
 
@@ -172,13 +176,13 @@
     position: relative;
     display: flex;
     background: var(--color-white);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-2xl);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
     max-width: 800px;
     width: 90%;
     max-height: 85vh;
     overflow: hidden;
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border);
 }
 
 .quick-view-content .btn-close {
@@ -191,18 +195,21 @@
     background: var(--color-white);
     color: var(--color-text);
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--color-border-light);
+    border: var(--border-width) solid var(--color-border);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
 }
 
+.quick-view-content .btn-close:hover {
+    background: var(--color-gray-100);
+}
+
 .quick-view-photo {
     flex: 1;
     min-width: 300px;
-    background: var(--color-slate-100);
+    background: var(--color-gray-100);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -240,7 +247,7 @@
 /* ========== АДАПТИВНОСТЬ ========== */
 @media (max-width: 768px) {
     .modal-overlay {
-        padding: var(--spacing-3);
+        padding: var(--spacing-2);
     }
     
     .modal {
