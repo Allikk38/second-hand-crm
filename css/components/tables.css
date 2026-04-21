@@ -1,131 +1,97 @@
 /**
- * Tables Component - Premium Edition
+ * Tables - Business Professional
  * 
- * Стили для таблиц с данными, сортировкой и пагинацией с премиальным дизайном.
- * 
- * Архитектурные решения:
- * - Адаптивные таблицы с горизонтальным скроллом
- * - Стилизация сортировки с индикаторами
- * - Кастомная пагинация с анимациями
- * - Поддержка разных вариантов (striped, bordered, sm)
- * - Состояния строк (selected, hover)
- * - Стилизация для денежных значений
- * - Топ-списки с медалями для рейтинга
- * - Пустые состояния с иконками
+ * Строгие таблицы для бизнес-приложений.
+ * Без анимаций строк, без градиентов.
  * 
  * @stylesheet tables
- * @version 2.0.0
+ * @version 4.0.0
+ * @changes
+ * - Убраны transform и анимированные тени у строк
+ * - Убраны градиенты у заголовков
+ * - Упрощены индикаторы сортировки
+ * - Четкие, статичные состояния
  */
 
 /* ========== DATA TABLE ========== */
 .data-table {
     width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
+    border-collapse: collapse;
     font-size: var(--font-size-sm);
 }
 
 .data-table thead {
-    background: linear-gradient(180deg, var(--table-header-bg) 0%, var(--color-gray-50) 100%);
-    position: sticky;
-    top: 0;
-    z-index: var(--z-10);
+    background: var(--color-gray-50);
+    border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .data-table th {
-    padding: var(--table-cell-padding);
+    padding: var(--spacing-3) var(--spacing-4);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
     text-align: left;
     white-space: nowrap;
-    border-bottom: 2px solid var(--color-border);
-    text-transform: uppercase;
     font-size: var(--font-size-xs);
+    text-transform: uppercase;
     letter-spacing: var(--letter-spacing-wide);
-    transition: background var(--transition-fast);
-    position: relative;
 }
 
 /* Сортируемые колонки */
 .data-table th.sortable {
     cursor: pointer;
     user-select: none;
-    position: relative;
     padding-right: var(--spacing-6);
+    position: relative;
 }
 
 .data-table th.sortable::after {
     content: '↕';
     position: absolute;
-    right: var(--spacing-3);
+    right: var(--spacing-2);
     top: 50%;
     transform: translateY(-50%);
-    opacity: 0.3;
-    font-size: 14px;
-    transition: opacity var(--transition-fast);
+    opacity: 0.4;
+    font-size: 12px;
 }
 
 .data-table th.sortable:hover {
-    background: linear-gradient(180deg, var(--color-primary-bg) 0%, var(--color-gray-100) 100%);
-    color: var(--color-primary-dark);
+    background: var(--color-gray-100);
 }
 
 .data-table th.sortable:hover::after {
-    opacity: 0.6;
-    color: var(--color-primary);
+    opacity: 0.7;
 }
 
 .data-table th.sort-asc::after {
     content: '↑';
     opacity: 1;
     color: var(--color-primary);
-    font-weight: var(--font-weight-bold);
 }
 
 .data-table th.sort-desc::after {
     content: '↓';
     opacity: 1;
     color: var(--color-primary);
-    font-weight: var(--font-weight-bold);
 }
 
 /* Ячейки */
 .data-table td {
-    padding: var(--table-cell-padding);
-    border-bottom: var(--border-width) solid var(--table-border-color);
+    padding: var(--spacing-3) var(--spacing-4);
+    border-bottom: var(--border-width) solid var(--color-border-light);
     vertical-align: middle;
-    transition: background var(--transition-fast);
 }
 
 /* Строки */
 .data-table tbody tr {
-    transition: all var(--transition-fast);
-    position: relative;
+    background: var(--color-white);
 }
 
 .data-table tbody tr:hover {
-    background: linear-gradient(90deg, var(--table-row-hover) 0%, transparent 100%);
-    transform: scale(1.001);
-    box-shadow: var(--shadow-xs);
+    background: var(--color-gray-50);
 }
 
 .data-table tbody tr.selected {
-    background: linear-gradient(90deg, var(--color-primary-bg) 0%, transparent 100%);
-    border-left: 3px solid var(--color-primary);
-}
-
-.data-table tbody tr.selected td:first-child {
-    position: relative;
-}
-
-.data-table tbody tr.selected td:first-child::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: var(--color-primary);
+    background: var(--color-primary-bg);
 }
 
 /* ========== TABLE VARIANTS ========== */
@@ -133,7 +99,7 @@
 /* Компактная таблица */
 .table-sm th,
 .table-sm td {
-    padding: var(--table-cell-padding-sm);
+    padding: var(--spacing-2) var(--spacing-3);
     font-size: var(--font-size-xs);
 }
 
@@ -143,19 +109,17 @@
 }
 
 .table-striped tbody tr:nth-child(even):hover {
-    background: linear-gradient(90deg, var(--table-row-hover) 0%, var(--color-gray-50) 100%);
+    background: var(--color-gray-100);
 }
 
 /* Таблица с границами */
 .table-bordered {
-    border: var(--border-width) solid var(--table-border-color);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
+    border: var(--border-width) solid var(--color-border);
 }
 
 .table-bordered th,
 .table-bordered td {
-    border: var(--border-width) solid var(--table-border-color);
+    border: var(--border-width) solid var(--color-border);
 }
 
 .table-bordered thead th {
@@ -163,123 +127,60 @@
 }
 
 /* ========== TABLE ALIGNMENT ========== */
-.data-table .text-left { 
-    text-align: left; 
-}
-
-.data-table .text-center { 
-    text-align: center; 
-}
-
-.data-table .text-right { 
-    text-align: right; 
-}
+.data-table .text-left { text-align: left; }
+.data-table .text-center { text-align: center; }
+.data-table .text-right { text-align: right; }
 
 /* Денежные значения */
 .data-table .money {
     text-align: right;
     font-family: var(--font-family-mono);
     font-weight: var(--font-weight-medium);
-    letter-spacing: -0.01em;
 }
 
 .data-table .money.positive {
     color: var(--color-success);
-    position: relative;
-}
-
-.data-table .money.positive::before {
-    content: '▲';
-    font-size: 10px;
-    margin-right: var(--spacing-1);
-    opacity: 0.7;
 }
 
 .data-table .money.negative {
     color: var(--color-danger);
-    position: relative;
-}
-
-.data-table .money.negative::before {
-    content: '▼';
-    font-size: 10px;
-    margin-right: var(--spacing-1);
-    opacity: 0.7;
 }
 
 /* ========== TABLE ACTIONS ========== */
 .table-actions {
     display: flex;
     gap: var(--spacing-2);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.data-table tbody tr:hover .table-actions {
-    opacity: 1;
 }
 
 .table-actions .btn-icon {
     width: 32px;
     height: 32px;
-    background: var(--color-white);
-    border: 1px solid var(--color-border-light);
-    border-radius: var(--radius-md);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
-    transition: all var(--transition-fast);
-    box-shadow: var(--shadow-xs);
 }
 
 .table-actions .btn-icon:hover {
-    background: var(--color-primary);
-    color: var(--color-white);
-    border-color: var(--color-primary);
-    transform: scale(1.1);
-    box-shadow: var(--shadow-sm);
+    background: var(--color-gray-100);
+    color: var(--color-primary);
 }
 
 .table-actions .btn-icon.btn-danger:hover {
-    background: var(--color-danger);
-    border-color: var(--color-danger);
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
 }
 
 /* ========== TABLE CONTAINER ========== */
 .table-container {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: var(--radius-xl);
-    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    border: var(--border-width) solid var(--color-border);
     background: var(--color-white);
-    box-shadow: 
-        0 2px 8px rgba(0, 0, 0, 0.02),
-        0 0 0 1px rgba(0, 0, 0, 0.01);
-    position: relative;
 }
 
 .table-container .data-table {
     margin: 0;
-}
-
-/* Кастомный скроллбар для контейнера */
-.table-container::-webkit-scrollbar {
-    height: 8px;
-}
-
-.table-container::-webkit-scrollbar-track {
-    background: var(--color-gray-50);
-    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
-}
-
-.table-container::-webkit-scrollbar-thumb {
-    background: var(--color-gray-300);
-    border-radius: var(--radius-full);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-}
-
-.table-container::-webkit-scrollbar-thumb:hover {
-    background: var(--color-gray-400);
-    background-clip: padding-box;
 }
 
 /* ========== TABLE FOOTER ========== */
@@ -287,16 +188,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--spacing-4) var(--spacing-5);
-    background: linear-gradient(180deg, var(--color-white) 0%, var(--color-gray-50) 100%);
-    border-top: 1px solid var(--color-border);
-    border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+    padding: var(--spacing-3) var(--spacing-4);
+    background: var(--color-gray-50);
+    border-top: var(--border-width) solid var(--color-border);
 }
 
 .table-info {
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
-    font-weight: var(--font-weight-medium);
 }
 
 /* ========== PAGINATION ========== */
@@ -307,53 +206,40 @@
 }
 
 .pagination-btn {
-    min-width: 36px;
-    height: 36px;
+    min-width: 32px;
+    height: 32px;
     padding: 0 var(--spacing-2);
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--color-white);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     color: var(--color-text);
     cursor: pointer;
-    transition: all var(--transition-fast);
-    box-shadow: var(--shadow-xs);
 }
 
 .pagination-btn:hover:not(:disabled) {
-    background: var(--color-primary-bg);
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
-}
-
-.pagination-btn:active:not(:disabled) {
-    transform: translateY(0);
-    box-shadow: var(--shadow-xs);
+    background: var(--color-gray-50);
+    border-color: var(--color-gray-400);
 }
 
 .pagination-btn.active {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    background: var(--color-primary);
     color: var(--color-white);
     border-color: var(--color-primary);
-    box-shadow: var(--shadow-md);
 }
 
 .pagination-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
-    background: var(--color-gray-50);
 }
 
 .pagination-ellipsis {
     padding: 0 var(--spacing-1);
     color: var(--color-text-muted);
-    font-weight: var(--font-weight-medium);
 }
 
 /* ========== SELLER INFO ========== */
@@ -364,7 +250,7 @@
 }
 
 .seller-name {
-    font-weight: var(--font-weight-semibold);
+    font-weight: var(--font-weight-medium);
     color: var(--color-text);
     font-size: var(--font-size-sm);
 }
@@ -372,7 +258,6 @@
 .seller-email {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
-    font-family: var(--font-family-mono);
 }
 
 /* ========== TOP PRODUCTS LIST ========== */
@@ -385,25 +270,17 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-3);
-    padding: var(--spacing-3) var(--spacing-4);
-    border-bottom: 1px solid var(--color-border-light);
-    transition: all var(--transition-fast);
-    border-radius: var(--radius-md);
-}
-
-.top-product-item:hover {
-    background: var(--color-gray-50);
-    transform: translateX(-2px);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-bottom: var(--border-width) solid var(--color-border-light);
 }
 
 .top-product-item:last-child {
     border-bottom: none;
 }
 
-/* Ранг с медалями */
 .top-product-item .rank {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -413,38 +290,6 @@
     font-weight: var(--font-weight-bold);
     color: var(--color-text-secondary);
     flex-shrink: 0;
-    transition: all var(--transition-fast);
-}
-
-/* Золото */
-.top-product-item:nth-child(1) .rank {
-    background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
-    color: #000;
-    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
-    animation: goldGlow 2s infinite;
-}
-
-@keyframes goldGlow {
-    0%, 100% {
-        box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4);
-    }
-    50% {
-        box-shadow: 0 2px 16px rgba(255, 215, 0, 0.6);
-    }
-}
-
-/* Серебро */
-.top-product-item:nth-child(2) .rank {
-    background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
-    color: #000;
-    box-shadow: 0 2px 8px rgba(192, 192, 192, 0.4);
-}
-
-/* Бронза */
-.top-product-item:nth-child(3) .rank {
-    background: linear-gradient(135deg, #cd7f32 0%, #e8a85f 100%);
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(205, 127, 50, 0.4);
 }
 
 .top-product-item .name {
@@ -457,20 +302,14 @@
 .top-product-item .value {
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
-    background: var(--color-gray-100);
-    padding: var(--spacing-1) var(--spacing-2);
-    border-radius: var(--radius-full);
 }
 
 .top-product-item .revenue {
-    min-width: 90px;
+    min-width: 80px;
     text-align: right;
-    font-weight: var(--font-weight-bold);
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    font-family: var(--font-family-mono);
 }
 
 /* ========== EMPTY STATE ========== */
@@ -482,17 +321,15 @@
     padding: var(--spacing-12) var(--spacing-6);
     text-align: center;
     color: var(--color-text-muted);
-    background: linear-gradient(135deg, var(--color-gray-50) 0%, var(--color-white) 100%);
-    border-radius: var(--radius-xl);
-    border: 2px dashed var(--color-border);
-    margin: var(--spacing-4);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    border: var(--border-width) dashed var(--color-border);
 }
 
 .empty-state-icon {
-    font-size: 80px;
-    margin-bottom: var(--spacing-5);
+    font-size: 48px;
+    margin-bottom: var(--spacing-4);
     opacity: 0.4;
-    animation: float 3s ease-in-out infinite;
 }
 
 .empty-state p {
@@ -501,161 +338,60 @@
     color: var(--color-text-secondary);
 }
 
-.empty-message {
-    padding: var(--spacing-8);
-    text-align: center;
-    color: var(--color-text-muted);
-    font-style: italic;
-    font-size: var(--font-size-sm);
-}
-
-/* ========== STATUS BADGES IN TABLE ========== */
-.data-table .status-badge {
+/* ========== STATUS BADGES ========== */
+.status-badge {
     display: inline-block;
     padding: var(--spacing-1) var(--spacing-3);
     border-radius: var(--radius-full);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
-    letter-spacing: var(--letter-spacing-wide);
-    box-shadow: var(--shadow-xs);
 }
 
-.data-table .status-badge.status-in_stock {
-    background: linear-gradient(135deg, var(--color-success-bg) 0%, var(--color-success) 100%);
-    color: var(--color-white);
+.status-badge.status-in_stock {
+    background: var(--color-success-bg);
+    color: var(--color-success-dark);
 }
 
-.data-table .status-badge.status-sold {
-    background: linear-gradient(135deg, var(--color-danger-bg) 0%, var(--color-danger) 100%);
-    color: var(--color-white);
+.status-badge.status-sold {
+    background: var(--color-danger-bg);
+    color: var(--color-danger-dark);
 }
 
-.data-table .status-badge.status-reserved {
-    background: linear-gradient(135deg, var(--color-warning-bg) 0%, var(--color-warning) 100%);
-    color: var(--color-white);
+.status-badge.status-reserved {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
 }
 
 /* ========== CHECKBOX IN TABLE ========== */
 .data-table .checkbox-cell {
     width: 40px;
     text-align: center;
-    padding: var(--spacing-4) var(--spacing-2);
 }
 
 .table-checkbox {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-white);
+    width: 16px;
+    height: 16px;
     cursor: pointer;
-    position: relative;
-    transition: all var(--transition-fast);
-}
-
-.table-checkbox:hover {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px var(--color-primary-bg);
-}
-
-.table-checkbox:checked {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-}
-
-.table-checkbox:checked::after {
-    content: '✓';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: var(--color-white);
-    font-size: 12px;
-    font-weight: var(--font-weight-bold);
-}
-
-.table-checkbox:indeterminate {
-    background: var(--color-primary-light);
-    border-color: var(--color-primary-light);
-}
-
-.table-checkbox:indeterminate::after {
-    content: '−';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: var(--color-white);
-    font-size: 16px;
-    font-weight: var(--font-weight-bold);
+    accent-color: var(--color-primary);
 }
 
 /* ========== АДАПТИВНОСТЬ ========== */
-
-/* Планшеты */
-@media (max-width: 1024px) {
-    .table-container {
-        border-radius: var(--radius-lg);
-    }
-    
+@media (max-width: 768px) {
     .data-table th,
     .data-table td {
-        padding: var(--spacing-3);
+        padding: var(--spacing-2);
+        font-size: var(--font-size-xs);
     }
     
     .table-footer {
         flex-direction: column;
-        gap: var(--spacing-3);
+        gap: var(--spacing-2);
     }
     
     .pagination {
         flex-wrap: wrap;
         justify-content: center;
-    }
-}
-
-/* Мобильные */
-@media (max-width: 768px) {
-    .table-container {
-        font-size: var(--font-size-xs);
-        border-radius: var(--radius-md);
-    }
-    
-    .data-table th,
-    .data-table td {
-        padding: var(--spacing-2);
-        font-size: var(--font-size-xs);
-    }
-    
-    .data-table th {
-        white-space: nowrap;
-    }
-    
-    .table-footer {
-        padding: var(--spacing-3);
-    }
-    
-    .pagination-btn {
-        min-width: 32px;
-        height: 32px;
-        font-size: var(--font-size-xs);
-    }
-    
-    .top-product-item {
-        padding: var(--spacing-2);
-    }
-    
-    .top-product-item .rank {
-        width: 28px;
-        height: 28px;
-    }
-    
-    .top-product-item .revenue {
-        min-width: 70px;
-        font-size: var(--font-size-xs);
     }
     
     .seller-email {
@@ -663,153 +399,18 @@
     }
 }
 
-/* Очень маленькие экраны */
 @media (max-width: 480px) {
     .table-container {
-        border-radius: 0;
-        border-left: none;
-        border-right: none;
-    }
-    
-    .empty-state {
-        padding: var(--spacing-8) var(--spacing-4);
-        margin: var(--spacing-2);
+        border-radius: var(--radius-md);
     }
     
     .empty-state-icon {
-        font-size: 60px;
+        font-size: 36px;
     }
     
     .pagination-btn {
         min-width: 28px;
         height: 28px;
-    }
-    
-    .pagination-ellipsis {
-        display: none;
-    }
-}
-
-/* ========== ТЕМНАЯ ТЕМА ========== */
-@media (prefers-color-scheme: dark) {
-    .table-container {
-        background: var(--color-gray-900);
-        border-color: var(--color-gray-700);
-    }
-    
-    .data-table thead {
-        background: linear-gradient(180deg, var(--color-gray-800) 0%, var(--color-gray-900) 100%);
-    }
-    
-    .data-table th {
-        color: var(--color-gray-300);
-        border-bottom-color: var(--color-gray-600);
-    }
-    
-    .data-table td {
-        border-bottom-color: var(--color-gray-700);
-        color: var(--color-gray-200);
-    }
-    
-    .data-table tbody tr:hover {
-        background: linear-gradient(90deg, rgba(0, 112, 243, 0.1) 0%, transparent 100%);
-    }
-    
-    .data-table tbody tr.selected {
-        background: linear-gradient(90deg, rgba(0, 112, 243, 0.15) 0%, transparent 100%);
-    }
-    
-    .table-striped tbody tr:nth-child(even) {
-        background: var(--color-gray-850);
-    }
-    
-    .table-footer {
-        background: linear-gradient(180deg, var(--color-gray-900) 0%, var(--color-gray-800) 100%);
-        border-top-color: var(--color-gray-700);
-    }
-    
-    .pagination-btn {
-        background: var(--color-gray-800);
-        border-color: var(--color-gray-600);
-        color: var(--color-gray-200);
-    }
-    
-    .pagination-btn:hover:not(:disabled) {
-        background: var(--color-gray-700);
-    }
-    
-    .table-actions .btn-icon {
-        background: var(--color-gray-800);
-        border-color: var(--color-gray-600);
-        color: var(--color-gray-300);
-    }
-    
-    .top-product-item {
-        border-bottom-color: var(--color-gray-700);
-    }
-    
-    .top-product-item:hover {
-        background: var(--color-gray-800);
-    }
-    
-    .top-product-item .value {
-        background: var(--color-gray-700);
-        color: var(--color-gray-300);
-    }
-    
-    .empty-state {
-        background: linear-gradient(135deg, var(--color-gray-800) 0%, var(--color-gray-900) 100%);
-        border-color: var(--color-gray-600);
-    }
-    
-    .table-checkbox {
-        background: var(--color-gray-800);
-        border-color: var(--color-gray-500);
-    }
-}
-
-/* ========== ПЕЧАТЬ ========== */
-@media print {
-    .table-container {
-        box-shadow: none;
-        border: 1px solid #000;
-        overflow: visible;
-    }
-    
-    .data-table thead {
-        background: #eee !important;
-    }
-    
-    .data-table th {
-        color: #000 !important;
-        border-bottom: 2px solid #000 !important;
-    }
-    
-    .data-table td {
-        border-bottom: 1px solid #ccc !important;
-    }
-    
-    .table-actions,
-    .pagination,
-    .table-checkbox {
-        display: none !important;
-    }
-    
-    .top-product-item .rank {
-        background: #eee !important;
-        color: #000 !important;
-        box-shadow: none !important;
-        animation: none !important;
-    }
-    
-    .top-product-item .revenue {
-        -webkit-text-fill-color: #000 !important;
-        background: none !important;
-    }
-    
-    .status-badge {
-        border: 1px solid #000 !important;
-        background: transparent !important;
-        color: #000 !important;
+        font-size: var(--font-size-xs);
     }
 }
