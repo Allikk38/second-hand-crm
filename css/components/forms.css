@@ -1,15 +1,16 @@
-// ========================================
-// FILE: ./css/components/forms.css
-// ========================================
-
 /**
- * Forms Component - Clean & Accessible
+ * Forms - Business Professional
  * 
- * Стили для форм. Инпуты с легкой тонировкой для заметности на белом фоне.
- * Четкая валидация и фокус.
+ * Чистые, читаемые формы для бизнес-приложений.
+ * Минимум стилей, максимум читаемости.
  * 
  * @stylesheet forms
- * @version 3.0.0
+ * @version 4.0.0
+ * @changes
+ * - Убраны анимированные фокусы
+ * - Убраны градиенты и декоративные элементы
+ * - Упрощены поля ввода
+ * - Статичные состояния валидации
  */
 
 /* ========== FORM GROUP ========== */
@@ -56,49 +57,48 @@ textarea {
     line-height: var(--line-height-normal);
     color: var(--color-text);
     
-    /* Легкий серый фон для заметности на белых карточках */
-    background: var(--color-slate-50);
-    border: 1px solid var(--color-slate-300);
+    background: var(--color-white);
+    border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     
     height: var(--input-height);
     
-    transition: background var(--transition-fast), 
-                border-color var(--transition-fast), 
-                box-shadow var(--transition-fast);
+    transition: none;
 }
 
-/* При фокусе - белый фон и четкая рамка */
+input:hover,
+select:hover,
+textarea:hover {
+    border-color: var(--color-gray-400);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
     outline: none;
-    background: var(--color-white);
     border-color: var(--color-primary);
-    box-shadow: var(--shadow-outline);
 }
 
 input:disabled,
 select:disabled,
 textarea:disabled {
-    background: var(--color-slate-100);
+    background: var(--color-gray-50);
     color: var(--color-text-disabled);
     cursor: not-allowed;
-    border-color: var(--color-slate-200);
+    border-color: var(--color-border);
 }
 
 /* ========== PLACEHOLDER ========== */
 input::placeholder,
 textarea::placeholder {
     color: var(--color-text-muted);
-    opacity: 0.7;
-    font-weight: var(--font-weight-normal);
+    opacity: 1;
 }
 
 /* ========== SELECT ========== */
 select {
     appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right var(--spacing-3) center;
     background-size: 16px;
@@ -117,22 +117,14 @@ textarea {
 /* ========== CHECKBOX AND RADIO ========== */
 input[type="checkbox"],
 input[type="radio"] {
-    display: inline-block;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     padding: 0;
     margin: 0;
     margin-right: var(--spacing-2);
     vertical-align: middle;
     cursor: pointer;
-    border-radius: var(--radius-sm);
     accent-color: var(--color-primary);
-    background: var(--color-white);
-    border: 1px solid var(--color-slate-300);
-}
-
-input[type="radio"] {
-    border-radius: var(--radius-full);
 }
 
 .checkbox-label,
@@ -156,14 +148,12 @@ input[type="radio"] {
 .has-error select:focus,
 .has-error textarea:focus {
     border-color: var(--color-danger);
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
 }
 
 .validation-error {
     margin-top: var(--spacing-1);
     font-size: var(--font-size-xs);
     color: var(--color-danger);
-    font-weight: var(--font-weight-medium);
 }
 
 /* ========== FORM HINT ========== */
@@ -183,25 +173,26 @@ input[type="radio"] {
 
 .search-wrapper input {
     padding-left: var(--spacing-8);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: left var(--spacing-3) center;
-    background-size: 16px;
 }
 
-.search-wrapper input:focus {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+.search-wrapper::before {
+    content: '🔍';
+    position: absolute;
+    left: var(--spacing-3);
+    font-size: 14px;
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 /* ========== QUANTITY CONTROL ========== */
 .quantity-control {
     display: inline-flex;
     align-items: center;
-    gap: var(--spacing-0-5);
-    background: var(--color-slate-100);
+    gap: var(--spacing-1);
+    background: var(--color-white);
+    border: var(--border-width) solid var(--color-border);
     border-radius: var(--radius-md);
     padding: var(--spacing-0-5);
-    border: 1px solid var(--color-slate-200);
 }
 
 .qty-input {
@@ -212,13 +203,11 @@ input[type="radio"] {
     background: transparent;
     font-weight: var(--font-weight-medium);
     height: auto;
-    box-shadow: none;
 }
 
 .qty-input:focus {
     outline: none;
-    box-shadow: none;
-    background: transparent;
+    border: none;
 }
 
 /* ========== FORM ACTIONS ========== */
