@@ -1,16 +1,16 @@
 /**
- * App Layout - Professional Navigation
+ * App Layout - Excel-like Tabs Navigation
  * 
- * Основной макет приложения с переработанной навигацией.
- * Акцент на SVG-иконки, чистые формы и высокую контрастность активного элемента.
+ * Основной макет приложения с переработанной навигацией в стиле Excel.
+ * Хедер упрощен, вкладки прикреплены к контентной области.
  * 
  * @stylesheet app
- * @version 3.1.0
+ * @version 3.2.0
  * @changes
- * - Замена текстовых кнопок навигации на SVG-иконки
- * - Переработка активного состояния (.nav-btn.active) с фоновой подложкой
- * - Оптимизация высоты хедера и отступов
- * - Улучшение мобильной нижней навигации
+ * - Редизайн навигации: .app-nav заменен на .app-tabs, расположенный над .page-container.
+ * - Вкладки стилизованы под Excel: соединяются с панелью контента, активная приподнята.
+ * - Упрощен хедер, удалены старые стили кнопок навигации.
+ * - На мобильных устройствах вкладки прокручиваются горизонтально, не превращаясь в нижнюю панель.
  */
 
 /* ========== ROOT CONTAINERS ========== */
@@ -42,20 +42,20 @@ body {
     width: 100%;
     overflow: hidden;
     position: relative;
+    background: var(--color-bg);
 }
 
-/* ========== APP HEADER ========== */
+/* ========== APP HEADER (УПРОЩЕННЫЙ) ========== */
 .app-header {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 var(--spacing-6);
-    height: var(--header-height);
+    height: 48px; /* Более компактный хедер */
     
-    background: var(--color-white);
+    background: var(--color-slate-50);
     border-bottom: 1px solid var(--color-border-light);
-    box-shadow: var(--shadow-xs);
     
     position: relative;
     z-index: var(--z-fixed);
@@ -63,88 +63,97 @@ body {
 
 .app-header h1 {
     margin: 0;
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text);
     letter-spacing: var(--letter-spacing-tight);
 }
 
-/* ========== NAVIGATION (DESKTOP & TABLET) ========== */
-.app-nav {
+.header-actions {
     display: flex;
     align-items: center;
-    gap: var(--spacing-1);
-    background: transparent;
-    padding: 0;
-    border-radius: 0;
-    box-shadow: none;
+    gap: var(--spacing-2);
 }
 
-.nav-btn {
+/* ========== NAVIGATION TABS (EXCEL STYLE) ========== */
+.app-tabs {
+    flex-shrink: 0;
+    display: flex;
+    align-items: flex-end; /* Выравнивание по нижнему краю для эффекта "листа" */
+    gap: 0;
+    padding: 0 var(--spacing-6);
+    margin: 0;
+    
+    background: var(--color-slate-50);
+    border-bottom: 1px solid var(--color-border-light);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Скрываем скроллбар для чистоты, но оставляем функциональность */
+}
+
+.app-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.app-tab {
     position: relative;
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
-    padding: var(--spacing-2) var(--spacing-4);
+    padding: var(--spacing-3) var(--spacing-4);
+    margin-right: var(--spacing-1);
     
     background: transparent;
     color: var(--color-text-secondary);
-    border-radius: var(--radius-lg);
     
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-sm);
+    line-height: 1;
+    
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
     
     transition: all var(--transition-fast);
-    border: none;
     cursor: pointer;
-    z-index: 1;
+    white-space: nowrap;
 }
 
 /* Иконки в кнопках навигации */
-.nav-icon {
-    width: 20px;
-    height: 20px;
+.tab-icon {
+    width: 18px;
+    height: 18px;
     fill: currentColor;
-    opacity: 0.7;
+    opacity: 0.6;
     transition: opacity var(--transition-fast);
 }
 
-.nav-btn:hover {
+.app-tab:hover {
     background: var(--color-slate-100);
     color: var(--color-text);
+    border-color: var(--color-border-light);
 }
 
-.nav-btn:hover .nav-icon {
-    opacity: 1;
+.app-tab:hover .tab-icon {
+    opacity: 0.9;
 }
 
-/* Активная кнопка - фоновая подложка вместо подчеркивания */
-.nav-btn.active {
+/* Активная вкладка - эффект "поверх" контента */
+.app-tab.active {
     color: var(--color-primary-dark);
-    background: var(--color-primary-bg);
-    box-shadow: none;
+    background: var(--color-white);
+    border-color: var(--color-border-light);
+    border-bottom-color: var(--color-white); /* Сливается с page-container */
+    margin-bottom: -1px; /* Перекрывает границу .app-tabs */
+    padding-bottom: calc(var(--spacing-3) + 1px); /* Компенсация отрицательного маргина */
+    
     font-weight: var(--font-weight-semibold);
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.nav-btn.active .nav-icon {
+.app-tab.active .tab-icon {
     opacity: 1;
     fill: var(--color-primary);
-}
-
-/* Убираем старое подчеркивание */
-.nav-btn.active::after {
-    display: none;
-}
-
-/* Кнопка выхода */
-.nav-btn-logout {
-    margin-left: var(--spacing-2);
-    color: var(--color-text-muted);
-}
-
-.nav-btn-logout:hover {
-    background: var(--color-danger-bg);
-    color: var(--color-danger);
 }
 
 /* ========== PAGE CONTAINER ========== */
@@ -153,7 +162,10 @@ body {
     min-height: 0;
     overflow: hidden;
     position: relative;
-    background: var(--color-bg);
+    background: var(--color-white); /* Белый фон для контента, как лист Excel */
+    border-top: 1px solid var(--color-border-light);
+    box-shadow: inset 0 2px 4px -2px rgba(0, 0, 0, 0.02);
+    z-index: 1;
 }
 
 .inventory-page,
@@ -165,13 +177,14 @@ body {
     flex-direction: column;
     scroll-behavior: smooth;
     padding: var(--spacing-4);
+    background: var(--color-white); /* Наследуем белый фон */
 }
 
 @media (min-width: 641px) {
     .inventory-page,
     .cashier-page,
     .reports-page {
-        padding: var(--spacing-6);
+        padding: var(--spacing-5);
     }
 }
 
@@ -179,10 +192,11 @@ body {
     .inventory-page,
     .cashier-page,
     .reports-page {
-        padding: var(--spacing-8);
+        padding: var(--spacing-6);
     }
 }
 
+/* Кастомный скроллбар для контента */
 .page-container::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -195,7 +209,7 @@ body {
 .page-container::-webkit-scrollbar-thumb {
     background: var(--color-slate-300);
     border-radius: var(--radius-full);
-    border: 2px solid transparent;
+    border: 2px solid var(--color-white);
     background-clip: padding-box;
 }
 
@@ -209,7 +223,7 @@ body {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: var(--spacing-6);
+    margin-bottom: var(--spacing-5);
     flex-shrink: 0;
 }
 
@@ -236,7 +250,7 @@ body {
 
 .stats-badge span {
     padding: var(--spacing-1) var(--spacing-3);
-    background: var(--color-white);
+    background: var(--color-slate-50);
     border-radius: var(--radius-full);
     color: var(--color-text-secondary);
     font-weight: var(--font-weight-medium);
@@ -269,7 +283,7 @@ body {
     gap: var(--spacing-4);
     margin-bottom: var(--spacing-5);
     padding: var(--spacing-3) var(--spacing-4);
-    background: var(--color-bg-secondary);
+    background: var(--color-slate-50);
     border-radius: var(--radius-lg);
     border: 1px solid var(--color-border-light);
     flex-shrink: 0;
@@ -302,7 +316,6 @@ body {
     gap: var(--spacing-4);
     background: var(--color-white);
     border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-sm);
     margin: var(--spacing-4);
 }
 
@@ -351,62 +364,34 @@ body {
     color: var(--color-text);
 }
 
-/* ========== МОБИЛЬНАЯ НАВИГАЦИЯ ========== */
+/* ========== АДАПТИВНОСТЬ ========== */
 @media (max-width: 768px) {
     .app-header {
         padding: 0 var(--spacing-4);
-        height: 56px;
+        height: 48px;
     }
     
     .app-header h1 {
-        font-size: var(--font-size-lg);
+        font-size: var(--font-size-base);
     }
     
-    .app-nav {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background: var(--color-white);
-        border-top: 1px solid var(--color-border-light);
-        padding: var(--spacing-2) var(--spacing-4);
-        box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.03);
-        z-index: var(--z-fixed);
-        justify-content: space-around;
+    .app-tabs {
+        padding: 0 var(--spacing-4);
+        /* На мобильных вкладки прокручиваются, но остаются сверху */
     }
     
-    .nav-btn {
-        flex: 1;
-        flex-direction: column;
-        justify-content: center;
-        padding: var(--spacing-1) var(--spacing-2);
+    .app-tab {
+        padding: var(--spacing-2) var(--spacing-3);
         font-size: var(--font-size-xs);
-        gap: var(--spacing-1);
-        border-radius: var(--radius-md);
     }
     
-    /* На мобильных убираем текст, оставляем только иконки */
-    .nav-btn .nav-text {
-        display: block;
-        font-size: 10px;
-        font-weight: var(--font-weight-medium);
+    .tab-text {
+        display: block; /* Показываем текст на мобильных, так как это вкладки Excel */
     }
 
-    .nav-btn.active {
-        background: transparent;
-        color: var(--color-primary);
-    }
-    
-    .nav-btn.active .nav-icon {
-        fill: var(--color-primary);
-    }
-    
-    .nav-btn.active::after {
-        display: none;
-    }
-    
+    /* Убираем старую мобильную нижнюю навигацию, которой больше нет */
     .page-container {
-        padding-bottom: 70px;
+        padding-bottom: 0;
     }
     
     .page-header {
@@ -423,7 +408,7 @@ body {
 /* ========== ПЕЧАТЬ ========== */
 @media print {
     .app-header,
-    .app-nav {
+    .app-tabs {
         display: none !important;
     }
     
@@ -431,11 +416,14 @@ body {
         overflow: visible;
         height: auto;
         padding: 0 !important;
+        border: none;
+        box-shadow: none;
     }
     
     .inventory-page,
     .cashier-page,
     .reports-page {
         padding: 1cm !important;
+        background: white !important;
     }
 }
