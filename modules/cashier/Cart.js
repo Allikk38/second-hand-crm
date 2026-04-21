@@ -4,17 +4,13 @@
  * Компонент корзины для кассового модуля.
  * Управление товарами перед продажей, скидками и способами оплаты.
  * 
- * Архитектурные решения:
- * - Сохранение корзины в localStorage с привязкой к смене
- * - Поддержка построчных скидок и общей скидки
- * - Кэширование вычислений для производительности
- * - Клавиатурные сокращения для быстрой работы
- * 
  * @module Cart
- * @version 2.0.0
+ * @version 4.1.0
  * @changes
- * - Разделение на компоненты: CartItem, CartSummary, PaymentPanel
- * - Использование CashierState для управления состоянием
+ * - Упрощена структура
+ * - Улучшена обработка сканера
+ * - Добавлена валидация остатков
+ * - Вынесены константы
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -25,7 +21,6 @@ import { PaymentPanel } from './PaymentPanel.js';
 import { ProductService } from '../../services/ProductService.js';
 import { Notification } from '../common/Notification.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
-import { formatMoney } from '../../utils/formatters.js';
 
 // ========== КОНСТАНТЫ ==========
 const STORAGE_KEY_PREFIX = 'cart_';
@@ -37,6 +32,8 @@ export class Cart extends BaseComponent {
         
         // Компоненты
         this.cartItems = new Map(); // id -> CartItem instance
+        this.summary = null;
+        this.payment = null;
         
         // Таймеры
         this.saveDebounceTimer = null;
@@ -65,10 +62,7 @@ export class Cart extends BaseComponent {
         return `
             <div class="cart">
                 <div class="cart-header">
-                    <h3>
-                        Корзина 
-                        <span class="cart-count" data-ref="cartCount">${totalQuantity} поз.</span>
-                    </h3>
+                    <h3>Корзина <span class="cart-count" data-ref="cartCount">${totalQuantity} поз.</span></h3>
                     <div class="cart-header-actions">
                         ${hasItems ? `
                             <button class="btn-ghost btn-sm" data-ref="clearCartBtn" title="Очистить корзину (Alt+C)">
@@ -83,20 +77,16 @@ export class Cart extends BaseComponent {
                         <input 
                             type="text" 
                             data-ref="scannerInput"
-                            placeholder="Сканер / Быстрый поиск по ID или названию..."
+                            placeholder="Сканер / Быстрый поиск..."
                             value="${this.escapeHtml(scannerInput)}"
                             autocomplete="off"
                             autofocus
                         >
                         ${scannerInput ? `
-                            <button class="btn-icon btn-clear-input" data-ref="clearScannerBtn" title="Очистить">
-                                ✕
-                            </button>
+                            <button class="btn-icon btn-clear-input" data-ref="clearScannerBtn">✕</button>
                         ` : ''}
                     </div>
-                    <small class="scanner-hint">
-                        Введите ID или название товара и нажмите Enter
-                    </small>
+                    <small class="scanner-hint">Введите ID или название товара и нажмите Enter</small>
                 </div>
                 
                 <div class="cart-items" data-ref="cartItemsContainer">
@@ -115,9 +105,9 @@ export class Cart extends BaseComponent {
     }
     
     async afterRender() {
-        // Монтируем компоненты для каждого товара
         const state = CashierState.getState();
         
+        // Монтируем компоненты для каждого товара
         for (const item of state.cartItems) {
             await this.mountCartItem(item);
         }
@@ -148,26 +138,21 @@ export class Cart extends BaseComponent {
         const container = this.refs.get('cartSummaryContainer');
         if (!container) return;
         
-        const summary = new CartSummary(container, {
-            onTotalDiscountChange: (discount) => this.handleTotalDiscountChange(discount),
-            onQuickDiscount: (discount) => this.handleTotalDiscountChange(discount)
+        this.summary = new CartSummary(container, {
+            onTotalDiscountChange: (discount) => this.handleTotalDiscountChange(discount)
         });
-        
-        await summary.mount();
-        this.summary = summary;
+        await this.summary.mount();
     }
     
     async mountPaymentPanel() {
         const container = this.refs.get('paymentPanelContainer');
         if (!container) return;
         
-        const payment = new PaymentPanel(container, {
+        this.payment = new PaymentPanel(container, {
             onPaymentMethodChange: (method) => this.handlePaymentMethodChange(method),
             onCheckout: () => this.handleCheckout()
         });
-        
-        await payment.mount();
-        this.payment = payment;
+        await this.payment.mount();
     }
     
     // ========== ПРИВЯЗКА СОБЫТИЙ ==========
@@ -193,10 +178,10 @@ export class Cart extends BaseComponent {
             if (input) {
                 input.value = '';
                 CashierState.set('scannerInput', '');
+                input.focus();
             }
         });
         
-        // Очистка корзины
         this.addDomListener('clearCartBtn', 'click', () => this.handleClearCart());
         
         // Клавиатурные сокращения
@@ -217,12 +202,11 @@ export class Cart extends BaseComponent {
                     countEl.textContent = `${CashierState.getCartTotalQuantity()} поз.`;
                 }
                 
-                // Проверяем, нужно ли пересоздать компоненты
+                // Синхронизируем компоненты
                 const itemsChanged = changes.some(c => c.key === 'cartItems');
                 if (itemsChanged) {
                     await this.syncCartItems(state.cartItems);
                     
-                    // Показываем/скрываем summary и payment
                     const hasItems = state.cartItems.length > 0;
                     const summaryContainer = this.refs.get('cartSummaryContainer');
                     const paymentContainer = this.refs.get('paymentPanelContainer');
@@ -230,6 +214,11 @@ export class Cart extends BaseComponent {
                     if (hasItems && !summaryContainer?.children.length) {
                         await this.mountSummary();
                         await this.mountPaymentPanel();
+                    } else if (!hasItems && summaryContainer?.children.length) {
+                        summaryContainer.innerHTML = '';
+                        paymentContainer.innerHTML = '';
+                        this.summary = null;
+                        this.payment = null;
                     }
                 }
                 
@@ -256,7 +245,6 @@ export class Cart extends BaseComponent {
             if (!this.cartItems.has(item.id)) {
                 await this.mountCartItem(item);
             } else {
-                // Обновляем существующий
                 this.cartItems.get(item.id)?.updateItem(item);
             }
         }
@@ -270,7 +258,7 @@ export class Cart extends BaseComponent {
             this.handleClearCart();
         }
         
-        if (e.altKey && e.code === 'Enter') {
+        if (e.ctrlKey && e.code === 'Enter') {
             e.preventDefault();
             this.handleCheckout();
         }
@@ -286,8 +274,11 @@ export class Cart extends BaseComponent {
         if (!value) return;
         
         CashierState.set('scannerInput', '');
+        const scannerInput = this.refs.get('scannerInput');
+        if (scannerInput) scannerInput.value = '';
         
         try {
+            // Поиск по ID или названию
             let product = await ProductService.getById(value).catch(() => null);
             
             if (!product) {
@@ -308,13 +299,13 @@ export class Cart extends BaseComponent {
                 return;
             }
             
-            this.addItem(product);
-            
-            const scannerInput = this.refs.get('scannerInput');
-            if (scannerInput) {
-                scannerInput.value = '';
-                scannerInput.focus();
+            if (product.stock !== undefined && product.stock <= 0) {
+                Notification.warning(`Товар "${product.name}" закончился`);
+                return;
             }
+            
+            this.addItem(product);
+            scannerInput?.focus();
             
         } catch (error) {
             console.error('[Cart] Scanner error:', error);
@@ -324,7 +315,12 @@ export class Cart extends BaseComponent {
     
     addItem(product) {
         if (product.status !== 'in_stock') {
-            Notification.warning(`Товар "${product.name}" недоступен для продажи`);
+            Notification.warning(`Товар "${product.name}" недоступен`);
+            return false;
+        }
+        
+        if (product.stock !== undefined && product.stock <= 0) {
+            Notification.warning(`Товар "${product.name}" закончился`);
             return false;
         }
         
@@ -344,8 +340,7 @@ export class Cart extends BaseComponent {
     }
     
     async handleRemoveItem(id) {
-        const state = CashierState.getState();
-        const item = state.cartItems.find(i => i.id === id);
+        const item = CashierState.getState().cartItems.find(i => i.id === id);
         if (!item) return;
         
         const confirmed = await ConfirmDialog.show({
@@ -376,8 +371,8 @@ export class Cart extends BaseComponent {
     }
     
     async handleClearCart() {
-        const state = CashierState.getState();
-        if (state.cartItems.length === 0) return;
+        const items = CashierState.getState().cartItems;
+        if (items.length === 0) return;
         
         const confirmed = await ConfirmDialog.show({
             title: 'Очистка корзины',
@@ -501,7 +496,6 @@ export class Cart extends BaseComponent {
         
         document.removeEventListener('keydown', this.handleKeyDown);
         
-        // Уничтожаем дочерние компоненты
         this.cartItems.forEach(component => component.destroy());
         this.cartItems.clear();
         
