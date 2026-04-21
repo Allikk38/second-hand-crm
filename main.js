@@ -1,16 +1,16 @@
 /**
- * Second Hand CRM - Точка входа приложения
+ * Second Hand CRM - Application Entry Point
  * 
- * Архитектура:
- * - Модульная структура (core, services, modules, utils)
- * - Событийная связь через EventBus
- * - Права доступа через PermissionManager
- * - Аутентификация через Supabase
+ * Точка входа приложения. Управляет роутингом, рендерингом основного макета
+ * и инициализацией модулей. Реализована строгая система прав доступа
+ * и динамическая загрузка страниц (Code Splitting).
  * 
  * @module main
- * @version 1.0.0
- * @author Allik
- * @license MIT
+ * @version 3.1.0
+ * @changes
+ * - Добавлены SVG-иконки в навигацию
+ * - Улучшена обработка ошибок при загрузке страниц
+ * - Переработана структура рендеринга хедера
  */
 
 // ========== IMPORTS (Core) ==========
@@ -25,8 +25,7 @@ import { InventoryPage } from './modules/inventory/InventoryPage.js';
 
 // ========== CONSTANTS ==========
 /**
- * Конфигурация страниц приложения
- * @constant {Object}
+ * Идентификаторы страниц
  */
 const PAGES = {
     INVENTORY: 'inventory',
@@ -35,8 +34,7 @@ const PAGES = {
 };
 
 /**
- * Заголовки страниц
- * @constant {Object}
+ * Заголовки страниц для навигации
  */
 const PAGE_TITLES = {
     [PAGES.INVENTORY]: 'Склад',
@@ -45,14 +43,39 @@ const PAGE_TITLES = {
 };
 
 /**
+ * SVG-иконки для навигации (чистый, строгий контур)
+ */
+const PAGE_ICONS = {
+    [PAGES.INVENTORY]: `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+        </svg>
+    `,
+    [PAGES.CASHIER]: `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="19" r="2"></circle>
+            <circle cx="17" cy="19" r="2"></circle>
+            <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 6.5"></path>
+        </svg>
+    `,
+    [PAGES.REPORTS]: `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12v-2a5 5 0 0 0-5-5H8a5 5 0 0 0-5 5v2"></path>
+            <circle cx="12" cy="16" r="5"></circle>
+            <path d="M12 11v5"></path>
+            <path d="M9 13h6"></path>
+        </svg>
+    `
+};
+
+/**
  * Корневой элемент приложения
- * @constant {HTMLElement}
  */
 const root = document.getElementById('app-root');
 
 /**
  * Текущая активная страница
- * @type {string}
  */
 let currentPage = PAGES.INVENTORY;
 
@@ -70,9 +93,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 /**
  * Инициализация приложения
  * Проверяет сессию, загружает права, рендерит интерфейс
- * 
- * @async
- * @returns {Promise<void>}
  */
 async function initializeApp() {
     try {
@@ -94,7 +114,6 @@ async function initializeApp() {
 // ========== ROUTING ==========
 /**
  * Получает страницу из хэша URL
- * @returns {string|null} - Идентификатор страницы
  */
 function getPageFromHash() {
     const hash = window.location.hash.slice(1);
@@ -103,7 +122,6 @@ function getPageFromHash() {
 
 /**
  * Устанавливает хэш страницы в URL
- * @param {string} page - Идентификатор страницы
  */
 function setPageHash(page) {
     window.location.hash = page;
@@ -121,18 +139,37 @@ window.addEventListener('hashchange', async () => {
 
 // ========== LAYOUT RENDERING ==========
 /**
- * Рендерит основной макет приложения (хедер, навигацию, контейнер для страниц)
+ * Рендерит основной макет приложения
+ * Включает хедер, навигацию с SVG-иконками и контейнер для страниц
  */
 function renderAppLayout() {
     root.innerHTML = `
         <div class="app">
             <header class="app-header">
-                <h1>Second Hand CRM</h1>
+                <h1 class="app-title">SH CRM</h1>
                 <nav class="app-nav">
-                    <button class="nav-btn" data-page="${PAGES.INVENTORY}">${PAGE_TITLES[PAGES.INVENTORY]}</button>
-                    <button class="nav-btn" data-page="${PAGES.CASHIER}">${PAGE_TITLES[PAGES.CASHIER]}</button>
-                    <button class="nav-btn" data-page="${PAGES.REPORTS}">${PAGE_TITLES[PAGES.REPORTS]}</button>
-                    <button class="nav-btn nav-btn-logout" data-action="logout">Выход</button>
+                    <button class="nav-btn" data-page="${PAGES.INVENTORY}">
+                        <span class="nav-icon">${PAGE_ICONS[PAGES.INVENTORY]}</span>
+                        <span class="nav-text">${PAGE_TITLES[PAGES.INVENTORY]}</span>
+                    </button>
+                    <button class="nav-btn" data-page="${PAGES.CASHIER}">
+                        <span class="nav-icon">${PAGE_ICONS[PAGES.CASHIER]}</span>
+                        <span class="nav-text">${PAGE_TITLES[PAGES.CASHIER]}</span>
+                    </button>
+                    <button class="nav-btn" data-page="${PAGES.REPORTS}">
+                        <span class="nav-icon">${PAGE_ICONS[PAGES.REPORTS]}</span>
+                        <span class="nav-text">${PAGE_TITLES[PAGES.REPORTS]}</span>
+                    </button>
+                    <button class="nav-btn nav-btn-logout" data-action="logout">
+                        <span class="nav-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                                <polyline points="16 17 21 12 16 7"></polyline>
+                                <line x1="21" y1="12" x2="9" y2="12"></line>
+                            </svg>
+                        </span>
+                        <span class="nav-text">Выход</span>
+                    </button>
                 </nav>
             </header>
             <main id="page-container" class="page-container"></main>
@@ -160,7 +197,6 @@ function attachNavigationEvents() {
 
 /**
  * Обработчик выхода из системы
- * @async
  */
 async function handleLogout() {
     await AuthManager.signOut();
@@ -170,8 +206,6 @@ async function handleLogout() {
 // ========== PAGE MANAGEMENT ==========
 /**
  * Отображает указанную страницу
- * @async
- * @param {string} page - Идентификатор страницы
  */
 async function showPage(page) {
     const container = document.getElementById('page-container');
@@ -179,6 +213,14 @@ async function showPage(page) {
     
     currentPage = page;
     updateActiveNavButton(page);
+    
+    // Очищаем контейнер и показываем скелетон загрузки
+    container.innerHTML = `
+        <div class="loading-overlay">
+            <div class="loading-spinner"></div>
+            <span class="loading-text">Загрузка ${PAGE_TITLES[page]}</span>
+        </div>
+    `;
     
     try {
         switch (page) {
@@ -196,13 +238,23 @@ async function showPage(page) {
         }
     } catch (error) {
         console.error(`[Page Error] Failed to load ${page}:`, error);
+        
+        // Показываем красивую ошибку вместо белого экрана
+        container.innerHTML = `
+            <div class="error-state" style="padding: 40px; text-align: center;">
+                <div style="font-size: 48px; margin-bottom: 20px; opacity: 0.5;">⚠️</div>
+                <h3 style="margin-bottom: 12px; color: var(--color-text);">Ошибка загрузки модуля</h3>
+                <p style="color: var(--color-text-secondary); margin-bottom: 24px;">Не удалось загрузить страницу. Попробуйте обновить.</p>
+                <button class="btn-primary" onclick="location.reload()">Обновить страницу</button>
+            </div>
+        `;
+        
         EventBus.emit('app:error', error);
     }
 }
 
 /**
  * Обновляет активную кнопку в навигации
- * @param {string} page - Идентификатор текущей страницы
  */
 function updateActiveNavButton(page) {
     document.querySelectorAll('[data-page]').forEach(btn => {
@@ -215,8 +267,6 @@ function updateActiveNavButton(page) {
 
 /**
  * Отображает страницу склада
- * @async
- * @param {HTMLElement} container - Контейнер для страницы
  */
 async function showInventoryPage(container) {
     const inventory = new InventoryPage(container);
@@ -224,9 +274,7 @@ async function showInventoryPage(container) {
 }
 
 /**
- * Отображает страницу кассы
- * @async
- * @param {HTMLElement} container - Контейнер для страницы
+ * Отображает страницу кассы (ленивая загрузка)
  */
 async function showCashierPage(container) {
     const { CashierPage } = await import('./modules/cashier/CashierPage.js');
@@ -235,9 +283,7 @@ async function showCashierPage(container) {
 }
 
 /**
- * Отображает страницу отчетов
- * @async
- * @param {HTMLElement} container - Контейнер для страницы
+ * Отображает страницу отчетов (ленивая загрузка)
  */
 async function showReportsPage(container) {
     const { ReportsPage } = await import('./modules/reports/ReportsPage.js');
