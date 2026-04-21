@@ -1,27 +1,29 @@
-// ========================================
-// FILE: ./css/base/variables.css
-// ========================================
-
 /**
- * CSS Variables
+ * CSS Variables - Business Professional
  * 
- * Централизованное хранилище всех дизайн-токенов проекта.
- * Версия 3.0 - Чистый корпоративный стиль.
- * Основано на Slate палитре Tailwind для холодного профессионального оттенка.
+ * Строгая, читаемая система дизайна для бизнес-приложений.
+ * Минимум анимаций, максимум контраста и иерархии.
  * 
  * @stylesheet variables
+ * @version 4.0.0
+ * @changes
+ * - Убраны градиенты и glass-эффекты
+ * - Умеренные тени для четкого разделения слоев
+ * - Увеличен контраст текста
+ * - Добавлены статусные цвета с хорошей читаемостью
+ * - Строгие отступы по сетке 4px
  */
 
 :root {
-    /* ========== ОСНОВНЫЕ ЦВЕТА (АКЦЕНТ) ========== */
-    /* Холодный синий, строгий и деловой */
+    /* ========== ОСНОВНЫЕ ЦВЕТА ========== */
+    /* Спокойный, профессиональный синий */
     --color-primary: #2563eb;
     --color-primary-light: #3b82f6;
     --color-primary-dark: #1d4ed8;
-    --color-primary-bg: #eff6ff; /* Фон подсказок, выбранных элементов */
+    --color-primary-bg: #eff6ff;
     
-    /* ========== НЕЙТРАЛЬНЫЕ ЦВЕТА (SLATE) ========== */
-    /* Переход на Slate для более строгого UI */
+    /* ========== НЕЙТРАЛЬНЫЕ ЦВЕТА ========== */
+    /* Slate — холодный, строгий, профессиональный */
     --color-white: #ffffff;
     --color-black: #0f172a;
     
@@ -36,7 +38,7 @@
     --color-slate-800: #1e293b;
     --color-slate-900: #0f172a;
     
-    /* Алиасы для обратной совместимости и читаемости */
+    /* Алиасы */
     --color-gray-50: var(--color-slate-50);
     --color-gray-100: var(--color-slate-100);
     --color-gray-200: var(--color-slate-200);
@@ -48,47 +50,47 @@
     --color-gray-800: var(--color-slate-800);
     --color-gray-900: var(--color-slate-900);
 
-    /* ========== СТАТУСНЫЕ ЦВЕТА (ПРИГЛУШЕННЫЕ) ========== */
-    --color-success: #16a34a;       /* Green 600 */
-    --color-success-light: #22c55e;  /* Green 500 */
-    --color-success-dark: #15803d;   /* Green 700 */
-    --color-success-bg: #f0fdf4;     /* Green 50 */
+    /* ========== СТАТУСНЫЕ ЦВЕТА ========== */
+    --color-success: #16a34a;
+    --color-success-light: #22c55e;
+    --color-success-dark: #15803d;
+    --color-success-bg: #f0fdf4;
     
-    --color-danger: #dc2626;         /* Red 600 */
-    --color-danger-light: #ef4444;   /* Red 500 */
-    --color-danger-dark: #b91c1c;    /* Red 700 */
-    --color-danger-bg: #fef2f2;      /* Red 50 */
+    --color-danger: #dc2626;
+    --color-danger-light: #ef4444;
+    --color-danger-dark: #b91c1c;
+    --color-danger-bg: #fef2f2;
     
-    --color-warning: #ea580c;        /* Orange 600 */
-    --color-warning-light: #f97316;  /* Orange 500 */
-    --color-warning-dark: #c2410c;   /* Orange 700 */
-    --color-warning-bg: #fff7ed;     /* Orange 50 */
+    --color-warning: #ea580c;
+    --color-warning-light: #f97316;
+    --color-warning-dark: #c2410c;
+    --color-warning-bg: #fff7ed;
     
-    --color-info: #0284c7;           /* Sky 600 */
-    --color-info-light: #0ea5e9;     /* Sky 500 */
-    --color-info-dark: #0369a1;      /* Sky 700 */
-    --color-info-bg: #f0f9ff;        /* Sky 50 */
+    --color-info: #0284c7;
+    --color-info-light: #0ea5e9;
+    --color-info-dark: #0369a1;
+    --color-info-bg: #f0f9ff;
 
-    /* ========== КОНТЕКСТНЫЕ ЦВЕТА ИНТЕРФЕЙСА ========== */
-    /* Фон страницы - темнее для создания глубины и отделения карточек */
-    --color-bg: var(--color-slate-100);
-    --color-bg-secondary: var(--color-slate-50);
+    /* ========== КОНТЕКСТНЫЕ ЦВЕТА ========== */
+    /* Фон страницы — светлый, но контрастный с карточками */
+    --color-bg: #f1f5f9;
+    --color-bg-secondary: #f8fafc;
     
-    /* Границы - четкие, но не кричащие */
-    --color-border: var(--color-slate-300);
-    --color-border-light: var(--color-slate-200);
+    /* Границы — едва заметные */
+    --color-border: #e2e8f0;
+    --color-border-light: #f1f5f9;
     
-    /* Текст - высокий контраст */
-    --color-text: var(--color-slate-900);
-    --color-text-secondary: var(--color-slate-600); /* Затемнен для читаемости */
-    --color-text-muted: var(--color-slate-500);
-    --color-text-disabled: var(--color-slate-400);
+    /* Текст — максимальный контраст */
+    --color-text: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-muted: #64748b;
+    --color-text-disabled: #94a3b8;
     
     /* ========== ТИПОГРАФИКА ========== */
     --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    --font-family-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
+    --font-family-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
     
-    /* Размеры шрифта - согласованная шкала */
+    /* Размеры — классическая шкала */
     --font-size-xs: 0.75rem;    /* 12px */
     --font-size-sm: 0.875rem;   /* 14px */
     --font-size-base: 1rem;     /* 16px */
@@ -98,19 +100,19 @@
     --font-size-3xl: 1.875rem;  /* 30px */
     --font-size-4xl: 2.25rem;   /* 36px */
     
-    /* Веса шрифта */
+    /* Веса */
     --font-weight-normal: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
     
-    /* Высота строк - для удобочитаемости */
+    /* Высота строки */
     --line-height-tight: 1.25;
     --line-height-normal: 1.5;
-    --line-height-relaxed: 1.75;
+    --line-height-relaxed: 1.6;
     
     /* Межбуквенное расстояние */
-    --letter-spacing-tight: -0.02em;
+    --letter-spacing-tight: -0.01em;
     --letter-spacing-normal: 0;
     --letter-spacing-wide: 0.02em;
     
@@ -131,29 +133,32 @@
     --spacing-12: 3rem;       /* 48px */
     --spacing-16: 4rem;       /* 64px */
     
-    /* ========== РАДИУСЫ (СТРОГАЯ ГЕОМЕТРИЯ) ========== */
+    /* ========== РАДИУСЫ ========== */
     --radius-none: 0;
-    --radius-sm: 0.25rem;     /* 4px */
-    --radius-md: 0.375rem;    /* 6px */
-    --radius-lg: 0.5rem;      /* 8px */
-    --radius-xl: 0.75rem;     /* 12px */
-    --radius-2xl: 1rem;       /* 16px */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;
     --radius-full: 9999px;
     
-    /* ========== ТЕНИ (ФИЗИЧНОСТЬ) ========== */
-    /* Увеличена сила теней для четкого отделения карточек от фона */
-    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
-    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-    --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
-    --shadow-outline: 0 0 0 3px rgba(37, 99, 235, 0.2); /* Сделано мягче */
+    /* ========== ТЕНИ ========== */
+    /* Умеренные, но заметные — для четкого разделения */
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 1px rgba(0, 0, 0, 0.02);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 6px -2px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    --shadow-inner: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    
+    /* Фокус — четкий, но не кричащий */
+    --shadow-outline: 0 0 0 2px rgba(37, 99, 235, 0.2);
     
     /* ========== АНИМАЦИИ ========== */
-    --transition-fast: 150ms;
-    --transition-base: 200ms;
-    --transition-slow: 300ms;
+    /* Минимальные — только для обратной связи */
+    --transition-fast: 100ms;
+    --transition-base: 150ms;
+    --transition-slow: 200ms;
     
     /* ========== Z-INDEX ========== */
     --z-0: 0;
@@ -172,17 +177,17 @@
     --z-toast: 800;
     
     /* ========== РАЗМЕРЫ КОМПОНЕНТОВ ========== */
-    --header-height: 64px;
-    --sidebar-width: 350px;
-    --cart-width: 380px;
+    --header-height: 56px;
+    --sidebar-width: 280px;
+    --cart-width: 360px;
     
-    --input-height: 40px;
+    --input-height: 36px;
     --input-height-sm: 32px;
-    --input-height-lg: 48px;
+    --input-height-lg: 44px;
     
-    --button-height: 40px;
+    --button-height: 36px;
     --button-height-sm: 32px;
-    --button-height-lg: 48px;
+    --button-height-lg: 44px;
     
     /* ========== ФОКУС ========== */
     --focus-ring-color: var(--color-primary);
@@ -190,16 +195,14 @@
     --focus-ring-offset: 2px;
     
     /* ========== ПРОЧЕЕ ========== */
-    --overlay-bg: rgba(15, 23, 42, 0.5); /* Затемнение на основе slate-900 */
+    --overlay-bg: rgba(15, 23, 42, 0.4);
     --border-width: 1px;
     --opacity-disabled: 0.5;
 }
 
-/* ========== REDUCED MOTION ========== */
-@media (prefers-reduced-motion: reduce) {
-    :root {
-        --transition-fast: 0ms;
-        --transition-base: 0ms;
-        --transition-slow: 0ms;
-    }
+/* ========== REDUCED MOTION (всегда включен для бизнес-интерфейса) ========== */
+* {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
 }
