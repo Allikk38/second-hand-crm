@@ -14,9 +14,11 @@
  * - Соответствует паттерну MPA (точка входа).
  * 
  * @module CashierPage
- * @version 5.0.1
+ * @version 6.0.1
  * @changes
  * - Исправлен вызов метода mount() вместо init().
+ * - Добавлена проверка существования метода.
+ * - Обновлен cache-busting.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -47,14 +49,24 @@ export class CashierPage extends BaseComponent {
         
         // Ленивая загрузка основного приложения кассы
         try {
-            const { CashierApp } = await import('./CashierApp.js');
+            // Принудительно обновляем кэш модуля
+            const cacheBust = `v=${Date.now()}`;
+            const { CashierApp } = await import(`./CashierApp.js?${cacheBust}`);
             const rootElement = this.element.querySelector('#cashier-root');
             
             if (rootElement) {
                 this.cashierApp = new CashierApp(rootElement);
-                // Вызываем mount() вместо init()
-                await this.cashierApp.mount();
-                console.log('[CashierPage] CashierApp mounted successfully');
+                
+                // Проверяем, какой метод доступен
+                if (typeof this.cashierApp.mount === 'function') {
+                    await this.cashierApp.mount();
+                    console.log('[CashierPage] CashierApp mounted successfully via mount()');
+                } else if (typeof this.cashierApp.init === 'function') {
+                    await this.cashierApp.init();
+                    console.log('[CashierPage] CashierApp initialized successfully via init()');
+                } else {
+                    throw new Error('CashierApp has neither mount() nor init() method');
+                }
             } else {
                 console.error('[CashierPage] Root element #cashier-root not found');
                 this.container.innerHTML = `<div class="error-state">Ошибка загрузки интерфейса кассы</div>`;
@@ -66,7 +78,7 @@ export class CashierPage extends BaseComponent {
                     <div class="error-state-icon">⚠️</div>
                     <h3>Ошибка загрузки модуля кассы</h3>
                     <p>${this.escapeHtml(error.message)}</p>
-                    <button class="btn-primary" onclick="location.reload()">Обновить</button>
+                    <button class="btn-primary" onclick="location.reload(true)">Обновить (очистить кэш)</button>
                 </div>
             `;
         }
