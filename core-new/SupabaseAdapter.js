@@ -7,18 +7,21 @@
  * 
  * Слушает события запросов данных и преобразует их в вызовы Supabase API.
  * Отвечает за кэширование, офлайн-режим и трансформацию данных.
+ * Предоставляет единый клиент Supabase для виджетов.
  * 
  * Архитектурные решения:
  * - Полная изоляция клиента Supabase от виджетов.
  * - Автоматическое переключение на офлайн-режим.
  * - Кэширование запросов в памяти (TTL 30 секунд).
  * - Единая обработка ошибок с публикацией в EventBus.
+ * - Предоставление клиента Supabase через событие adapter:supabase:ready.
  * 
  * @module SupabaseAdapter
- * @version 1.1.0
+ * @version 1.2.0
  * @changes
  * - Добавлен обработчик DATA.REPORTS_FETCH.
  * - Реализована агрегация данных для отчетов.
+ * - Добавлен обработчик adapter:supabase:request для предоставления клиента.
  */
 
 import { EventBus, EventTypes, EventSource } from './EventBus.js';
@@ -99,7 +102,14 @@ export class SupabaseAdapter {
      * Подписывается на все события запросов данных.
      */
     subscribeToEvents() {
-        // Продукты
+        // === ЗАПРОС КЛИЕНТА SUPABASE ===
+        this._unsubscribers.push(
+            EventBus.on('adapter:supabase:request', 
+                (data) => this.handleClientRequest(data)
+            )
+        );
+        
+        // === ПРОДУКТЫ ===
         this._unsubscribers.push(
             EventBus.on(EventTypes.DATA.PRODUCTS_FETCH, 
                 (data) => this.handleProductsFetch(data), 
@@ -128,7 +138,7 @@ export class SupabaseAdapter {
             )
         );
         
-        // Смены
+        // === СМЕНЫ ===
         this._unsubscribers.push(
             EventBus.on(EventTypes.DATA.SHIFT_OPEN, 
                 (data) => this.handleShiftOpen(data), 
@@ -143,7 +153,7 @@ export class SupabaseAdapter {
             )
         );
         
-        // Отчеты
+        // === ОТЧЕТЫ ===
         this._unsubscribers.push(
             EventBus.on(REPORTS_EVENTS.FETCH, 
                 (data) => this.handleReportsFetch(data), 
@@ -152,6 +162,26 @@ export class SupabaseAdapter {
         );
         
         console.log('[SupabaseAdapter] Subscribed to data events');
+    }
+    
+    // ========== ОБРАБОТЧИК ЗАПРОСА КЛИЕНТА ==========
+    
+    /**
+     * Отправляет клиент Supabase виджету, который его запросил.
+     */
+    handleClientRequest(data) {
+        const { widgetId } = data;
+        console.log('[SupabaseAdapter] Client requested by:', widgetId);
+        
+        if (!this.client) {
+            console.warn('[SupabaseAdapter] Client not ready yet');
+            return;
+        }
+        
+        EventBus.emit('adapter:supabase:ready', {
+            client: this.client,
+            online: this.isOnline
+        }, EventSource.ADAPTER_SUPABASE);
     }
     
     // ========== ОБРАБОТЧИКИ ПРОДУКТОВ ==========
