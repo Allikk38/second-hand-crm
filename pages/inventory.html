@@ -10,27 +10,38 @@
     <title>SH CRM</title>
     <link rel="stylesheet" href="css/styles.css">
     <style>
-        /* Сплэш-экран */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f1f5f9;
+        }
+        
         .splash-screen {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 1rem;
         }
         
         .splash-content {
+            max-width: 500px;
+            width: 100%;
             text-align: center;
-            padding: 2rem;
+            padding: 2.5rem;
             background: white;
             border-radius: 16px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
         }
         
         .splash-logo {
-            font-size: 48px;
+            font-size: 64px;
             margin-bottom: 1rem;
         }
         
@@ -44,19 +55,13 @@
         .splash-subtitle {
             font-size: 1rem;
             color: #64748b;
-            margin-bottom: 1.5rem;
-        }
-        
-        .splash-loader {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
+            margin-bottom: 2rem;
         }
         
         .loading-spinner {
             width: 48px;
             height: 48px;
+            margin: 0 auto 1rem;
             border: 3px solid #e2e8f0;
             border-top-color: #2563eb;
             border-radius: 50%;
@@ -67,34 +72,111 @@
             to { transform: rotate(360deg); }
         }
         
-        .splash-error {
-            color: #dc2626;
-            margin-top: 1rem;
+        .status-message {
+            font-size: 0.9rem;
+            color: #64748b;
+            margin-bottom: 1rem;
+            min-height: 2.5rem;
+        }
+        
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            text-align: left;
             display: none;
         }
         
-        .splash-error.show {
+        .error-box.show {
             display: block;
+        }
+        
+        .error-title {
+            font-weight: 600;
+            color: #dc2626;
+            margin-bottom: 0.5rem;
+        }
+        
+        .error-message {
+            font-size: 0.85rem;
+            color: #7f1d1d;
+            margin-bottom: 0.5rem;
+            word-break: break-word;
+        }
+        
+        .error-details {
+            font-size: 0.75rem;
+            color: #991b1b;
+            font-family: monospace;
+            background: #fee2e2;
+            padding: 0.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
         }
         
         .btn {
             display: inline-block;
-            padding: 0.5rem 1rem;
+            padding: 0.625rem 1.25rem;
             background: #2563eb;
             color: white;
             border: none;
             border-radius: 6px;
             font-weight: 500;
+            font-size: 0.9rem;
             cursor: pointer;
             text-decoration: none;
-            margin-top: 1rem;
+            transition: background 0.15s;
+        }
+        
+        .btn:hover {
+            background: #1d4ed8;
         }
         
         .btn-secondary {
             background: #f1f5f9;
             color: #0f172a;
             border: 1px solid #e2e8f0;
-            margin-left: 0.5rem;
+        }
+        
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+        
+        .debug-info {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e2e8f0;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-align: left;
+        }
+        
+        .debug-info details {
+            margin-top: 0.5rem;
+        }
+        
+        .debug-info summary {
+            cursor: pointer;
+            color: #64748b;
+        }
+        
+        .debug-info pre {
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background: #f8fafc;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.7rem;
         }
     </style>
 </head>
@@ -105,111 +187,218 @@
             <h1 class="splash-title">SH CRM</h1>
             <p class="splash-subtitle">Управление комиссионным магазином</p>
             
-            <div class="splash-loader" id="splashLoader">
+            <div id="loadingSection">
                 <div class="loading-spinner"></div>
-                <p id="splashMessage">Проверка сессии...</p>
+                <p class="status-message" id="statusMessage">Проверка подключения...</p>
             </div>
             
-            <div class="splash-error" id="splashError">
-                <p id="errorMessage">Не удалось подключиться к серверу</p>
-                <button class="btn" id="retryBtn">Попробовать снова</button>
+            <div class="error-box" id="errorBox">
+                <div class="error-title">⚠️ Ошибка загрузки</div>
+                <div class="error-message" id="errorMessage"></div>
+                <div class="error-details" id="errorDetails"></div>
+            </div>
+            
+            <div class="btn-group" id="actionButtons" style="display: none;">
+                <button class="btn" id="retryBtn">🔄 Попробовать снова</button>
+                <button class="btn btn-secondary" id="loginBtn">🔐 Страница входа</button>
+                <button class="btn btn-secondary" id="inventoryBtn">📦 На склад</button>
+            </div>
+            
+            <div class="debug-info">
+                <details>
+                    <summary>🔧 Отладочная информация</summary>
+                    <pre id="debugInfo">Загрузка...</pre>
+                </details>
             </div>
         </div>
     </div>
 
     <script type="module">
-        import { supabase } from './core/supabase.js';
+        // ========================================
+        // ТОЧКА ВХОДА С РАСШИРЕННОЙ ДИАГНОСТИКОЙ
+        // ========================================
         
-        const DOM = {
-            splashLoader: document.getElementById('splashLoader'),
-            splashMessage: document.getElementById('splashMessage'),
-            splashError: document.getElementById('splashError'),
-            errorMessage: document.getElementById('errorMessage'),
-            retryBtn: document.getElementById('retryBtn')
+        const DEBUG = {
+            startTime: new Date().toISOString(),
+            baseURI: document.baseURI,
+            location: window.location.href,
+            steps: []
         };
         
-        async function checkSessionAndRedirect() {
+        function addDebugStep(step, data = null) {
+            DEBUG.steps.push({
+                time: new Date().toISOString(),
+                step,
+                data: data ? JSON.stringify(data, null, 2) : null
+            });
+            updateDebugInfo();
+        }
+        
+        function updateDebugInfo() {
+            const pre = document.getElementById('debugInfo');
+            if (pre) {
+                pre.textContent = JSON.stringify(DEBUG, null, 2);
+            }
+        }
+        
+        addDebugStep('Страница загружена');
+        
+        // DOM элементы
+        const DOM = {
+            loadingSection: document.getElementById('loadingSection'),
+            statusMessage: document.getElementById('statusMessage'),
+            errorBox: document.getElementById('errorBox'),
+            errorMessage: document.getElementById('errorMessage'),
+            errorDetails: document.getElementById('errorDetails'),
+            actionButtons: document.getElementById('actionButtons'),
+            retryBtn: document.getElementById('retryBtn'),
+            loginBtn: document.getElementById('loginBtn'),
+            inventoryBtn: document.getElementById('inventoryBtn')
+        };
+        
+        // Функция показа ошибки (НЕ ДЕЛАЕТ РЕДИРЕКТ)
+        function showError(title, message, details = null) {
+            console.error('[Index]', title, message, details);
+            
+            DOM.loadingSection.style.display = 'none';
+            DOM.errorBox.classList.add('show');
+            DOM.actionButtons.style.display = 'flex';
+            
+            DOM.errorMessage.textContent = message;
+            
+            let detailsText = '';
+            if (details) {
+                if (details instanceof Error) {
+                    detailsText = `${details.name}: ${details.message}\n${details.stack || ''}`;
+                } else {
+                    detailsText = JSON.stringify(details, null, 2);
+                }
+            }
+            DOM.errorDetails.textContent = detailsText || 'Нет дополнительной информации';
+            
+            addDebugStep('Ошибка показана', { title, message, details: detailsText });
+        }
+        
+        function setStatus(text) {
+            DOM.statusMessage.textContent = text;
+            addDebugStep('Статус', text);
+        }
+        
+        // Ручные переходы
+        function goToLogin() {
+            addDebugStep('Ручной переход на логин');
+            window.location.href = 'pages/login.html';
+        }
+        
+        function goToInventory() {
+            addDebugStep('Ручной переход на склад');
+            window.location.href = 'pages/inventory.html';
+        }
+        
+        async function retry() {
+            addDebugStep('Повторная попытка');
+            DOM.errorBox.classList.remove('show');
+            DOM.actionButtons.style.display = 'none';
+            DOM.loadingSection.style.display = 'block';
+            await initialize();
+        }
+        
+        // Основная инициализация
+        async function initialize() {
             try {
-                DOM.splashMessage.textContent = 'Проверка сессии...';
+                setStatus('Импорт модуля Supabase...');
+                addDebugStep('Начало импорта Supabase');
+                
+                // Динамический импорт с обработкой ошибок
+                let supabaseModule;
+                try {
+                    supabaseModule = await import('./core/supabase.js');
+                    addDebugStep('Модуль Supabase загружен');
+                } catch (importError) {
+                    addDebugStep('Ошибка импорта Supabase', importError);
+                    throw new Error(`Не удалось загрузить модуль Supabase: ${importError.message}`);
+                }
+                
+                const { supabase } = supabaseModule;
+                
+                if (!supabase) {
+                    throw new Error('Supabase клиент не найден в модуле');
+                }
+                
+                setStatus('Проверка конфигурации Supabase...');
+                addDebugStep('Проверка конфигурации', {
+                    url: supabase.supabaseUrl,
+                    hasKey: !!supabase.supabaseKey
+                });
+                
+                setStatus('Получение сессии...');
+                addDebugStep('Запрос сессии');
                 
                 const { data: { session }, error } = await supabase.auth.getSession();
                 
-                if (error) throw error;
+                if (error) {
+                    addDebugStep('Ошибка получения сессии', error);
+                    throw error;
+                }
+                
+                addDebugStep('Сессия получена', { hasSession: !!session });
                 
                 if (session?.user) {
-                    DOM.splashMessage.textContent = 'Вход выполнен, загружаем приложение...';
+                    setStatus(`✅ Вход выполнен: ${session.user.email}`);
+                    addDebugStep('Пользователь авторизован', { email: session.user.email });
                     
-                    // Проверяем сохраненный URL возврата
                     const returnUrl = sessionStorage.getItem('sh_auth_return_url');
+                    addDebugStep('Проверка returnUrl', { returnUrl });
                     
-                    if (returnUrl) {
-                        sessionStorage.removeItem('sh_auth_return_url');
-                        window.location.href = returnUrl;
-                    } else {
-                        // ВАЖНО: Используем относительный путь
-                        window.location.href = 'pages/inventory.html';
-                    }
+                    setStatus('✅ Перенаправление на склад через 2 секунды...');
+                    
+                    // ЗАДЕРЖКА перед редиректом чтобы увидеть сообщение
+                    setTimeout(() => {
+                        if (returnUrl) {
+                            sessionStorage.removeItem('sh_auth_return_url');
+                            window.location.href = returnUrl;
+                        } else {
+                            window.location.href = 'pages/inventory.html';
+                        }
+                    }, 2000);
+                    
                 } else {
-                    DOM.splashMessage.textContent = 'Перенаправление на страницу входа...';
+                    setStatus('ℹ️ Нет активной сессии');
+                    addDebugStep('Сессия отсутствует');
+                    
+                    setStatus('Перенаправление на страницу входа через 2 секунды...');
                     
                     setTimeout(() => {
-                        // ВАЖНО: Используем относительный путь
                         window.location.href = 'pages/login.html';
-                    }, 500);
+                    }, 2000);
                 }
                 
             } catch (error) {
-                console.error('[Index] Session check error:', error);
+                console.error('[Index] Ошибка инициализации:', error);
                 
-                DOM.splashLoader.style.display = 'none';
-                DOM.splashError.classList.add('show');
+                let errorTitle = 'Ошибка инициализации';
+                let errorMessage = error.message || 'Неизвестная ошибка';
                 
-                let errorText = 'Не удалось подключиться к серверу';
-                if (error.message.includes('fetch')) {
-                    errorText = 'Проблемы с подключением к интернету';
+                if (error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Не удалось загрузить модуль. Проверьте пути к файлам.';
+                } else if (error.message.includes('supabaseUrl')) {
+                    errorMessage = 'Ошибка конфигурации Supabase.';
                 }
-                DOM.errorMessage.textContent = errorText;
+                
+                showError(errorTitle, errorMessage, error);
             }
         }
         
-        function retry() {
-            DOM.splashError.classList.remove('show');
-            DOM.splashLoader.style.display = 'flex';
-            checkSessionAndRedirect();
-        }
+        // Привязка событий
+        DOM.retryBtn.addEventListener('click', retry);
+        DOM.loginBtn.addEventListener('click', goToLogin);
+        DOM.inventoryBtn.addEventListener('click', goToInventory);
         
-        if (DOM.retryBtn) {
-            DOM.retryBtn.addEventListener('click', retry);
-        }
+        // Запуск
+        initialize();
         
-        checkSessionAndRedirect();
-        
-        // Таймаут для ручного входа
-        setTimeout(() => {
-            if (DOM.splashLoader.style.display !== 'none') {
-                const message = DOM.splashMessage.textContent;
-                if (message.includes('Проверка') || message.includes('Перенаправление')) {
-                    DOM.splashLoader.style.display = 'none';
-                    
-                    const manualEntry = document.createElement('div');
-                    manualEntry.style.marginTop = '1rem';
-                    manualEntry.innerHTML = `
-                        <button class="btn" id="goToLoginBtn">Войти</button>
-                        <button class="btn btn-secondary" id="goToInventoryBtn">Продолжить</button>
-                    `;
-                    
-                    DOM.splashLoader.parentNode.appendChild(manualEntry);
-                    
-                    document.getElementById('goToLoginBtn')?.addEventListener('click', () => {
-                        window.location.href = 'pages/login.html';
-                    });
-                    
-                    document.getElementById('goToInventoryBtn')?.addEventListener('click', () => {
-                        window.location.href = 'pages/inventory.html';
-                    });
-                }
-            }
-        }, 10000);
+        // Обновляем отладку каждую секунду (на случай зависания)
+        setInterval(updateDebugInfo, 1000);
     </script>
 </body>
 </html>
