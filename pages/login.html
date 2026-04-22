@@ -2,245 +2,269 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Вход | SH CRM</title>
+    
+    <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
+    
+    <!-- Дополнительные стили для страницы входа -->
     <style>
+        /* Стили специфичные только для страницы входа */
         .login-page {
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            background: #f1f5f9;
+            padding: var(--spacing-4);
+            background: var(--color-bg);
         }
-        .login-card {
+        
+        .login-container {
             width: 100%;
-            max-width: 400px;
-            padding: 40px;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 4px 6px -2px rgba(0,0,0,0.05);
+            max-width: 420px;
         }
-        .login-card h2 {
-            margin-bottom: 8px;
+        
+        .login-card {
+            padding: var(--spacing-8);
+            background: var(--color-white);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg);
+            border: var(--border-width) solid var(--color-border);
+        }
+        
+        .login-header {
             text-align: center;
+            margin-bottom: var(--spacing-6);
         }
-        .login-subtitle {
-            text-align: center;
-            color: #64748b;
-            margin-bottom: 24px;
+        
+        .login-header h1 {
+            font-size: var(--font-size-2xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-text);
+            margin-bottom: var(--spacing-2);
         }
+        
+        .login-header p {
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-sm);
+        }
+        
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-4);
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-1);
+        }
+        
+        .form-group label {
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text);
+        }
+        
+        .form-control {
+            height: var(--input-height-lg);
+            padding: 0 var(--spacing-4);
+            font-size: var(--font-size-base);
+            border: var(--border-width) solid var(--color-border);
+            border-radius: var(--radius-md);
+            background: var(--color-white);
+            transition: border-color var(--transition-fast);
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: var(--shadow-outline);
+        }
+        
+        .form-control.error {
+            border-color: var(--color-danger);
+        }
+        
         .error-message {
-            color: #dc2626;
-            font-size: 14px;
-            margin-top: 8px;
+            font-size: var(--font-size-xs);
+            color: var(--color-danger);
+            min-height: 20px;
+        }
+        
+        .form-error {
+            padding: var(--spacing-3);
+            background: var(--color-danger-bg);
+            border-radius: var(--radius-md);
+            color: var(--color-danger-dark);
+            font-size: var(--font-size-sm);
+            border-left: 3px solid var(--color-danger);
             display: none;
         }
-        .btn-block {
+        
+        .form-error.show {
+            display: block;
+        }
+        
+        .btn-login {
             width: 100%;
-            margin-top: 16px;
+            height: var(--button-height-lg);
+            margin-top: var(--spacing-2);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-semibold);
         }
-        .register-link {
+        
+        .btn-login:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .login-footer {
+            margin-top: var(--spacing-6);
             text-align: center;
-            margin-top: 20px;
-            font-size: 14px;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
         }
-        .register-link a {
-            color: #0f172a;
-            font-weight: 500;
+        
+        .login-footer a {
+            color: var(--color-primary);
+            font-weight: var(--font-weight-medium);
+            text-decoration: none;
+        }
+        
+        .login-footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .offline-banner {
+            padding: var(--spacing-3);
+            margin-bottom: var(--spacing-4);
+            background: var(--color-warning-bg);
+            border-radius: var(--radius-md);
+            color: var(--color-warning-dark);
+            font-size: var(--font-size-sm);
+            text-align: center;
+            border-left: 3px solid var(--color-warning);
+            display: none;
+        }
+        
+        .offline-banner.show {
+            display: block;
+        }
+        
+        /* Модальное окно регистрации */
+        .register-modal .modal {
+            max-width: 480px;
+        }
+        
+        .register-form {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-4);
+        }
+        
+        .demo-credentials {
+            margin-top: var(--spacing-4);
+            padding: var(--spacing-3);
+            background: var(--color-gray-50);
+            border-radius: var(--radius-md);
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            text-align: center;
+        }
+        
+        .demo-credentials code {
+            background: var(--color-gray-200);
+            padding: var(--spacing-0-5) var(--spacing-1);
+            border-radius: var(--radius-sm);
+        }
+        
+        @media (max-width: 480px) {
+            .login-card {
+                padding: var(--spacing-5);
+            }
         }
     </style>
 </head>
 <body>
     <div class="login-page">
-        <div class="login-card">
-            <h2>SH CRM</h2>
-            <p class="login-subtitle">Вход в систему</p>
-            <form id="loginForm">
-                <div class="form-group">
-                    <label>Email</label>
-                    <input type="email" id="email" class="form-control" placeholder="user@example.com" required autocomplete="email">
+        <div class="login-container">
+            <!-- Баннер офлайн-режима -->
+            <div class="offline-banner" id="offlineBanner">
+                ⚠️ Нет подключения к интернету. Вход возможен только при наличии сети.
+            </div>
+            
+            <div class="login-card">
+                <div class="login-header">
+                    <h1>SH CRM</h1>
+                    <p>Управление комиссионным магазином</p>
                 </div>
-                <div class="form-group">
-                    <label>Пароль</label>
-                    <input type="password" id="password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
-                </div>
-                <div class="error-message" id="errorMessage"></div>
-                <button type="submit" class="btn-primary btn-block" id="submitBtn">Войти</button>
-            </form>
-            <p class="register-link">
-                Нет аккаунта? <a href="#" id="showRegisterBtn">Зарегистрироваться</a>
-            </p>
-        </div>
-    </div>
-    
-    <!-- Модалка регистрации -->
-    <div class="modal-overlay" id="registerModal" style="display: none;">
-        <div class="modal">
-            <div class="modal-header">
-                <h3>Регистрация</h3>
-                <button class="btn-close" id="closeRegisterModal">✕</button>
-            </div>
-            <div class="modal-body">
-                <form id="registerForm">
+                
+                <form class="login-form" id="loginForm">
                     <div class="form-group">
-                        <label>Имя</label>
-                        <input type="text" id="regName" class="form-control" placeholder="Иван Петров" required>
+                        <label for="email">Email</label>
+                        <input 
+                            type="email" 
+                            id="email" 
+                            name="email"
+                            class="form-control" 
+                            placeholder="user@example.com" 
+                            autocomplete="email"
+                            required
+                        >
+                        <div class="error-message" id="emailError"></div>
                     </div>
-                    <div class="form-group">
-                        <label>Email</label>
-                        <input type="email" id="regEmail" class="form-control" placeholder="user@example.com" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Пароль</label>
-                        <input type="password" id="regPassword" class="form-control" placeholder="••••••••" required minlength="6">
-                    </div>
-                    <div class="error-message" id="regErrorMessage"></div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-secondary" id="cancelRegister">Отмена</button>
-                <button class="btn-primary" id="registerSubmitBtn">Зарегистрироваться</button>
-            </div>
-        </div>
-    </div>
-    
-    <script type="module">
-        import { supabase } from '../core/supabase.js';
-        import { checkAuth } from '../core/auth.js';
-        
-        // Если уже авторизован — на склад
-        const user = await checkAuth();
-        if (user) {
-            window.location.href = 'inventory.html';
-        }
-        
-        // Элементы
-        const form = document.getElementById('loginForm');
-        const emailInput = document.getElementById('email');
-        const passwordInput = document.getElementById('password');
-        const errorEl = document.getElementById('errorMessage');
-        const submitBtn = document.getElementById('submitBtn');
-        
-        const registerModal = document.getElementById('registerModal');
-        const showRegisterBtn = document.getElementById('showRegisterBtn');
-        const closeRegisterModal = document.getElementById('closeRegisterModal');
-        const cancelRegister = document.getElementById('cancelRegister');
-        const registerForm = document.getElementById('registerForm');
-        const regName = document.getElementById('regName');
-        const regEmail = document.getElementById('regEmail');
-        const regPassword = document.getElementById('regPassword');
-        const regErrorEl = document.getElementById('regErrorMessage');
-        const registerSubmitBtn = document.getElementById('registerSubmitBtn');
-        
-        // Вход
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const email = emailInput.value.trim();
-            const password = passwordInput.value;
-            
-            if (!email || !password) {
-                errorEl.textContent = 'Введите email и пароль';
-                errorEl.style.display = 'block';
-                return;
-            }
-            
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Вход...';
-            errorEl.style.display = 'none';
-            
-            try {
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-                
-                if (error) {
-                    if (error.message.includes('Invalid login')) {
-                        throw new Error('Неверный email или пароль');
-                    }
-                    throw error;
-                }
-                
-                if (data.user) {
-                    window.location.href = 'inventory.html';
-                }
-            } catch (error) {
-                errorEl.textContent = error.message;
-                errorEl.style.display = 'block';
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Войти';
-            }
-        });
-        
-        // Показать модалку регистрации
-        showRegisterBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            registerModal.style.display = 'flex';
-            regName.value = '';
-            regEmail.value = '';
-            regPassword.value = '';
-            regErrorEl.style.display = 'none';
-        });
-        
-        // Закрыть модалку
-        const closeModal = () => registerModal.style.display = 'none';
-        closeRegisterModal.addEventListener('click', closeModal);
-        cancelRegister.addEventListener('click', closeModal);
-        registerModal.addEventListener('click', (e) => {
-            if (e.target === registerModal) closeModal();
-        });
-        
-        // Регистрация
-        registerSubmitBtn.addEventListener('click', async () => {
-            const name = regName.value.trim();
-            const email = regEmail.value.trim();
-            const password = regPassword.value;
-            
-            if (!name || !email || !password) {
-                regErrorEl.textContent = 'Заполните все поля';
-                regErrorEl.style.display = 'block';
-                return;
-            }
-            
-            if (password.length < 6) {
-                regErrorEl.textContent = 'Пароль должен быть не менее 6 символов';
-                regErrorEl.style.display = 'block';
-                return;
-            }
-            
-            registerSubmitBtn.disabled = true;
-            registerSubmitBtn.textContent = 'Регистрация...';
-            regErrorEl.style.display = 'none';
-            
-            try {
-                const { data, error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                    options: { data: { full_name: name } }
-                });
-                
-                if (error) throw error;
-                
-                if (data.user) {
-                    // Создаем профиль
-                    await supabase.from('profiles').insert({
-                        id: data.user.id,
-                        full_name: name,
-                        email: email,
-                        created_at: new Date().toISOString()
-                    });
                     
-                    alert('Регистрация успешна! Теперь вы можете войти.');
-                    closeModal();
-                }
-            } catch (error) {
-                regErrorEl.textContent = error.message;
-                regErrorEl.style.display = 'block';
-            } finally {
-                registerSubmitBtn.disabled = false;
-                registerSubmitBtn.textContent = 'Зарегистрироваться';
-            }
-        });
-    </script>
+                    <div class="form-group">
+                        <label for="password">Пароль</label>
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password"
+                            class="form-control" 
+                            placeholder="••••••••" 
+                            autocomplete="current-password"
+                            required
+                        >
+                        <div class="error-message" id="passwordError"></div>
+                    </div>
+                    
+                    <div class="form-error" id="formError"></div>
+                    
+                    <button type="submit" class="btn-primary btn-login" id="loginBtn">
+                        <span class="btn-text">Войти</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="loading-spinner small"></span>
+                            Вход...
+                        </span>
+                    </button>
+                </form>
+                
+                <div class="login-footer">
+                    <p>
+                        Нет аккаунта? 
+                        <a href="#" id="showRegisterBtn">Зарегистрироваться</a>
+                    </p>
+                </div>
+                
+                <!-- Демо-доступ (только для разработки) -->
+                <div class="demo-credentials" id="demoCredentials" style="display: none;">
+                    <p>Демо доступ:</p>
+                    <code>demo@example.com / demo123</code>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Контейнер для модальных окон -->
+    <div id="modalContainer"></div>
+    
+    <!-- Контейнер для уведомлений -->
+    <div id="notificationContainer"></div>
+    
+    <!-- Основной скрипт страницы -->
+    <script type="module" src="../js/login.js"></script>
 </body>
 </html>
