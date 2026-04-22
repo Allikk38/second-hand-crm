@@ -16,11 +16,10 @@
  * - Иммутабельные снапшоты для предотвращения случайных мутаций
  * 
  * @module Store
- * @version 6.0.0
+ * @version 6.0.1
  * @changes
- * - Добавлены методы для работы с корзиной.
- * - Добавлен PersistPlugin для сохранения состояния.
- * - Расширен batch для асинхронных операций.
+ * - ИСПРАВЛЕНО: PersistPlugin падал при сохранении Date объектов.
+ * - Добавлена безопасная сериализация дат.
  */
 
 import { EventBus } from './EventBus.js';
@@ -61,6 +60,8 @@ class StoreClass {
                 expandedCategories: new Set(),
                 viewMode: 'grid',
                 isLoading: false,
+                isLoadingShift: false,
+                isShiftActionPending: false,
                 cartItems: [],
                 cartTotalDiscount: 0,
                 cartPaymentMethod: 'cash',
@@ -156,7 +157,7 @@ class StoreClass {
                 const newPath = path ? `${path}.${prop}` : prop;
                 
                 if (value && typeof value === 'object') {
-                    if (value instanceof Set || value instanceof Map) {
+                    if (value instanceof Set || value instanceof Map || value instanceof Date) {
                         return value;
                     }
                     return self._createReactiveProxy(value, newPath);
@@ -294,6 +295,7 @@ class StoreClass {
         
         if (value instanceof Set) return new Set(value);
         if (value instanceof Map) return new Map(value);
+        if (value instanceof Date) return new Date(value);
         if (typeof value === 'object') return JSON.parse(JSON.stringify(value));
         
         return value;
@@ -364,6 +366,8 @@ class StoreClass {
                 expandedCategories: new Set(),
                 viewMode: 'grid',
                 isLoading: false,
+                isLoadingShift: false,
+                isShiftActionPending: false,
                 cartItems: [],
                 cartTotalDiscount: 0,
                 cartPaymentMethod: 'cash',
@@ -419,6 +423,8 @@ class StoreClass {
                 expandedCategories: new Set(),
                 viewMode: 'grid',
                 isLoading: false,
+                isLoadingShift: false,
+                isShiftActionPending: false,
                 cartItems: [],
                 cartTotalDiscount: 0,
                 cartPaymentMethod: 'cash',
@@ -653,10 +659,11 @@ class PersistPlugin {
                 this.store.state.cashier.cartPaymentMethod = data.cashier.cartPaymentMethod;
             }
             if (data.reports?.period) {
+                // Безопасное восстановление дат
                 this.store.state.reports.period = {
                     ...data.reports.period,
-                    startDate: new Date(data.reports.period.startDate),
-                    endDate: new Date(data.reports.period.endDate)
+                    startDate: data.reports.period.startDate ? new Date(data.reports.period.startDate) : null,
+                    endDate: data.reports.period.endDate ? new Date(data.reports.period.endDate) : null
                 };
             }
         } catch (error) {
@@ -664,22 +671,51 @@ class PersistPlugin {
         }
     }
 
+    /**
+     * Безопасная сериализация значения
+     */
+    _serializeValue(value) {
+        if (value === null || value === undefined) {
+            return value;
+        }
+        
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+        
+        if (Array.isArray(value)) {
+            return value.map(item => this._serializeValue(item));
+        }
+        
+        if (typeof value === 'object') {
+            const serialized = {};
+            for (const [key, val] of Object.entries(value)) {
+                serialized[key] = this._serializeValue(val);
+            }
+            return serialized;
+        }
+        
+        return value;
+    }
+
     saveToStorage() {
         clearTimeout(this.debounceTimer);
         
         this.debounceTimer = setTimeout(() => {
             try {
+                const period = this.store.state.reports.period;
+                
                 const data = {
                     cashier: {
-                        cartItems: this.store.state.cashier.cartItems,
+                        cartItems: this._serializeValue(this.store.state.cashier.cartItems),
                         cartTotalDiscount: this.store.state.cashier.cartTotalDiscount,
                         cartPaymentMethod: this.store.state.cashier.cartPaymentMethod
                     },
                     reports: {
                         period: {
-                            preset: this.store.state.reports.period.preset,
-                            startDate: this.store.state.reports.period.startDate?.toISOString(),
-                            endDate: this.store.state.reports.period.endDate?.toISOString()
+                            preset: period.preset,
+                            startDate: period.startDate instanceof Date ? period.startDate.toISOString() : period.startDate,
+                            endDate: period.endDate instanceof Date ? period.endDate.toISOString() : period.endDate
                         }
                     },
                     savedAt: Date.now()
