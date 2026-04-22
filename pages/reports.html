@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отчеты | SH CRM</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <style>
+        .reports-page {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .reports-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+        
+        .period-selector {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .reports-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .tab-btn.active {
+            color: #0f172a;
+            border-bottom-color: #0f172a;
+        }
+        
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .kpi-card {
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .kpi-title {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+        
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        .kpi-trend {
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        
+        .trend-up { color: #10b981; }
+        .trend-down { color: #ef4444; }
+        
+        .chart-card {
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .data-table th {
+            padding: 12px 16px;
+            background: #f8fafc;
+            font-weight: 500;
+            font-size: 13px;
+            color: #64748b;
+            text-align: left;
+        }
+        
+        .data-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <h1>📊 Отчеты</h1>
+            <nav class="app-nav">
+                <a href="inventory.html">Склад</a>
+                <a href="cashier.html">Касса</a>
+                <a href="reports.html" class="active">Отчеты</a>
+            </nav>
+            <button id="logoutBtn" class="btn-ghost">Выход</button>
+        </header>
+        
+        <main class="app-main">
+            <div class="reports-page">
+                <div class="reports-header">
+                    <h2>Аналитика</h2>
+                    <div class="period-selector">
+                        <select id="periodSelect" class="filter-select">
+                            <option value="today">Сегодня</option>
+                            <option value="yesterday">Вчера</option>
+                            <option value="week" selected>Неделя</option>
+                            <option value="month">Месяц</option>
+                        </select>
+                        <button class="btn-secondary" id="refreshBtn">🔄 Обновить</button>
+                    </div>
+                </div>
+                
+                <div class="reports-tabs">
+                    <button class="tab-btn active" data-tab="dashboard">📊 Дашборд</button>
+                    <button class="tab-btn" data-tab="sales">💰 Продажи</button>
+                    <button class="tab-btn" data-tab="products">📦 Товары</button>
+                </div>
+                
+                <div id="reportsContent">
+                    <div class="loading">Загрузка данных...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script type="module" src="../js/reports.js"></script>
+</body>
+</html>
