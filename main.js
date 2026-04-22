@@ -16,10 +16,10 @@
  * - Офлайн-режим при недоступности бэкенда.
  * 
  * @module main
- * @version 6.0.2
+ * @version 6.0.3
  * @changes
+ * - Исправлен импорт модулей страниц: использование module.default вместо именованного экспорта.
  * - Добавлено детальное логирование каждого этапа инициализации для диагностики.
- * - Усилена обработка ошибок в роутере с выводом полного стека.
  */
 
 // ========== IMPORTS (Core) ==========
@@ -223,7 +223,6 @@ class Application {
                 <div class="error-state-icon">🌐</div>
                 <h3>Нет подключения к серверу</h3>
                 <p>Проверьте подключение к интернету или попробуйте позже</p>
-                <p style="font-size: 12px; color: #999; margin-top: 20px;">${this.escapeHtml(logger.getBufferedLogs?.()?.[0]?.message || '')}</p>
                 <button class="btn-primary" onclick="location.reload()">Обновить</button>
                 <button class="btn-secondary" onclick="localStorage.clear();location.reload()" style="margin-left: 10px;">
                     Очистить кэш
@@ -294,7 +293,8 @@ class Application {
                     logger.debug('Container ready:', !!container);
                     try {
                         const start = performance.now();
-                        const { InventoryPage } = await import(`./modules/inventory/InventoryPage.js?${CACHE_BUST}`);
+                        const module = await import(`./modules/inventory/InventoryPage.js?${CACHE_BUST}`);
+                        const InventoryPage = module.default;
                         logger.debug(`Module loaded in ${(performance.now() - start).toFixed(0)}ms`);
                         return new InventoryPage(container);
                     } catch (error) {
@@ -314,7 +314,8 @@ class Application {
                     logger.debug('Container ready:', !!container);
                     try {
                         const start = performance.now();
-                        const { CashierPage } = await import(`./modules/cashier/CashierPage.js?${CACHE_BUST}`);
+                        const module = await import(`./modules/cashier/CashierPage.js?${CACHE_BUST}`);
+                        const CashierPage = module.default;
                         logger.debug(`Module loaded in ${(performance.now() - start).toFixed(0)}ms`);
                         return new CashierPage(container);
                     } catch (error) {
@@ -334,7 +335,8 @@ class Application {
                     logger.debug('Container ready:', !!container);
                     try {
                         const start = performance.now();
-                        const { ReportsPage } = await import(`./modules/reports/ReportsPage.js?${CACHE_BUST}`);
+                        const module = await import(`./modules/reports/ReportsPage.js?${CACHE_BUST}`);
+                        const ReportsPage = module.default;
                         logger.debug(`Module loaded in ${(performance.now() - start).toFixed(0)}ms`);
                         return new ReportsPage(container);
                     } catch (error) {
