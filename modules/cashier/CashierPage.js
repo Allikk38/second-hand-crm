@@ -14,11 +14,9 @@
  * - Соответствует паттерну MPA (точка входа).
  * 
  * @module CashierPage
- * @version 5.0.0
+ * @version 5.0.1
  * @changes
- * - Полностью удален легаси `CashierState`.
- * - Делегирование всей логики компоненту `CashierApp`.
- * - Упрощение до чистого рендеринга контейнера.
+ * - Исправлен вызов метода mount() вместо init().
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -54,7 +52,9 @@ export class CashierPage extends BaseComponent {
             
             if (rootElement) {
                 this.cashierApp = new CashierApp(rootElement);
-                await this.cashierApp.init();
+                // Вызываем mount() вместо init()
+                await this.cashierApp.mount();
+                console.log('[CashierPage] CashierApp mounted successfully');
             } else {
                 console.error('[CashierPage] Root element #cashier-root not found');
                 this.container.innerHTML = `<div class="error-state">Ошибка загрузки интерфейса кассы</div>`;
