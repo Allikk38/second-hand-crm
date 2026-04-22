@@ -8,20 +8,11 @@
  * Главный контроллер кассового модуля.
  * Управляет сменой, товарами, корзиной и рендерингом UI.
  * 
- * Архитектурные решения:
- * - Единый координатор бизнес-логики кассы.
- * - Слушает события от dumb-компонентов через EventBus.
- * - Управляет глобальным состоянием через Store.
- * - Интегрирован с логгером для полного трейсинга операций.
- * - Поддерживает офлайн-режим с автоматической синхронизацией.
- * 
  * @module CashierApp
- * @version 7.1.1
+ * @version 7.1.2
  * @changes
- * - ИСПРАВЛЕН КРИТИЧЕСКИЙ БАГ: бесконечный цикл ререндеринга.
- * - syncShiftState() больше не вызывает update() напрямую.
- * - Добавлен флаг _syncInProgress для предотвращения повторных вызовов.
- * - Улучшена логика монтирования компонентов.
+ * - Добавлен cache-busting при импорте SaleService.
+ * - Улучшена обработка ошибок статистики.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -29,7 +20,6 @@ import { Store } from '../../core/Store.js';
 import { EventBus } from '../../core/EventBus.js';
 import { ShiftService } from '../../services/ShiftService.js';
 import { ProductService } from '../../services/ProductService.js';
-import { SaleService } from '../../services/SaleService.js';
 import { AuthManager } from '../auth/AuthManager.js';
 import { Notification } from '../common/Notification.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
@@ -40,11 +30,10 @@ import { formatMoney } from '../../utils/formatters.js';
 const logger = createLogger('CashierApp');
 
 // ========== КОНСТАНТЫ ==========
-const AUTO_SYNC_ATTEMPTS = 3;
-const AUTO_SYNC_DELAY = 2000;
+const CACHE_BUST = `v=${Date.now()}`;
 
 // Ленивая загрузка компонентов UI
-let ShiftPanel, CategoryNav, ProductGrid, Cart, PaymentModal;
+let ShiftPanel, CategoryNav, ProductGrid, Cart, PaymentModal, SaleService;
 
 export class CashierApp extends BaseComponent {
     constructor(container) {
@@ -61,10 +50,7 @@ export class CashierApp extends BaseComponent {
         this.user = AuthManager.getUser();
         this.unsubscribers = [];
         this.eventUnsubscribers = [];
-        this.syncAttempts = 0;
-        this.syncTimer = null;
         this._isInitialized = false;
-        this._syncInProgress = false;  // Предотвращаем повторную синхронизацию
         
         logger.info('CashierApp constructed', { userId: this.user?.id });
     }
@@ -86,7 +72,6 @@ export class CashierApp extends BaseComponent {
             isLoadingShift
         });
 
-        // Если идет загрузка - показываем только лоадер, не рендерим основной макет
         if (isLoadingShift && !hasOpenShift) {
             return `
                 <div class="cashier-layout shift-closed-mode">
@@ -172,7 +157,6 @@ export class CashierApp extends BaseComponent {
     // ========== МОНТИРОВАНИЕ ==========
     
     async mount() {
-        // Переопределяем mount, чтобы избежать циклического вызова afterRender
         this._logger.group(`Mounting ${this._componentName}`, async () => {
             this._logger.debug('mount() started');
             
@@ -198,11 +182,9 @@ export class CashierApp extends BaseComponent {
                 this.container.appendChild(this.element);
                 this.cacheRefs();
                 
-                // Подписываемся на события
                 this.subscribeToShiftEvents();
                 this.subscribeToStore();
                 
-                // ВАЖНО: НЕ вызываем afterRender() здесь, делаем всё вручную
                 await this.initializeUI();
                 
                 this._isMounted = true;
@@ -224,15 +206,12 @@ export class CashierApp extends BaseComponent {
         });
     }
     
-    /**
-     * Инициализация UI (заменяет afterRender)
-     */
     async initializeUI() {
         logger.debug('initializeUI started');
         
         await this.loadComponents();
+        await this.loadSaleService();
         
-        // Проверяем, есть ли уже смена в Store
         const hasShift = Store.state.cashier.currentShift !== null;
         
         if (hasShift) {
@@ -240,7 +219,6 @@ export class CashierApp extends BaseComponent {
             await this.mountShiftComponents();
             await this.loadData();
         } else {
-            // Нет смены в Store - проверяем сервер
             logger.debug('No shift in Store, checking server');
             await this.checkServerForShift();
         }
@@ -249,47 +227,19 @@ export class CashierApp extends BaseComponent {
         logger.debug('initializeUI completed');
     }
     
-    /**
-     * Проверяет наличие смены на сервере
-     */
     async checkServerForShift() {
-        if (this._syncInProgress) {
-            logger.debug('Sync already in progress, skipping');
-            return;
-        }
-        
-        this._syncInProgress = true;
+        Store.state.cashier.isLoadingShift = true;
         
         try {
-            // Показываем лоадер через Store (вызовет перерисовку)
-            Store.state.cashier.isLoadingShift = true;
-            
             logger.debug('Checking server for open shift');
             const serverShift = await ShiftService.getCurrentShift(this.user.id, true);
             
             if (serverShift) {
                 logger.info('Found open shift on server', { shiftId: serverShift.id });
                 
-                // Сохраняем смену в Store
                 Store.state.cashier.currentShift = serverShift;
-                
-                // Загружаем статистику
-                try {
-                    const stats = await ShiftService.getCurrentShiftStats(serverShift.id);
-                    Store.state.cashier.shiftStats = {
-                        revenue: stats.totalRevenue || 0,
-                        salesCount: stats.salesCount || 0,
-                        averageCheck: stats.averageCheck || 0,
-                        profit: stats.totalProfit || 0
-                    };
-                } catch (statsError) {
-                    logger.warn('Failed to load shift stats', { error: statsError.message });
-                }
-                
-                // Выключаем лоадер
                 Store.state.cashier.isLoadingShift = false;
                 
-                // Монтируем компоненты
                 await this.mountShiftComponents();
                 await this.loadData();
                 
@@ -302,23 +252,17 @@ export class CashierApp extends BaseComponent {
         } catch (error) {
             logger.error('Failed to check server for shift', { error: error.message });
             Store.state.cashier.isLoadingShift = false;
-            
-            if (error.code === 'SHIFT_OFFLINE' || error.message?.includes('fetch')) {
-                Notification.warning('Нет подключения к серверу');
-            }
-        } finally {
-            this._syncInProgress = false;
         }
     }
 
     async loadComponents() {
         if (!ShiftPanel) {
             const modules = await Promise.all([
-                import('./ShiftPanel.js'),
-                import('./CategoryNav.js'),
-                import('./ProductGrid.js'),
-                import('./Cart.js'),
-                import('./PaymentModal.js')
+                import(`./ShiftPanel.js?${CACHE_BUST}`),
+                import(`./CategoryNav.js?${CACHE_BUST}`),
+                import(`./ProductGrid.js?${CACHE_BUST}`),
+                import(`./Cart.js?${CACHE_BUST}`),
+                import(`./PaymentModal.js?${CACHE_BUST}`)
             ]);
             ShiftPanel = modules[0].ShiftPanel;
             CategoryNav = modules[1].CategoryNav;
@@ -327,18 +271,24 @@ export class CashierApp extends BaseComponent {
             PaymentModal = modules[4].PaymentModal;
         }
     }
+    
+    async loadSaleService() {
+        if (!SaleService) {
+            const module = await import(`../../services/SaleService.js?${CACHE_BUST}`);
+            SaleService = module.SaleService;
+            logger.debug('SaleService loaded with cache busting');
+        }
+    }
 
     async mountShiftComponents() {
         logger.debug('Mounting shift components');
         
-        // Shift Panel
         const shiftContainer = this.refs.get('shiftPanelContainer');
         if (shiftContainer && !this.shiftPanel) {
             this.shiftPanel = new ShiftPanel(shiftContainer);
             await this.shiftPanel.mount();
         }
 
-        // Category Nav
         const navContainer = this.refs.get('categoryNavContainer');
         if (navContainer && !this.categoryNav) {
             this.categoryNav = new CategoryNav(navContainer, {
@@ -349,7 +299,6 @@ export class CashierApp extends BaseComponent {
             await this.categoryNav.mount();
         }
 
-        // Product Grid
         const gridContainer = this.refs.get('productGridContainer');
         if (gridContainer && !this.productGrid) {
             this.productGrid = new ProductGrid(gridContainer, {
@@ -358,26 +307,24 @@ export class CashierApp extends BaseComponent {
             await this.productGrid.mount();
         }
 
-        // Cart
         const cartContainer = this.refs.get('cartContainer');
         if (cartContainer && !this.cart) {
             this.cart = new Cart(cartContainer);
             await this.cart.mount();
         }
 
-        // Кнопки
         this.addDomListener('checkoutBtn', 'click', () => this.handleCheckout());
         this.addDomListener('clearCartBtn', 'click', () => this.handleClearCart());
-        this.addDomListener('openShiftBtn', 'click', () => this.handleOpenShiftRequest());
-        this.addDomListener('refreshShiftStateBtn', 'click', () => this.manualRefreshShift());
-    }
-    
-    /**
-     * Ручное обновление состояния смены
-     */
-    async manualRefreshShift() {
-        logger.debug('Manual refresh requested');
-        await this.checkServerForShift();
+        
+        const openBtn = this.refs.get('openShiftBtn');
+        if (openBtn) {
+            openBtn.addEventListener('click', () => this.handleOpenShiftRequest());
+        }
+        
+        const refreshBtn = this.refs.get('refreshShiftStateBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.checkServerForShift());
+        }
     }
 
     // ========== ПОДПИСКИ ==========
@@ -451,7 +398,7 @@ export class CashierApp extends BaseComponent {
     }
     
     async handleCloseShiftRequest(data) {
-        const { shiftId, isLocal, currentStats } = data;
+        const { shiftId, currentStats } = data;
         
         if (Store.state.cashier.isShiftActionPending) return;
         
@@ -540,10 +487,11 @@ export class CashierApp extends BaseComponent {
         if (!shiftId) return;
         
         try {
-            const stats = await ShiftService.getCurrentShiftStats(shiftId);
+            await this.loadSaleService();
+            const stats = await SaleService.getStats({ shiftId });
             Store.state.cashier.shiftStats = {
                 revenue: stats.totalRevenue || 0,
-                salesCount: stats.salesCount || 0,
+                salesCount: stats.count || 0,
                 averageCheck: stats.averageCheck || 0,
                 profit: stats.totalProfit || 0
             };
@@ -630,6 +578,8 @@ export class CashierApp extends BaseComponent {
 
     async processCheckout(paymentMethod) {
         try {
+            await this.loadSaleService();
+            
             const shiftId = Store.getShiftId();
             const items = Store.state.cashier.cartItems.map(i => ({
                 id: i.id,
@@ -668,10 +618,6 @@ export class CashierApp extends BaseComponent {
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
-        if (this.syncTimer) {
-            clearTimeout(this.syncTimer);
-        }
-        
         this.unsubscribers.forEach(unsub => unsub());
         this.eventUnsubscribers.forEach(unsub => unsub());
         
