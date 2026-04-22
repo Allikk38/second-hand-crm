@@ -14,19 +14,28 @@
  * - Соответствует паттерну MPA (точка входа).
  * 
  * @module CashierPage
- * @version 6.0.1
+ * @version 6.0.2
  * @changes
- * - Исправлен вызов метода mount() вместо init().
- * - Добавлена проверка существования метода.
- * - Обновлен cache-busting.
+ * - Добавлено детальное логирование для диагностики проблем монтирования.
+ * - Добавлена обработка ошибок с выводом в консоль и UI.
+ * - Исправлен вызов super.mount().
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
+import { createLogger } from '../../utils/logger.js';
+
+// ========== LOGGER ==========
+const logger = createLogger('CashierPage');
 
 export class CashierPage extends BaseComponent {
     constructor(container) {
         super(container);
         this.cashierApp = null;
+        
+        logger.debug('CashierPage constructed', { 
+            containerExists: !!container,
+            containerId: container?.id 
+        });
     }
 
     /**
@@ -34,53 +43,104 @@ export class CashierPage extends BaseComponent {
      * @returns {Promise<string>}
      */
     async render() {
-        return `
+        logger.debug('CashierPage render() called');
+        
+        const html = `
             <div class="cashier-page-container">
                 <div id="cashier-root" class="cashier-app-wrapper"></div>
             </div>
         `;
+        
+        logger.debug('CashierPage render() completed');
+        return html;
     }
 
     /**
      * Монтирует компонент и запускает CashierApp.
      */
     async mount() {
-        await super.mount();
+        logger.debug('CashierPage mount() started');
         
-        // Ленивая загрузка основного приложения кассы
         try {
-            // Принудительно обновляем кэш модуля
-            const cacheBust = `v=${Date.now()}`;
-            const { CashierApp } = await import(`./CashierApp.js?${cacheBust}`);
+            // Вызываем родительский mount (рендерит HTML)
+            logger.debug('Calling super.mount()');
+            await super.mount();
+            logger.debug('super.mount() completed, element exists:', !!this.element);
+            
+            // Проверяем, что элемент создан
+            if (!this.element) {
+                throw new Error('CashierPage: element is null after super.mount()');
+            }
+            
+            // Находим root-элемент для CashierApp
             const rootElement = this.element.querySelector('#cashier-root');
             
-            if (rootElement) {
-                this.cashierApp = new CashierApp(rootElement);
-                
-                // Проверяем, какой метод доступен
-                if (typeof this.cashierApp.mount === 'function') {
-                    await this.cashierApp.mount();
-                    console.log('[CashierPage] CashierApp mounted successfully via mount()');
-                } else if (typeof this.cashierApp.init === 'function') {
-                    await this.cashierApp.init();
-                    console.log('[CashierPage] CashierApp initialized successfully via init()');
-                } else {
-                    throw new Error('CashierApp has neither mount() nor init() method');
-                }
-            } else {
-                console.error('[CashierPage] Root element #cashier-root not found');
-                this.container.innerHTML = `<div class="error-state">Ошибка загрузки интерфейса кассы</div>`;
+            if (!rootElement) {
+                logger.error('Root element #cashier-root not found', { 
+                    elementHTML: this.element.innerHTML.substring(0, 200) 
+                });
+                throw new Error('Root element #cashier-root not found in rendered HTML');
             }
+            
+            logger.debug('Found root element for CashierApp', { 
+                rootExists: !!rootElement,
+                rootId: rootElement.id 
+            });
+            
+            // Ленивая загрузка основного приложения кассы
+            logger.debug('Importing CashierApp module');
+            const cacheBust = `v=${Date.now()}`;
+            const module = await import(`./CashierApp.js?${cacheBust}`);
+            const { CashierApp } = module;
+            
+            logger.debug('CashierApp module loaded', { 
+                CashierAppExists: !!CashierApp 
+            });
+            
+            // Создаём экземпляр
+            this.cashierApp = new CashierApp(rootElement);
+            logger.debug('CashierApp instance created');
+            
+            // Проверяем наличие метода mount
+            if (typeof this.cashierApp.mount !== 'function') {
+                logger.error('CashierApp has no mount() method', {
+                    methods: Object.getOwnPropertyNames(Object.getPrototypeOf(this.cashierApp))
+                });
+                throw new Error('CashierApp instance has no mount() method');
+            }
+            
+            // Монтируем
+            logger.debug('Calling cashierApp.mount()');
+            await this.cashierApp.mount();
+            logger.info('CashierApp mounted successfully');
+            
         } catch (error) {
-            console.error('[CashierPage] Failed to load CashierApp:', error);
+            logger.error('Failed to mount CashierPage', {
+                error: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            
+            // Показываем ошибку в UI
             this.container.innerHTML = `
                 <div class="error-state">
                     <div class="error-state-icon">⚠️</div>
-                    <h3>Ошибка загрузки модуля кассы</h3>
+                    <h3>Ошибка загрузки кассы</h3>
                     <p>${this.escapeHtml(error.message)}</p>
-                    <button class="btn-primary" onclick="location.reload(true)">Обновить (очистить кэш)</button>
+                    <details style="margin-top: 16px; text-align: left;">
+                        <summary>Техническая информация</summary>
+                        <pre style="margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; overflow: auto; font-size: 12px;">${this.escapeHtml(error.stack || 'No stack trace')}</pre>
+                    </details>
+                    <button class="btn-primary" onclick="location.reload(true)" style="margin-top: 16px;">
+                        Обновить страницу (очистить кэш)
+                    </button>
+                    <button class="btn-secondary" onclick="window.location.hash = '/inventory'" style="margin-left: 8px; margin-top: 16px;">
+                        На склад
+                    </button>
                 </div>
             `;
+            
+            throw error;
         }
     }
 
@@ -88,9 +148,17 @@ export class CashierPage extends BaseComponent {
      * Очистка ресурсов при уничтожении страницы.
      */
     beforeDestroy() {
-        if (this.cashierApp && typeof this.cashierApp.destroy === 'function') {
-            this.cashierApp.destroy();
+        logger.debug('CashierPage beforeDestroy() called');
+        
+        if (this.cashierApp) {
+            if (typeof this.cashierApp.destroy === 'function') {
+                this.cashierApp.destroy();
+            }
+            this.cashierApp = null;
         }
-        this.cashierApp = null;
+        
+        logger.debug('CashierPage destroyed');
     }
 }
+
+export default CashierPage;
