@@ -8,12 +8,18 @@
  * Точка входа приложения. Инициализирует ядро, регистрирует маршруты
  * и запускает приложение.
  * 
+ * Архитектурные решения:
+ * - MPA архитектура с кастомным роутером.
+ * - Ленивая загрузка модулей.
+ * - Централизованное управление состоянием через Store.
+ * - Защита маршрутов через PermissionManager.
+ * 
  * @module main
- * @version 4.3.2
+ * @version 6.0.0
  * @changes
- * - Исправлена опечатка в permissions для /cashier (sales:create)
- * - Обновлена версия cache-busting до 4.3.2
- * - Добавлено логирование версий модулей для отладки кэширования
+ * - Обновлены пути к компонентам после рефакторинга.
+ * - Обновлена версия cache-busting.
+ * - Упрощена регистрация маршрутов.
  */
 
 // ========== IMPORTS (Core) ==========
@@ -22,6 +28,7 @@ import { Router } from './core/Router.js';
 import { AppLayout } from './core/AppLayout.js';
 import { EventBus } from './core/EventBus.js';
 import { PermissionManager } from './core/PermissionManager.js';
+import { Store } from './core/Store.js';
 
 // ========== IMPORTS (Services) ==========
 import { AuthManager } from './modules/auth/AuthManager.js';
@@ -29,9 +36,9 @@ import { LoginForm } from './modules/auth/LoginForm.js';
 import { Notification } from './modules/common/Notification.js';
 
 // ========== CONSTANTS ==========
-const LOAD_TIMEOUT = 10000; // 10 секунд
-const RETRY_DELAY = 3000; // 3 секунды
-const CACHE_BUST = 'v=4.3.2'; // Для принудительного обновления кэша
+const LOAD_TIMEOUT = 10000;
+const RETRY_DELAY = 3000;
+const CACHE_BUST = 'v=6.0.0';
 
 // ========== APPLICATION CLASS ==========
 class Application {
@@ -48,23 +55,17 @@ class Application {
      * Инициализация приложения
      */
     async init() {
-        // Скрываем начальный лоадер
         this.hideInitialLoader();
+        Store.enableDebug();
         
-        // Очищаем кэш принудительно при старте (для отладки)
-        this.clearAppCache();
-        
-        // Проверяем соединение
         if (!this.checkNetwork()) {
             this.showNetworkError();
             return;
         }
         
-        // Устанавливаем таймаут загрузки
         this.setLoadTimeout();
         
         try {
-            // Проверяем аутентификацию
             const user = await AuthManager.init();
             
             if (user) {
@@ -86,26 +87,6 @@ class Application {
         }
     }
     
-    /**
-     * Очищает кэш приложения
-     */
-    clearAppCache() {
-        // Очищаем кэш модулей (если поддерживается)
-        if (window.caches) {
-            caches.keys().then(names => {
-                names.forEach(name => {
-                    caches.delete(name);
-                });
-            });
-        }
-        
-        // Логируем версию для отладки
-        console.log(`[App] Version: ${CACHE_BUST}, Cache cleared`);
-    }
-    
-    /**
-     * Скрывает начальный лоадер
-     */
     hideInitialLoader() {
         const loader = document.getElementById('initial-loader');
         if (loader) {
@@ -113,16 +94,10 @@ class Application {
         }
     }
     
-    /**
-     * Проверка сетевого соединения
-     */
     checkNetwork() {
         return navigator.onLine;
     }
     
-    /**
-     * Показывает ошибку сети
-     */
     showNetworkError() {
         this.root.innerHTML = `
             <div class="error-state" style="padding: 40px; text-align: center;">
@@ -134,9 +109,6 @@ class Application {
         `;
     }
     
-    /**
-     * Устанавливает таймаут загрузки
-     */
     setLoadTimeout() {
         this.loadTimer = setTimeout(() => {
             console.error('[App] Load timeout');
@@ -144,9 +116,6 @@ class Application {
         }, LOAD_TIMEOUT);
     }
     
-    /**
-     * Очищает таймаут загрузки
-     */
     clearLoadTimeout() {
         if (this.loadTimer) {
             clearTimeout(this.loadTimer);
@@ -154,17 +123,12 @@ class Application {
         }
     }
     
-    /**
-     * Обработка ошибки инициализации
-     */
     handleInitError(error) {
         if (this.retryCount < this.maxRetries) {
             this.retryCount++;
             console.log(`[App] Retry ${this.retryCount}/${this.maxRetries} in ${RETRY_DELAY}ms`);
             
-            setTimeout(() => {
-                this.init();
-            }, RETRY_DELAY);
+            setTimeout(() => this.init(), RETRY_DELAY);
         } else {
             this.root.innerHTML = `
                 <div class="error-state" style="padding: 40px; text-align: center;">
@@ -177,18 +141,12 @@ class Application {
         }
     }
     
-    /**
-     * Запускает приложение для аутентифицированного пользователя
-     */
     async startAuthenticatedApp() {
-        // Рендерим основной макет
         this.layout = new AppLayout(this.root);
         this.layout.render();
         
-        // Регистрируем маршруты
         this.registerRoutes();
         
-        // Добавляем middleware для проверки аутентификации
         Router.use(async (route) => {
             if (!this.isAuthenticated) {
                 return '/login';
@@ -196,61 +154,43 @@ class Application {
             return true;
         });
         
-        // Запускаем роутер
         Router.start();
         
         AppState.set('isInitialized', true);
     }
     
-    /**
-     * Регистрирует все маршруты приложения
-     */
     registerRoutes() {
-        // Страница склада (доступна при любых правах на товары)
+        // Страница склада
         Router.register('/inventory', {
             title: 'Склад',
             loader: async (container) => {
                 const { InventoryPage } = await import(`./modules/inventory/InventoryPage.js?${CACHE_BUST}`);
-                console.log(`[App] InventoryPage loaded with version ${CACHE_BUST}`);
                 return new InventoryPage(container);
             },
-            permissions: [
-                'products:view',
-                'products:create',
-                'products:edit',
-                'products:delete'
-            ]
+            permissions: ['products:view', 'products:create', 'products:edit', 'products:delete']
         });
         
-        // Страница кассы (доступна при любых правах на продажи)
+        // Страница кассы
         Router.register('/cashier', {
             title: 'Касса',
             loader: async (container) => {
                 const { CashierPage } = await import(`./modules/cashier/CashierPage.js?${CACHE_BUST}`);
                 return new CashierPage(container);
             },
-            permissions: [
-                'sales:view',
-                'sales:create',
-                'sales:delete',
-                'sales:edit'
-            ]
+            permissions: ['sales:view', 'sales:create', 'sales:delete', 'sales:edit']
         });
         
-        // Страница отчетов (доступна при любых правах на отчеты)
+        // Страница отчетов
         Router.register('/reports', {
             title: 'Отчеты',
             loader: async (container) => {
                 const { ReportsPage } = await import(`./modules/reports/ReportsPage.js?${CACHE_BUST}`);
                 return new ReportsPage(container);
             },
-            permissions: [
-                'reports:view',
-                'reports:export'
-            ]
+            permissions: ['reports:view', 'reports:export']
         });
         
-        // Редирект с корня на склад
+        // Редирект с корня
         Router.register('/', {
             title: 'Склад',
             loader: async () => {
@@ -263,29 +203,20 @@ class Application {
         Router.register('/login', {
             title: 'Вход',
             loader: async (container) => {
-                const { LoginForm } = await import(`./modules/auth/LoginForm.js?${CACHE_BUST}`);
                 new LoginForm(container).render();
                 return null;
             }
         });
     }
     
-    /**
-     * Настраивает глобальные события
-     */
     setupGlobalEvents() {
-        // Выход из системы
-        EventBus.on('auth:logout', () => {
-            this.handleLogout();
-        });
+        EventBus.on('auth:logout', () => this.handleLogout());
         
-        // Ошибка доступа
         EventBus.on('router:access-denied', ({ route }) => {
             console.warn(`[App] Access denied to ${route.path}`);
             Notification.warning('У вас нет доступа к этому разделу');
         });
         
-        // Ошибка загрузки страницы
         EventBus.on('router:error', ({ error, path }) => {
             console.error(`[App] Route error ${path}:`, error);
             
@@ -304,7 +235,6 @@ class Application {
             }
         });
         
-        // Восстановление сети
         window.addEventListener('online', () => {
             Notification.info('Соединение восстановлено');
             this.refreshCurrentPage();
@@ -314,35 +244,23 @@ class Application {
             Notification.warning('Потеряно соединение с интернетом');
         });
         
-        // Обработка ошибок
         window.addEventListener('unhandledrejection', (event) => {
             console.error('[App] Unhandled rejection:', event.reason);
-            Notification.error('Произошла ошибка. Попробуйте обновить страницу.');
-        });
-        
-        window.addEventListener('error', (event) => {
-            console.error('[App] Global error:', event.error);
-            // Не показываем уведомление на каждую ошибку
         });
     }
     
-    /**
-     * Обновляет текущую страницу
-     */
     async refreshCurrentPage() {
         const currentPath = window.location.hash.slice(1) || '/inventory';
         await Router.navigate(currentPath, { replace: true });
     }
     
-    /**
-     * Обработчик выхода из системы
-     */
     async handleLogout() {
         try {
             await AuthManager.signOut();
             this.isAuthenticated = false;
             AppState.reset();
             PermissionManager.clear();
+            Store.resetAll();
             
             window.location.hash = '';
             this.showLoginPage();
@@ -354,17 +272,11 @@ class Application {
         }
     }
     
-    /**
-     * Показывает страницу входа
-     */
     showLoginPage() {
         this.root.innerHTML = '';
         new LoginForm(this.root).render();
     }
     
-    /**
-     * Экранирует HTML спецсимволы
-     */
     escapeHtml(str) {
         if (!str) return '';
         const div = document.createElement('div');
@@ -379,5 +291,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     await app.init();
 });
 
-// ========== EXPORTS ==========
 export { Application };
