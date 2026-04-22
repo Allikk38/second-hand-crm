@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="css/styles.css">
     <style>
         /* Сплэш-экран */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
         .splash-screen {
             display: flex;
             flex-direction: column;
@@ -14,54 +16,60 @@
             justify-content: center;
             min-height: 100vh;
             background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        
         .splash-content {
             text-align: center;
-            padding: var(--spacing-8);
-            background: var(--color-white);
-            border-radius: var(--radius-2xl);
-            box-shadow: var(--shadow-lg);
+            padding: 2rem;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 90%;
         }
-        
-        .splash-logo {
-            font-size: 48px;
-            margin-bottom: var(--spacing-4);
-        }
-        
+        .splash-logo { font-size: 48px; margin-bottom: 1rem; }
         .splash-title {
-            font-size: var(--font-size-3xl);
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-            margin-bottom: var(--spacing-2);
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 0.5rem;
         }
-        
-        .splash-subtitle {
-            font-size: var(--font-size-base);
-            color: var(--color-text-muted);
-            margin-bottom: var(--spacing-6);
-        }
-        
+        .splash-subtitle { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; }
         .splash-loader {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: var(--spacing-3);
+            gap: 1rem;
         }
-        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .splash-error {
-            color: var(--color-danger);
-            margin-top: var(--spacing-4);
+            color: #dc2626;
+            margin-top: 1rem;
             display: none;
         }
-        
-        .splash-error.show {
-            display: block;
-        }
-        
+        .splash-error.show { display: block; }
         .btn-retry {
-            margin-top: var(--spacing-4);
+            margin-top: 1rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 0.5rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn-manual {
+            background: transparent;
+            color: #475569;
+            border: 1px solid #e2e8f0;
+            margin-left: 0.5rem;
         }
     </style>
 </head>
@@ -73,41 +81,39 @@
             <p class="splash-subtitle">Управление комиссионным магазином</p>
             
             <div class="splash-loader" id="splashLoader">
-                <div class="loading-spinner large"></div>
+                <div class="loading-spinner"></div>
                 <p id="splashMessage">Проверка сессии...</p>
             </div>
             
             <div class="splash-error" id="splashError">
                 <p id="errorMessage">Не удалось подключиться к серверу</p>
-                <button class="btn-primary btn-retry" id="retryBtn">Попробовать снова</button>
+                <div>
+                    <button class="btn-retry" id="retryBtn">Попробовать снова</button>
+                    <button class="btn-retry btn-manual" id="loginBtn">Войти</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <script type="module">
-        // ========================================
-        // FILE: ./index.html (встроенный скрипт)
-        // ========================================
+    <!-- Используем официальный CDN Supabase для надежной проверки сессии -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Конфигурация Supabase
+        const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
         
-        /**
-         * Entry Point Script
-         * 
-         * Проверяет сессию и выполняет редирект на нужную страницу.
-         * 
-         * @module index
-         * @version 1.0.0
-         */
-        
-        import { supabase } from './core/supabase.js';
-        
+        // Инициализация клиента
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
         const DOM = {
             splashLoader: document.getElementById('splashLoader'),
             splashMessage: document.getElementById('splashMessage'),
             splashError: document.getElementById('splashError'),
             errorMessage: document.getElementById('errorMessage'),
-            retryBtn: document.getElementById('retryBtn')
+            retryBtn: document.getElementById('retryBtn'),
+            loginBtn: document.getElementById('loginBtn')
         };
-        
+
         /**
          * Проверяет сессию и редиректит
          */
@@ -117,36 +123,28 @@
                 
                 const { data: { session }, error } = await supabase.auth.getSession();
                 
-                if (error) {
-                    throw error;
-                }
+                if (error) throw error;
                 
                 if (session?.user) {
                     DOM.splashMessage.textContent = 'Вход выполнен, загружаем приложение...';
                     
-                    // Проверяем, есть ли сохраненный URL для возврата
+                    // Проверяем сохраненный URL для возврата
                     const returnUrl = sessionStorage.getItem('sh_auth_return_url');
                     
                     if (returnUrl) {
                         sessionStorage.removeItem('sh_auth_return_url');
                         window.location.href = returnUrl;
                     } else {
+                        // По умолчанию на склад
                         window.location.href = 'pages/inventory.html';
                     }
                 } else {
                     DOM.splashMessage.textContent = 'Перенаправление на страницу входа...';
                     
-                    // Сохраняем текущий URL если нужно
-                    const currentPath = window.location.pathname;
-                    if (currentPath !== '/' && currentPath !== '/index.html') {
-                        sessionStorage.setItem('sh_auth_return_url', currentPath);
-                    }
-                    
                     setTimeout(() => {
                         window.location.href = 'pages/login.html';
                     }, 500);
                 }
-                
             } catch (error) {
                 console.error('[Index] Session check error:', error);
                 
@@ -154,65 +152,42 @@
                 DOM.splashError.classList.add('show');
                 
                 let errorText = 'Не удалось подключиться к серверу';
-                
-                if (error.message.includes('fetch')) {
+                if (error.message.includes('fetch') || error.message.includes('network')) {
                     errorText = 'Проблемы с подключением к интернету';
                 } else if (error.message.includes('Invalid API key')) {
-                    errorText = 'Ошибка конфигурации приложения';
+                    errorText = 'Ошибка конфигурации приложения (API ключ)';
                 }
                 
                 DOM.errorMessage.textContent = errorText;
             }
         }
-        
-        /**
-         * Повторная попытка
-         */
-        function retry() {
+
+        // Обработчики
+        DOM.retryBtn.addEventListener('click', () => {
             DOM.splashError.classList.remove('show');
             DOM.splashLoader.style.display = 'flex';
             checkSessionAndRedirect();
-        }
-        
-        // Привязываем события
-        if (DOM.retryBtn) {
-            DOM.retryBtn.addEventListener('click', retry);
-        }
-        
-        // Запускаем проверку
+        });
+
+        DOM.loginBtn.addEventListener('click', () => {
+            window.location.href = 'pages/login.html';
+        });
+
+        // Запуск
         checkSessionAndRedirect();
-        
-        // Если загрузка зависла, показываем кнопку входа
+
+        // Fallback на случай зависания (10 сек)
         setTimeout(() => {
             if (DOM.splashLoader.style.display !== 'none') {
-                const message = DOM.splashMessage.textContent;
-                
-                if (message.includes('Проверка сессии') || message.includes('Перенаправление')) {
-                    console.warn('[Index] Session check timeout, showing manual entry');
-                    
+                const msg = DOM.splashMessage.textContent;
+                if (msg.includes('Проверка') || msg.includes('Перенаправление')) {
+                    console.warn('[Index] Timeout, showing manual buttons');
                     DOM.splashLoader.style.display = 'none';
-                    
-                    // Показываем кнопки ручного входа
-                    const manualEntry = document.createElement('div');
-                    manualEntry.style.marginTop = 'var(--spacing-4)';
-                    manualEntry.innerHTML = `
-                        <button class="btn-primary" id="goToLoginBtn" style="margin-right: var(--spacing-2);">Войти</button>
-                        <button class="btn-secondary" id="goToInventoryBtn">Продолжить без входа</button>
-                    `;
-                    
-                    DOM.splashLoader.parentNode.appendChild(manualEntry);
-                    
-                    document.getElementById('goToLoginBtn')?.addEventListener('click', () => {
-                        window.location.href = 'pages/login.html';
-                    });
-                    
-                    document.getElementById('goToInventoryBtn')?.addEventListener('click', () => {
-                        window.location.href = 'pages/inventory.html';
-                    });
+                    DOM.splashError.classList.add('show');
+                    DOM.errorMessage.textContent = 'Превышено время ожидания. Проверьте подключение к интернету.';
                 }
             }
-        }, 10000); // 10 секунд таймаут
-        
+        }, 10000);
     </script>
 </body>
 </html>
