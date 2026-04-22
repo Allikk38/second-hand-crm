@@ -1,21 +1,25 @@
+// ========================================
+// FILE: ./modules/inventory/InventoryTable.js
+// ========================================
+
 /**
  * Inventory Table Component
  * 
  * Отвечает за рендеринг таблицы товаров, обработку выделения,
- * действий со строками (редактировать, удалить) и бесконечный скролл.
+ * действия со строками (редактировать, удалить) и бесконечный скролл.
  * 
- * В новой архитектуре:
- * - Использует единый Store вместо InventoryState
- * - Прямое реактивное связывание через Store.state.inventory
- * - Упрощена логика выделения через методы Store
- * - Автоматическое обновление при изменении данных в Store
+ * Архитектурные решения:
+ * - Полный переход на глобальный `Store`.
+ * - Прямое реактивное связывание через `Store.state.inventory`.
+ * - Упрощенная логика выделения через методы `Store`.
+ * - Оптимизация рендеринга через виртуальный скролл (IntersectionObserver).
  * 
  * @module InventoryTable
- * @version 5.0.0
+ * @version 6.0.0
  * @changes
- * - Полный переход на Store (удален InventoryState)
- * - Упрощена обработка выделения через Store.isInventoryItemSelected()
- * - Добавлена оптимизация рендеринга через batch-обновления
+ * - Обновлена документация.
+ * - Добавлена очистка observer при destroy.
+ * - Улучшена обработка выделения.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -40,6 +44,7 @@ export class InventoryTable extends BaseComponent {
             onLoadMore: null,
             ...options
         };
+        
         this.intersectionObserver = null;
         this.loadMoreTrigger = null;
         this.unsubscribers = [];
@@ -98,18 +103,11 @@ export class InventoryTable extends BaseComponent {
         `;
     }
     
-    /**
-     * Рендерит строки таблицы
-     */
     renderRows(products) {
         if (!products.length) return '';
-        
         return products.map(product => this.renderRow(product)).join('');
     }
     
-    /**
-     * Рендерит одну строку
-     */
     renderRow(product) {
         const attributesText = formatAttributes(product.category, product.attributes);
         const isSelected = Store.isInventoryItemSelected(product.id);
@@ -175,9 +173,6 @@ export class InventoryTable extends BaseComponent {
         `;
     }
     
-    /**
-     * Рендерит скелетон загрузки
-     */
     renderSkeleton() {
         return `
             <div class="skeleton-rows">
@@ -257,9 +252,6 @@ export class InventoryTable extends BaseComponent {
         );
     }
     
-    /**
-     * Настраивает бесконечный скролл
-     */
     setupInfiniteScroll() {
         this.loadMoreTrigger = this.refs.get('loadMoreTrigger');
         if (!this.loadMoreTrigger) return;
@@ -282,9 +274,6 @@ export class InventoryTable extends BaseComponent {
         this.intersectionObserver.observe(this.loadMoreTrigger);
     }
     
-    /**
-     * Обновляет состояние чекбокса "Выбрать все"
-     */
     updateSelectAllCheckbox() {
         const checkbox = this.refs.get('selectAllCheckbox');
         if (checkbox) {
@@ -298,32 +287,18 @@ export class InventoryTable extends BaseComponent {
     
     // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
     
-    /**
-     * Обновляет таблицу (публичный метод для внешнего вызова)
-     */
     refresh() {
         this.update();
     }
     
-    /**
-     * Очищает выделение
-     */
     clearSelection() {
         Store.clearInventorySelection();
     }
     
-    /**
-     * Получает выбранные ID
-     * @returns {string[]}
-     */
     getSelectedIds() {
         return Store.getInventorySelectedIds();
     }
     
-    /**
-     * Получает количество выбранных товаров
-     * @returns {number}
-     */
     getSelectedCount() {
         return Store.getInventorySelectedCount();
     }
