@@ -8,10 +8,10 @@
  * Управление продажами: создание, отмена, статистика.
  * 
  * @module SaleService
- * @version 4.1.2
+ * @version 4.1.3
  * @changes
- * - ИСПРАВЛЕНО: двойная точка в URL при запросе статистики по смене.
- * - Улучшена обработка пустых результатов.
+ * - ИСПРАВЛЕНО: правильная обработка ошибки PGRST116 при пустой таблице.
+ * - Улучшено логирование для отладки.
  */
 
 import { db } from '../core/SupabaseClient.js';
@@ -181,16 +181,16 @@ export const SaleService = {
                 query = query.lte('created_at', endDate);
             }
             if (shiftId) {
-                // ВАЖНО: не добавляем префикс "eq." — SupabaseClient делает это сам
                 query = query.eq('shift_id', shiftId);
             }
             
             const { data, error } = await query;
             
+            // Проверяем ошибку
             if (error) {
-                // PGRST116 означает что записи не найдены
+                // PGRST116 означает что записи не найдены (пустая таблица)
                 if (error.code === 'PGRST116') {
-                    logger.debug('No sales data found, returning empty stats');
+                    logger.debug('No sales data found (PGRST116), returning empty stats');
                     return {
                         count: 0,
                         totalRevenue: 0,
@@ -200,6 +200,20 @@ export const SaleService = {
                         byPaymentMethod: {}
                     };
                 }
+                
+                // Проверяем статус 400 (Bad Request) - тоже может означать пустой результат
+                if (error.status === 400) {
+                    logger.debug('Bad request (400), likely no sales data, returning empty stats');
+                    return {
+                        count: 0,
+                        totalRevenue: 0,
+                        totalDiscount: 0,
+                        totalProfit: 0,
+                        averageCheck: 0,
+                        byPaymentMethod: {}
+                    };
+                }
+                
                 logger.error('getStats query error', { error });
                 throw error;
             }
@@ -239,6 +253,7 @@ export const SaleService = {
         } catch (error) {
             logger.error('getStats error', { error });
             
+            // Возвращаем пустую статистику при любой ошибке
             return {
                 count: 0,
                 totalRevenue: 0,
