@@ -1,25 +1,30 @@
+// ========================================
+// FILE: ./modules/inventory/InventoryFilters.js
+// ========================================
+
 /**
  * Inventory Filters Component
  * 
  * Компонент фильтрации товаров на странице склада.
  * Включает поиск, фильтр по категории, статусу и сортировку.
  * 
- * В новой архитектуре:
- * - Использует единый Store вместо InventoryState
- * - Прямое чтение состояния из Store.state.inventory
- * - Автоматическая синхронизация через Store.subscribe()
- * - Категории обновляются реактивно при изменении в Store
+ * Архитектурные решения:
+ * - Полный переход на глобальный `Store`.
+ * - Прямое чтение состояния из `Store.state.inventory`.
+ * - Автоматическая синхронизация через `Store.subscribe()`.
+ * - Дебаунс для поиска для оптимизации производительности.
  * 
  * @module InventoryFilters
- * @version 5.0.0
+ * @version 6.0.0
  * @changes
- * - Полный переход на Store (удален InventoryState)
- * - Упрощено получение и обновление категорий
- * - Добавлена реактивность через Store.subscribe
+ * - Обновлена документация.
+ * - Упрощены импорты.
+ * - Оптимизирована очистка таймеров.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
 import { Store } from '../../core/Store.js';
+import { getCategoryName } from '../../utils/categorySchema.js';
 
 // ========== КОНСТАНТЫ ==========
 const SEARCH_DEBOUNCE_MS = 300;
@@ -66,20 +71,22 @@ export class InventoryFilters extends BaseComponent {
         return `
             <div class="filters-panel" data-ref="filtersPanel">
                 <div class="search-wrapper">
+                    <span class="search-icon">🔍</span>
                     <input 
                         type="text" 
                         data-ref="searchInput"
+                        class="search-input"
                         placeholder="Поиск по названию или характеристикам..." 
                         value="${this.escapeHtml(inventory.searchQuery)}"
                         autocomplete="off"
                     >
                     ${inventory.searchQuery ? `
-                        <button class="btn-ghost btn-icon" data-ref="clearSearchBtn" title="Очистить">✕</button>
+                        <button class="clear-search-btn" data-ref="clearSearchBtn" title="Очистить">✕</button>
                     ` : ''}
                 </div>
                 
                 <div class="filters-group">
-                    <select data-ref="categoryFilter">
+                    <select data-ref="categoryFilter" class="filter-select">
                         <option value="">Все категории</option>
                         ${categories.map(cat => `
                             <option value="${cat.value}" ${inventory.selectedCategory === cat.value ? 'selected' : ''}>
@@ -88,7 +95,7 @@ export class InventoryFilters extends BaseComponent {
                         `).join('')}
                     </select>
                     
-                    <select data-ref="statusFilter">
+                    <select data-ref="statusFilter" class="filter-select">
                         ${STATUS_OPTIONS.map(opt => `
                             <option value="${opt.value}" ${inventory.selectedStatus === opt.value ? 'selected' : ''}>
                                 ${opt.label}
@@ -96,7 +103,7 @@ export class InventoryFilters extends BaseComponent {
                         `).join('')}
                     </select>
                     
-                    <select data-ref="sortSelect">
+                    <select data-ref="sortSelect" class="filter-select">
                         ${SORT_OPTIONS.map(opt => `
                             <option value="${opt.value}" ${inventory.sortBy === opt.value ? 'selected' : ''}>
                                 ${opt.label}
@@ -168,7 +175,6 @@ export class InventoryFilters extends BaseComponent {
         
         // Сброс всех фильтров
         this.addDomListener('clearFiltersBtn', 'click', () => {
-            // Очищаем поля
             const searchInput = this.refs.get('searchInput');
             const categoryFilter = this.refs.get('categoryFilter');
             const statusFilter = this.refs.get('statusFilter');
@@ -192,9 +198,6 @@ export class InventoryFilters extends BaseComponent {
     
     // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
     
-    /**
-     * Обновляет список категорий в селекте
-     */
     updateCategoryOptions() {
         const select = this.refs.get('categoryFilter');
         if (!select) return;
@@ -202,8 +205,6 @@ export class InventoryFilters extends BaseComponent {
         const inventory = Store.state.inventory;
         const categories = inventory.categories || [];
         const selectedCategory = inventory.selectedCategory;
-        
-        const currentValue = select.value;
         
         select.innerHTML = `
             <option value="">Все категории</option>
@@ -213,26 +214,8 @@ export class InventoryFilters extends BaseComponent {
                 </option>
             `).join('')}
         `;
-        
-        // Восстанавливаем значение если оно было изменено внешне
-        if (selectedCategory && selectedCategory !== currentValue) {
-            select.value = selectedCategory;
-        }
     }
     
-    /**
-     * Обновляет категории (вызывается извне)
-     * @param {Array} categories - Массив категорий
-     */
-    updateCategories(categories) {
-        Store.state.inventory.categories = categories;
-        this.updateCategoryOptions();
-    }
-    
-    /**
-     * Получает текущие значения фильтров
-     * @returns {Object}
-     */
     getFilters() {
         return {
             searchQuery: this.refs.get('searchInput')?.value || '',
@@ -242,40 +225,10 @@ export class InventoryFilters extends BaseComponent {
         };
     }
     
-    /**
-     * Устанавливает значения фильтров
-     * @param {Object} filters - Объект с фильтрами
-     */
-    setFilters(filters) {
-        const searchInput = this.refs.get('searchInput');
-        const categoryFilter = this.refs.get('categoryFilter');
-        const statusFilter = this.refs.get('statusFilter');
-        const sortSelect = this.refs.get('sortSelect');
-        
-        if (searchInput && filters.searchQuery !== undefined) {
-            searchInput.value = filters.searchQuery;
-        }
-        if (categoryFilter && filters.category !== undefined) {
-            categoryFilter.value = filters.category;
-        }
-        if (statusFilter && filters.status !== undefined) {
-            statusFilter.value = filters.status;
-        }
-        if (sortSelect && filters.sort !== undefined) {
-            sortSelect.value = filters.sort;
-        }
-    }
-    
-    /**
-     * Фокусирует поле поиска
-     */
     focusSearch() {
         this.refs.get('searchInput')?.focus();
     }
     
-    /**
-     * Очищает поле поиска
-     */
     clearSearch() {
         const input = this.refs.get('searchInput');
         if (input) {
@@ -284,21 +237,6 @@ export class InventoryFilters extends BaseComponent {
                 this.options.onSearch('');
             }
         }
-    }
-    
-    /**
-     * Сбрасывает все фильтры к значениям по умолчанию
-     */
-    resetFilters() {
-        const searchInput = this.refs.get('searchInput');
-        const categoryFilter = this.refs.get('categoryFilter');
-        const statusFilter = this.refs.get('statusFilter');
-        const sortSelect = this.refs.get('sortSelect');
-        
-        if (searchInput) searchInput.value = '';
-        if (categoryFilter) categoryFilter.value = '';
-        if (statusFilter) statusFilter.value = '';
-        if (sortSelect) sortSelect.value = 'created_at-desc';
     }
     
     // ========== ОЧИСТКА ==========
