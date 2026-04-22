@@ -1,7 +1,3 @@
-// ========================================
-// FILE: core/auth.js
-// ========================================
-
 /**
  * Authentication Module - MPA Edition
  * 
@@ -9,35 +5,32 @@
  * Каждая страница самостоятельно импортирует и использует этот модуль.
  * 
  * Архитектурные решения:
- * - Прямое использование глобального клиента Supabase (загружается в HTML).
+ * - Прямое использование глобального клиента Supabase.
  * - Отсутствие роутинга — редиректы только через window.location.
  * - Минималистичный API для простоты использования на любой странице.
  * - Полная обработка офлайн-режима и сетевых ошибок.
  * 
  * @module auth
- * @version 3.1.0
+ * @version 3.2.0
  * @changes
- * - Полный переход на MPA-архитектуру (убраны returnUrl и сложная логика редиректов).
- * - Прямое использование window.supabase вместо кастомного клиента.
- * - Устранено дублирование проверки сессии.
- * - Добавлена обработка офлайн-режима.
- * - Упрощен API до минимально необходимого.
- * 
- * @example
- * // На любой защищенной странице (inventory.html, cashier.html)
- * import { requireAuth, getCurrentUser, logout } from '../core/auth.js';
- * 
- * const user = await requireAuth(); // если нет сессии — улетит на /pages/login.html
- * console.log('Текущий пользователь:', user.email);
+ * - Убраны депрекейтед методы (checkAuth, getUserProfile).
+ * - Убрана функция signUp (не используется в MPA).
+ * - Упрощена инициализация Supabase клиента.
+ * - Добавлен экспорт getReturnUrl для обратной совместимости.
  */
+
+// ========== КОНСТАНТЫ ==========
+
+const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
 // ========== ПОЛУЧЕНИЕ КЛИЕНТА SUPABASE ==========
 
 /**
  * Получает глобальный клиент Supabase.
- * Ожидается, что Supabase CDN загружен в HTML страницы.
+ * Создаёт клиент один раз и кэширует.
  * 
- * @returns {Object|null} Клиент Supabase или null если не загружен
+ * @returns {Object} Клиент Supabase
  * @throws {Error} Если Supabase не загружен
  */
 function getSupabase() {
@@ -45,11 +38,6 @@ function getSupabase() {
         throw new Error('Supabase client not loaded. Ensure CDN script is included in HTML.');
     }
     
-    // Используем те же credentials, что и в index.html
-    const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
-    
-    // Создаем клиент один раз и кэшируем
     if (!window.__supabaseClient) {
         window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     }
@@ -87,7 +75,6 @@ export function isOnline() {
  * }
  */
 export async function getCurrentUser() {
-    // Проверяем сеть
     if (!isOnline()) {
         console.warn('[Auth] Offline mode - cannot get user');
         return { 
@@ -108,10 +95,7 @@ export async function getCurrentUser() {
             };
         }
         
-        return { 
-            user, 
-            error: null 
-        };
+        return { user, error: null };
         
     } catch (error) {
         console.error('[Auth] Unexpected error getting user:', error);
@@ -126,11 +110,6 @@ export async function getCurrentUser() {
  * Быстрая проверка авторизации (без получения полного объекта пользователя).
  * 
  * @returns {Promise<boolean>} true если пользователь авторизован
- * 
- * @example
- * if (await isAuthenticated()) {
- *     console.log('Пользователь авторизован');
- * }
  */
 export async function isAuthenticated() {
     if (!isOnline()) return false;
@@ -155,21 +134,16 @@ export async function isAuthenticated() {
  * @returns {Promise<Object|null>} Объект пользователя или null (если произошел редирект)
  * 
  * @example
- * // В начале любого защищенного скрипта:
  * const user = await requireAuth();
- * if (!user) return; // Произошел редирект на логин, дальше код не выполнится
- * 
+ * if (!user) return;
  * console.log('Страница защищена, пользователь:', user.email);
  */
 export async function requireAuth(options = {}) {
-    const {
-        redirectTo = '/pages/login.html'
-    } = options;
+    const { redirectTo = '/pages/login.html' } = options;
     
-    // Быстрая проверка без запроса к серверу
     if (!isOnline()) {
-        console.warn('[Auth] Offline mode - cannot verify auth, redirecting to login');
-        window.location.href = redirectTo;
+        console.warn('[Auth] Offline mode - cannot verify auth');
+        alert('Нет подключения к интернету. Проверьте соединение и обновите страницу.');
         return null;
     }
     
@@ -202,17 +176,8 @@ export async function requireAuth(options = {}) {
  * @returns {boolean} .success - Успешно ли выполнен вход
  * @returns {Object|null} .user - Объект пользователя
  * @returns {string|null} .error - Сообщение об ошибке
- * 
- * @example
- * const result = await signIn('user@example.com', 'password123');
- * if (result.success) {
- *     window.location.href = '/pages/inventory.html';
- * } else {
- *     alert('Ошибка входа: ' + result.error);
- * }
  */
 export async function signIn(email, password) {
-    // Проверяем сеть
     if (!isOnline()) {
         return {
             success: false,
@@ -233,7 +198,6 @@ export async function signIn(email, password) {
             
             let errorMessage = 'Ошибка входа';
             
-            // Человекочитаемые сообщения
             if (error.message.includes('Invalid login credentials')) {
                 errorMessage = 'Неверный email или пароль';
             } else if (error.message.includes('Email not confirmed')) {
@@ -278,11 +242,6 @@ export async function signIn(email, password) {
  * @param {Object} options - Опции выхода
  * @param {string} [options.redirectTo='/pages/login.html'] - URL для редиректа после выхода
  * @returns {Promise<void>}
- * 
- * @example
- * // В обработчике кнопки "Выход"
- * import { logout } from '../core/auth.js';
- * await logout();
  */
 export async function logout(options = {}) {
     const { redirectTo = '/pages/login.html' } = options;
@@ -290,7 +249,7 @@ export async function logout(options = {}) {
     console.log('[Auth] Logging out...');
     
     try {
-        // Очищаем локальные данные (если есть)
+        // Очищаем локальные данные
         try {
             localStorage.removeItem('cached_shift');
             localStorage.removeItem('cached_cart');
@@ -299,7 +258,6 @@ export async function logout(options = {}) {
             // Игнорируем ошибки очистки
         }
         
-        // Если онлайн — выходим из Supabase
         if (isOnline()) {
             const supabase = getSupabase();
             await supabase.auth.signOut();
@@ -311,108 +269,37 @@ export async function logout(options = {}) {
     } catch (error) {
         console.error('[Auth] Logout error:', error);
     } finally {
-        // Всегда редиректим
         window.location.href = redirectTo;
     }
 }
 
-// ========== РЕГИСТРАЦИЯ (ОПЦИОНАЛЬНО) ==========
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 /**
- * Выполняет регистрацию нового пользователя.
+ * Получает URL для возврата после входа.
+ * Сохраняет текущий URL в sessionStorage перед редиректом на логин.
  * 
- * @param {string} email - Email
- * @param {string} password - Пароль (мин. 6 символов)
- * @param {Object} metadata - Дополнительные данные (full_name и т.д.)
- * @returns {Promise<Object>} Результат регистрации
- * @returns {boolean} .success - Успешно ли выполнена регистрация
- * @returns {Object|null} .user - Объект пользователя
- * @returns {string|null} .error - Сообщение об ошибке
- * 
- * @example
- * const result = await signUp('new@example.com', 'password123', { full_name: 'Иван Петров' });
- * if (result.success) {
- *     alert('Регистрация успешна! Проверьте email для подтверждения.');
- * }
+ * @param {string} defaultUrl - URL по умолчанию
+ * @returns {string} URL для возврата
  */
-export async function signUp(email, password, metadata = {}) {
-    if (!isOnline()) {
-        return {
-            success: false,
-            user: null,
-            error: 'Отсутствует подключение к интернету'
-        };
+export function getReturnUrl(defaultUrl = '/pages/inventory.html') {
+    const returnUrl = sessionStorage.getItem('sh_auth_return_url');
+    if (returnUrl) {
+        sessionStorage.removeItem('sh_auth_return_url');
+        return returnUrl;
     }
-    
-    try {
-        const supabase = getSupabase();
-        const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: {
-                data: metadata
-            }
-        });
-        
-        if (error) {
-            console.error('[Auth] Sign up error:', error);
-            
-            let errorMessage = 'Ошибка регистрации';
-            
-            if (error.message.includes('User already registered')) {
-                errorMessage = 'Пользователь с таким email уже существует';
-            } else if (error.message.includes('Password should be')) {
-                errorMessage = 'Пароль должен содержать не менее 6 символов';
-            } else if (error.message.includes('valid email')) {
-                errorMessage = 'Введите корректный email адрес';
-            } else {
-                errorMessage = error.message;
-            }
-            
-            return {
-                success: false,
-                user: null,
-                error: errorMessage
-            };
-        }
-        
-        console.log('[Auth] Sign up successful:', data.user?.email);
-        
-        return {
-            success: true,
-            user: data.user,
-            error: null
-        };
-        
-    } catch (error) {
-        console.error('[Auth] Unexpected sign up error:', error);
-        
-        return {
-            success: false,
-            user: null,
-            error: 'Неизвестная ошибка при регистрации'
-        };
-    }
-}
-
-// ========== ДЕПРЕКЕЙТИД / СТАРЫЕ МЕТОДЫ (для обратной совместимости) ==========
-
-/**
- * @deprecated Используйте getCurrentUser()
- */
-export async function checkAuth() {
-    console.warn('[Auth] checkAuth() is deprecated, use getCurrentUser()');
-    const { user } = await getCurrentUser();
-    return user;
+    return defaultUrl;
 }
 
 /**
- * @deprecated Используйте getCurrentUser()
+ * Сохраняет URL для возврата после входа.
+ * 
+ * @param {string} url - URL для сохранения
  */
-export async function getUserProfile() {
-    console.warn('[Auth] getUserProfile() is deprecated, use getCurrentUser()');
-    const { user } = await getCurrentUser();
-    return user;
+export function setReturnUrl(url) {
+    if (url && url !== '/pages/login.html') {
+        sessionStorage.setItem('sh_auth_return_url', url);
+    }
 }
 
 // ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
@@ -422,11 +309,8 @@ export default {
     isAuthenticated,
     requireAuth,
     signIn,
-    signUp,
     logout,
     isOnline,
-    
-    // Deprecated
-    checkAuth,
-    getUserProfile
+    getReturnUrl,
+    setReturnUrl
 };
