@@ -216,4 +216,40 @@
             cursor: pointer;
         }
         
-        .btn
+        .btn-checkout:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        @media (max-width: 768px) {
+            .cashier-layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr auto;
+            }
+            .cart-panel {
+                max-height: 50vh;
+                border-top: 1px solid #e2e8f0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <h1>💰 Касса</h1>
+            <nav class="app-nav">
+                <a href="inventory.html">Склад</a>
+                <a href="cashier.html" class="active">Касса</a>
+                <a href="reports.html">Отчеты</a>
+            </nav>
+            <button id="logoutBtn" class="btn-ghost">Выход</button>
+        </header>
+        
+        <div id="cashierContent">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+    
+    <script type="module" src="../js/cashier.js"></script>
+</body>
+</html>
