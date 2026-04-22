@@ -5,12 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Касса | SH CRM</title>
     
+    <!-- Базовый путь для GitHub Pages (раскомментировать при деплое) -->
+    <!-- <base href="/second-hand-crm/"> -->
+    
     <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/layouts/cashier.css">
+    <link rel="stylesheet" href="../css/pages/cashier.css">
     
-    <!-- Дополнительные стили для страницы кассы -->
     <style>
-        /* Стили специфичные только для страницы кассы */
+        /* Стили только для этой страницы (переопределения при необходимости) */
         .cashier-page {
             display: flex;
             flex-direction: column;
@@ -19,490 +23,7 @@
             background: var(--color-bg);
         }
         
-        .cashier-layout {
-            display: grid;
-            grid-template-columns: 1fr 380px;
-            gap: var(--spacing-4);
-            height: 100%;
-            min-height: 0;
-            overflow: hidden;
-        }
-        
-        /* Левая панель - товары */
-        .products-panel {
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            overflow: hidden;
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-        }
-        
-        /* Правая панель - корзина */
-        .cart-panel {
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            overflow: hidden;
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-        }
-        
-        /* Панель смены */
-        .shift-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: var(--spacing-3) var(--spacing-4);
-            background: var(--color-gray-50);
-            border-bottom: var(--border-width) solid var(--color-border);
-            flex-shrink: 0;
-        }
-        
-        .shift-status {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-2);
-        }
-        
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: var(--color-success);
-        }
-        
-        .status-dot.closed {
-            background: var(--color-danger);
-        }
-        
-        .status-dot.local {
-            background: var(--color-warning);
-        }
-        
-        .shift-stats {
-            display: flex;
-            gap: var(--spacing-4);
-        }
-        
-        .stat-item {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-        }
-        
-        .stat-label {
-            font-size: 11px;
-            color: var(--color-text-muted);
-            text-transform: uppercase;
-            letter-spacing: var(--letter-spacing-wide);
-        }
-        
-        .stat-value {
-            font-size: var(--font-size-lg);
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-        }
-        
-        /* Панель поиска и категорий */
-        .products-toolbar {
-            padding: var(--spacing-3) var(--spacing-4);
-            border-bottom: var(--border-width) solid var(--color-border);
-            flex-shrink: 0;
-        }
-        
-        .search-wrapper {
-            position: relative;
-            margin-bottom: var(--spacing-3);
-        }
-        
-        .search-wrapper input {
-            width: 100%;
-            height: 44px;
-            padding: 0 var(--spacing-4) 0 var(--spacing-10);
-            font-size: var(--font-size-base);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            background: var(--color-white);
-        }
-        
-        .search-wrapper .search-icon {
-            position: absolute;
-            left: var(--spacing-3);
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--color-text-muted);
-            font-size: 18px;
-            pointer-events: none;
-        }
-        
-        .search-wrapper .clear-btn {
-            position: absolute;
-            right: var(--spacing-2);
-            top: 50%;
-            transform: translateY(-50%);
-            width: 28px;
-            height: 28px;
-            padding: 0;
-            background: transparent;
-            border: none;
-            color: var(--color-text-muted);
-            font-size: 16px;
-            cursor: pointer;
-            border-radius: var(--radius-sm);
-            display: none;
-        }
-        
-        .search-wrapper .clear-btn.visible {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .category-bar {
-            display: flex;
-            gap: var(--spacing-1);
-            overflow-x: auto;
-            padding-bottom: var(--spacing-1);
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        .category-tab {
-            padding: var(--spacing-1-5) var(--spacing-3);
-            background: var(--color-white);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-full);
-            font-size: var(--font-size-sm);
-            font-weight: var(--font-weight-medium);
-            color: var(--color-text-secondary);
-            white-space: nowrap;
-            cursor: pointer;
-            transition: all var(--transition-fast);
-        }
-        
-        .category-tab:hover {
-            background: var(--color-gray-50);
-        }
-        
-        .category-tab.active {
-            background: var(--color-gray-800);
-            color: var(--color-white);
-            border-color: var(--color-gray-800);
-        }
-        
-        /* Сетка товаров */
-        .products-grid {
-            flex: 1;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: var(--spacing-3);
-            padding: var(--spacing-4);
-            overflow-y: auto;
-            align-content: start;
-        }
-        
-        .product-card {
-            position: relative;
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-            overflow: hidden;
-            cursor: pointer;
-            transition: all var(--transition-fast);
-        }
-        
-        .product-card:hover {
-            border-color: var(--color-primary);
-            box-shadow: var(--shadow-md);
-        }
-        
-        .product-card.sold {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .product-photo {
-            aspect-ratio: 1;
-            background: var(--color-gray-100);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 48px;
-        }
-        
-        .product-photo img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .product-info {
-            padding: var(--spacing-3);
-        }
-        
-        .product-name {
-            font-weight: var(--font-weight-medium);
-            font-size: var(--font-size-sm);
-            color: var(--color-text);
-            margin-bottom: var(--spacing-1);
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-        
-        .product-price {
-            font-weight: var(--font-weight-bold);
-            font-size: var(--font-size-base);
-            color: var(--color-primary-dark);
-        }
-        
-        .product-badge {
-            position: absolute;
-            top: var(--spacing-2);
-            right: var(--spacing-2);
-            padding: var(--spacing-0-5) var(--spacing-2);
-            background: var(--color-danger);
-            color: var(--color-white);
-            border-radius: var(--radius-full);
-            font-size: 10px;
-            font-weight: var(--font-weight-bold);
-        }
-        
-        /* Корзина */
-        .cart-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: var(--spacing-4);
-            border-bottom: var(--border-width) solid var(--color-border);
-            flex-shrink: 0;
-        }
-        
-        .cart-header h2 {
-            margin: 0;
-            font-size: var(--font-size-lg);
-            font-weight: var(--font-weight-semibold);
-        }
-        
-        .cart-count {
-            padding: var(--spacing-0-5) var(--spacing-2);
-            background: var(--color-gray-100);
-            border-radius: var(--radius-full);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-medium);
-            margin-left: auto;
-            margin-right: var(--spacing-3);
-        }
-        
-        .cart-items {
-            flex: 1;
-            overflow-y: auto;
-            padding: var(--spacing-3);
-        }
-        
-        .cart-item {
-            padding: var(--spacing-3);
-            margin-bottom: var(--spacing-2);
-            background: var(--color-gray-50);
-            border-radius: var(--radius-md);
-        }
-        
-        .cart-item-header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            margin-bottom: var(--spacing-2);
-        }
-        
-        .cart-item-name {
-            font-weight: var(--font-weight-medium);
-            font-size: var(--font-size-sm);
-            color: var(--color-text);
-        }
-        
-        .cart-item-price {
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-        }
-        
-        .cart-item-controls {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .quantity-control {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-1);
-        }
-        
-        .qty-btn {
-            width: 36px;
-            height: 36px;
-            padding: 0;
-            background: var(--color-white);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            font-size: 18px;
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .qty-btn:active {
-            background: var(--color-gray-100);
-        }
-        
-        .item-qty {
-            min-width: 40px;
-            text-align: center;
-            font-weight: var(--font-weight-medium);
-            font-size: var(--font-size-base);
-        }
-        
-        .item-total {
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-            font-family: var(--font-family-mono);
-        }
-        
-        .remove-btn {
-            width: 36px;
-            height: 36px;
-            padding: 0;
-            background: transparent;
-            border: none;
-            color: var(--color-text-muted);
-            font-size: 18px;
-            cursor: pointer;
-            border-radius: var(--radius-md);
-        }
-        
-        .remove-btn:active {
-            background: var(--color-danger-bg);
-            color: var(--color-danger);
-        }
-        
-        .cart-empty {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 200px;
-            color: var(--color-text-muted);
-            text-align: center;
-        }
-        
-        .cart-empty-icon {
-            font-size: 64px;
-            margin-bottom: var(--spacing-3);
-            opacity: 0.3;
-        }
-        
-        .cart-footer {
-            padding: var(--spacing-4);
-            border-top: var(--border-width) solid var(--color-border);
-            background: var(--color-gray-50);
-            flex-shrink: 0;
-        }
-        
-        .cart-summary {
-            margin-bottom: var(--spacing-3);
-        }
-        
-        .summary-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: var(--spacing-2);
-            font-size: var(--font-size-sm);
-            color: var(--color-text-secondary);
-        }
-        
-        .summary-row.total {
-            margin-top: var(--spacing-2);
-            padding-top: var(--spacing-2);
-            border-top: var(--border-width) solid var(--color-border);
-            font-size: var(--font-size-lg);
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-        }
-        
-        .total-amount {
-            font-size: var(--font-size-xl);
-            color: var(--color-primary-dark);
-        }
-        
-        .discount-control {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-2);
-        }
-        
-        .discount-input {
-            width: 80px;
-            height: 36px;
-            padding: 0 var(--spacing-2);
-            text-align: right;
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            font-size: var(--font-size-sm);
-        }
-        
-        .btn-checkout {
-            width: 100%;
-            height: 52px;
-            background: var(--color-primary);
-            color: var(--color-white);
-            border: none;
-            border-radius: var(--radius-md);
-            font-size: var(--font-size-base);
-            font-weight: var(--font-weight-semibold);
-            cursor: pointer;
-        }
-        
-        .btn-checkout:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .btn-checkout:active:not(:disabled) {
-            background: var(--color-primary-dark);
-        }
-        
-        /* Состояние закрытой смены */
-        .shift-closed-overlay {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            text-align: center;
-        }
-        
-        .shift-closed-icon {
-            font-size: 80px;
-            margin-bottom: var(--spacing-4);
-            opacity: 0.3;
-        }
-        
-        .shift-closed-overlay h2 {
-            margin-bottom: var(--spacing-2);
-        }
-        
-        .shift-closed-overlay p {
-            color: var(--color-text-muted);
-            margin-bottom: var(--spacing-4);
-        }
-        
-        /* Скелетон-лоадер */
+        /* Состояние загрузки */
         .skeleton-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -522,33 +43,40 @@
             50% { opacity: 0.5; }
         }
         
-        /* Адаптивность */
-        @media (max-width: 768px) {
-            .cashier-layout {
-                grid-template-columns: 1fr;
-                grid-template-rows: 1fr auto;
-            }
-            
-            .cart-panel {
-                max-height: 50vh;
-            }
-            
-            .shift-stats {
-                display: none;
-            }
-            
-            .shift-bar {
-                padding: var(--spacing-2) var(--spacing-3);
-            }
+        /* Ошибка загрузки */
+        .load-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 400px;
+            text-align: center;
+            padding: var(--spacing-6);
         }
         
-        @media (max-width: 480px) {
-            .products-grid {
+        .load-error-icon {
+            font-size: 64px;
+            margin-bottom: var(--spacing-4);
+            opacity: 0.5;
+        }
+        
+        .load-error h3 {
+            font-size: var(--font-size-xl);
+            margin-bottom: var(--spacing-2);
+        }
+        
+        .load-error p {
+            color: var(--color-text-muted);
+            margin-bottom: var(--spacing-6);
+        }
+        
+        /* Мобильная адаптация */
+        @media (max-width: 768px) {
+            .skeleton-grid {
                 grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .cart-footer {
-                padding: var(--spacing-3);
+                gap: var(--spacing-2);
+                padding: var(--spacing-2);
             }
         }
     </style>
@@ -575,14 +103,22 @@
         <main class="app-main">
             <div class="cashier-page">
                 <div id="cashierContent">
-                    <!-- Заполняется динамически -->
-                    <div class="skeleton-grid">
+                    <!-- Скелетон-лоадер -->
+                    <div class="skeleton-grid" id="skeletonLoader">
                         <div class="skeleton-card"></div>
                         <div class="skeleton-card"></div>
                         <div class="skeleton-card"></div>
                         <div class="skeleton-card"></div>
                         <div class="skeleton-card"></div>
                         <div class="skeleton-card"></div>
+                    </div>
+                    
+                    <!-- Сообщение об ошибке (скрыто по умолчанию) -->
+                    <div class="load-error" id="errorMessage" style="display: none;">
+                        <div class="load-error-icon">⚠️</div>
+                        <h3>Ошибка загрузки</h3>
+                        <p id="errorText">Не удалось загрузить страницу</p>
+                        <button class="btn-primary" id="reloadBtn">Обновить</button>
                     </div>
                 </div>
             </div>
@@ -597,5 +133,48 @@
     
     <!-- Основной скрипт страницы -->
     <script type="module" src="../js/cashier.js"></script>
+    
+    <!-- Fallback на случай ошибки загрузки модуля -->
+    <script>
+        (function() {
+            const skeletonLoader = document.getElementById('skeletonLoader');
+            const errorBlock = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            const reloadBtn = document.getElementById('reloadBtn');
+            
+            // Таймаут для проверки загрузки (8 секунд)
+            const timeoutId = setTimeout(function() {
+                // Проверяем, загрузился ли основной модуль
+                if (skeletonLoader && skeletonLoader.style.display !== 'none') {
+                    console.warn('[Cashier] Module load timeout');
+                    if (skeletonLoader) skeletonLoader.style.display = 'none';
+                    if (errorBlock) {
+                        errorText.textContent = 'Превышено время ожидания. Проверьте подключение к интернету.';
+                        errorBlock.style.display = 'flex';
+                    }
+                }
+            }, 8000);
+            
+            // Обработчик кнопки обновления
+            if (reloadBtn) {
+                reloadBtn.addEventListener('click', function() {
+                    location.reload();
+                });
+            }
+            
+            // Слушаем событие ошибки загрузки модуля
+            window.addEventListener('error', function(e) {
+                if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('cashier.js')) {
+                    console.error('[Cashier] Script load error:', e);
+                    clearTimeout(timeoutId);
+                    if (skeletonLoader) skeletonLoader.style.display = 'none';
+                    if (errorBlock) {
+                        errorText.textContent = 'Не удалось загрузить модуль страницы. Проверьте подключение.';
+                        errorBlock.style.display = 'flex';
+                    }
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
