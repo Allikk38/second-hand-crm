@@ -9,11 +9,10 @@
  * Поддерживает динамическую загрузку страниц и middleware (права доступа).
  * 
  * @module Router
- * @version 3.2.1
+ * @version 3.2.2
  * @changes
- * - Интегрирован централизованный логгер.
- * - Добавлены замеры времени выполнения loader'ов.
- * - Улучшена обработка и отображение ошибок с выводом полного стека.
+ * - Добавлен try-catch вокруг вызова loader с детальным логированием ошибок импорта.
+ * - Улучшена диагностика проблем с динамической загрузкой модулей.
  */
 
 import { AppState } from './AppState.js';
@@ -246,15 +245,39 @@ class RouterClass {
             if (route.loader) {
                 logger.debug(`Executing loader for ${route.path}`);
                 
-                logger.time(`🖥️ Loader execution for ${route.path}`);
-                const component = await route.loader(container);
-                logger.timeEnd(`🖥️ Loader execution for ${route.path}`);
+                let component;
+                
+                try {
+                    logger.time(`📦 Loader execution for ${route.path}`);
+                    component = await route.loader(container);
+                    logger.timeEnd(`📦 Loader execution for ${route.path}`);
+                    
+                    logger.debug('Loader returned:', { 
+                        hasComponent: !!component, 
+                        type: component?.constructor?.name || typeof component,
+                        hasMount: typeof component?.mount === 'function'
+                    });
+                    
+                } catch (loaderError) {
+                    logger.error('Loader execution failed', {
+                        route: route.path,
+                        error: loaderError.message,
+                        stack: loaderError.stack
+                    });
+                    throw new Error(`Failed to load module for ${route.path}: ${loaderError.message}`);
+                }
                 
                 if (!component) {
+                    logger.error('Loader returned null/undefined', { route: route.path });
                     throw new Error(`Loader for ${route.path} returned null or undefined`);
                 }
                 
                 if (typeof component.mount !== 'function') {
+                    logger.error('Component has no mount() method', { 
+                        route: route.path,
+                        componentType: component.constructor?.name,
+                        methods: Object.getOwnPropertyNames(Object.getPrototypeOf(component))
+                    });
                     throw new Error(`Component for ${route.path} has no mount() method`);
                 }
                 
@@ -273,7 +296,12 @@ class RouterClass {
             this._redirectCount = 0;
             
         } catch (error) {
-            logger.error('Failed to load route', { route: route.path, error: error.message, stack: error.stack });
+            logger.error('Failed to load route', { 
+                route: route.path, 
+                error: error.message, 
+                stack: error.stack 
+            });
+            
             EventBus.emit('router:error', { route, path, error });
             
             // Показываем ошибку в контейнере
