@@ -17,11 +17,10 @@
  * - Делегирование загрузки данных `ProductService`.
  * 
  * @module InventoryPage
- * @version 6.0.0
+ * @version 6.0.1
  * @changes
- * - Полностью удален `InventoryState`.
- * - Упрощена логика загрузки и фильтрации.
- * - Убраны методы сохранения фильтров (доверие плагину Store).
+ * - Исправлен экспорт: добавлен именованный экспорт для совместимости с Router.
+ * - Добавлено логирование для диагностики.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -34,6 +33,10 @@ import { ProductForm } from './ProductForm.js';
 import { ConfirmDialog } from '../common/ConfirmDialog.js';
 import { Notification } from '../common/Notification.js';
 import { getCategoryName } from '../../utils/categorySchema.js';
+import { createLogger } from '../../utils/logger.js';
+
+// ========== LOGGER ==========
+const logger = createLogger('InventoryPage');
 
 // ========== КОНСТАНТЫ ==========
 const PAGE_SIZE = 20;
@@ -111,6 +114,8 @@ export class InventoryPage extends BaseComponent {
         };
         
         this.unsubscribers = [];
+        
+        logger.debug('InventoryPage constructed');
     }
     
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
@@ -124,6 +129,8 @@ export class InventoryPage extends BaseComponent {
         
         const inventory = Store.state.inventory;
         const selectedCount = inventory.selectedIds.size;
+        
+        logger.debug('Rendering InventoryPage', { selectedCount });
         
         return `
             <div class="inventory-page">
@@ -161,6 +168,8 @@ export class InventoryPage extends BaseComponent {
     }
     
     async afterRender() {
+        logger.debug('afterRender started');
+        
         // Статистика
         const statsContainer = this.refs.get('statsContainer');
         if (statsContainer) {
@@ -194,15 +203,19 @@ export class InventoryPage extends BaseComponent {
         
         this.attachEvents();
         this.subscribeToEvents();
+        
+        logger.debug('afterRender completed');
     }
     
-    // ========== ЗАГРУЗКА ДАННЫХ ==========
+    // ========== PERMISSIONS ==========
     
     async waitForPermissions() {
         if (PermissionManager.isLoaded()) {
             this.updatePermissions();
             return;
         }
+        
+        logger.debug('Waiting for permissions...');
         
         return new Promise((resolve) => {
             const unsubscribe = this.subscribe('permissions:loaded', () => {
@@ -225,7 +238,11 @@ export class InventoryPage extends BaseComponent {
             canEdit: PermissionManager.can('products:edit'),
             canDelete: PermissionManager.can('products:delete')
         };
+        
+        logger.debug('Permissions updated', this.permissions);
     }
+    
+    // ========== DATA LOADING ==========
     
     async loadProducts(reset = true) {
         const inventory = Store.state.inventory;
@@ -262,8 +279,10 @@ export class InventoryPage extends BaseComponent {
             inventory.hasMore = products.length === PAGE_SIZE;
             inventory.filteredCount = products.length;
             
+            logger.debug('Products loaded', { count: products.length, hasMore: inventory.hasMore });
+            
         } catch (error) {
-            console.error('[InventoryPage] Load error:', error);
+            logger.error('Load error:', error);
             Notification.error('Ошибка при загрузке товаров');
         } finally {
             inventory.isLoading = false;
@@ -295,12 +314,14 @@ export class InventoryPage extends BaseComponent {
             
             Store.state.inventory.categories = categories;
             
+            logger.debug('Categories updated', { count: categories.length });
+            
         } catch (error) {
-            console.error('[InventoryPage] Categories error:', error);
+            logger.error('Categories error:', error);
         }
     }
     
-    // ========== ОБРАБОТЧИКИ ФИЛЬТРОВ ==========
+    // ========== FILTER HANDLERS ==========
     
     async handleFilterChange(key, value) {
         Store.state.inventory[key] = value;
@@ -321,7 +342,7 @@ export class InventoryPage extends BaseComponent {
         this.table?.clearSelection();
     }
     
-    // ========== ДЕЙСТВИЯ С ТОВАРАМИ ==========
+    // ========== PRODUCT ACTIONS ==========
     
     openProductForm(product = null) {
         const modalContainer = document.createElement('div');
@@ -450,7 +471,7 @@ export class InventoryPage extends BaseComponent {
         return [headers.map(escape).join(';'), ...rows.map(r => r.map(escape).join(';'))].join('\n');
     }
     
-    // ========== ПОДПИСКИ ==========
+    // ========== EVENTS ==========
     
     attachEvents() {
         this.addDomListener('addProductBtn', 'click', () => this.openProductForm());
@@ -496,9 +517,11 @@ export class InventoryPage extends BaseComponent {
         await this.updateCategories();
     }
     
-    // ========== ОЧИСТКА ==========
+    // ========== CLEANUP ==========
     
     beforeDestroy() {
+        logger.debug('Destroying InventoryPage');
+        
         this.unsubscribers.forEach(u => u());
         
         this.table?.destroy();
@@ -506,3 +529,6 @@ export class InventoryPage extends BaseComponent {
         this.stats?.destroy();
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default InventoryPage;
