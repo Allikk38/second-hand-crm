@@ -1,10 +1,22 @@
+// ========================================
+// FILE: ./modules/reports/views/DashboardView.js
+// ========================================
+
 /**
  * Dashboard View Component
  * 
  * Представление дашборда с KPI, графиками и алертами.
  * 
+ * Архитектурные решения:
+ * - Чистый презентационный компонент.
+ * - Получает данные через пропсы.
+ * - Ленивая загрузка Chart.js.
+ * 
  * @module DashboardView
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Исправлены пути импорта на относительные (../../../ вместо корневых).
+ * - Добавлен именованный экспорт для совместимости.
  */
 
 import { BaseComponent } from '../../../core/BaseComponent.js';
@@ -236,3 +248,6 @@ export class DashboardView extends BaseComponent {
         this.charts.clear();
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default DashboardView;
