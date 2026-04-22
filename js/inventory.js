@@ -1,353 +1,308 @@
-// ========================================
-// FILE: js/inventory.js
-// ========================================
-
 /**
  * Inventory Page Module - MPA Edition
  * 
  * Логика страницы управления складом. Загружает и отображает список товаров
- * в виде таблицы с возможностью поиска, фильтрации и базовых CRUD-операций.
+ * в виде таблицы с возможностью поиска, фильтрации и CRUD-операций.
  * 
  * Архитектурные решения:
  * - Прямое использование глобального клиента window.supabase.
  * - Полная независимость от других страниц (MPA).
- * - Встроенная обработка офлайн-режима и сетевых ошибок.
- * - Понятные сообщения пользователю через встроенный баннер.
+ * - Кэширование данных в sessionStorage.
+ * - Кастомные модальные окна для подтверждения действий.
  * 
  * @module inventory
- * @version 3.1.0
+ * @version 3.2.0
  * @changes
- * - Убрана зависимость от удаленного core/supabase.js (используется window.supabase).
- * - Заменены alert() на встроенный баннер ошибок.
- * - Добавлена обработка офлайн-режима.
- * - Полное экранирование пользовательских данных.
- * - Улучшен UX: состояния загрузки, пустого результата, ошибки с retry.
- * - Соответствие MPA-архитектуре.
+ * - Убрана зависимость от core/supabase.js (используется window.supabase).
+ * - Добавлено кэширование в sessionStorage.
+ * - Заменен confirm() на кастомное модальное окно.
+ * - Улучшена обработка офлайн-режима.
  */
 
-import { requireAuth, logout, isOnline } from '../core/auth.js';
-import { formatMoney, escapeHtml, getStatusText, debounce } from '../utils/formatters.js';
+import { requireAuth, logout, getCurrentUser, isOnline } from '../core/auth.js';
+import { formatMoney, escapeHtml, getStatusText, getCategoryName, debounce } from '../utils/formatters.js';
 
 // ========== КОНСТАНТЫ ==========
 
-const PRODUCTS_PER_PAGE = 50; // Количество товаров за один запрос
-const SEARCH_DEBOUNCE_MS = 300;
+const PRODUCTS_CACHE_KEY = 'sh_inventory_products';
+const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
-// ========== СОСТОЯНИЕ СТРАНИЦЫ ==========
+// ========== СОСТОЯНИЕ ==========
 
-/**
- * Локальное состояние страницы склада
- * @type {Object}
- */
 const state = {
-    // Данные
+    user: null,
     products: [],
     filteredProducts: [],
-    
-    // UI состояние
     isLoading: false,
     searchQuery: '',
     selectedStatus: '',
     selectedCategory: '',
     sortBy: 'created_at-desc',
-    
-    // Пользователь
-    user: null,
-    
-    // Кэш категорий для фильтра
     categories: []
 };
 
 // ========== DOM ЭЛЕМЕНТЫ ==========
 
-/** @type {Object<string, HTMLElement>} */
 const DOM = {
-    // Основные контейнеры
     tableBody: null,
     statsBar: null,
     errorBanner: null,
     errorMessage: null,
     emptyState: null,
-    skeletonLoader: null,
-    
-    // Элементы управления
     searchInput: null,
     statusFilter: null,
     categoryFilter: null,
     sortSelect: null,
-    
-    // Кнопки
     addProductBtn: null,
     refreshBtn: null,
     logoutBtn: null,
-    retryBtn: null,
-    
-    // Информация о пользователе
-    userEmail: null
+    userEmail: null,
+    modalContainer: null
 };
 
-// ========== ИНИЦИАЛИЗАЦИЯ ==========
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-/**
- * Инициализация страницы склада
- */
-async function init() {
-    console.log('[Inventory] Initializing MPA page...');
+function getSupabase() {
+    if (!window.supabase) {
+        throw new Error('Supabase client not loaded');
+    }
     
-    // 1. Кэшируем DOM элементы
-    cacheElements();
+    if (!window.__supabaseClient) {
+        window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
     
-    // 2. Проверяем авторизацию (если нет — редирект на логин)
-    state.user = await requireAuth();
-    if (!state.user) return; // Произошел редирект
-    
-    // 3. Отображаем email пользователя
-    displayUserInfo();
-    
-    // 4. Привязываем обработчики событий
-    attachEvents();
-    
-    // 5. Загружаем товары
-    await loadProducts();
-    
-    console.log('[Inventory] Page initialized');
+    return window.__supabaseClient;
 }
 
-/**
- * Кэширует все необходимые DOM элементы
- */
-function cacheElements() {
-    DOM.tableBody = document.getElementById('tableBody');
-    DOM.statsBar = document.getElementById('statsBar');
-    DOM.errorBanner = document.getElementById('errorBanner');
-    DOM.errorMessage = document.getElementById('errorMessage');
-    DOM.emptyState = document.getElementById('emptyState');
-    DOM.skeletonLoader = document.getElementById('skeletonLoader');
+function showNotification(message, type = 'info') {
+    const container = document.getElementById('notificationContainer');
+    if (!container) return;
     
-    DOM.searchInput = document.getElementById('searchInput');
-    DOM.statusFilter = document.getElementById('statusFilter');
-    DOM.categoryFilter = document.getElementById('categoryFilter');
-    DOM.sortSelect = document.getElementById('sortSelect');
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <div class="notification-icon"></div>
+        <div class="notification-content">
+            <div class="notification-message">${escapeHtml(message)}</div>
+        </div>
+        <button class="notification-close">×</button>
+    `;
     
-    DOM.addProductBtn = document.getElementById('addProductBtn');
-    DOM.refreshBtn = document.getElementById('refreshBtn');
-    DOM.logoutBtn = document.getElementById('logoutBtn');
-    DOM.retryBtn = document.getElementById('retryBtn');
+    notification.querySelector('.notification-close').addEventListener('click', () => {
+        notification.remove();
+    });
     
-    DOM.userEmail = document.getElementById('userEmail');
+    container.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, 4000);
 }
 
-/**
- * Отображает email текущего пользователя в шапке
- */
-function displayUserInfo() {
-    if (DOM.userEmail && state.user) {
-        DOM.userEmail.textContent = state.user.email || 'Пользователь';
-    }
-}
-
-// ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
-
-/**
- * Привязывает все обработчики событий к DOM элементам
- */
-function attachEvents() {
-    // Выход из системы
-    if (DOM.logoutBtn) {
-        DOM.logoutBtn.addEventListener('click', () => logout());
-    }
-    
-    // Обновление данных
-    if (DOM.refreshBtn) {
-        DOM.refreshBtn.addEventListener('click', () => {
-            hideError();
-            loadProducts();
-        });
-    }
-    
-    // Повторная попытка при ошибке
-    if (DOM.retryBtn) {
-        DOM.retryBtn.addEventListener('click', () => {
-            hideError();
-            loadProducts();
-        });
-    }
-    
-    // Добавление товара (заглушка)
-    if (DOM.addProductBtn) {
-        DOM.addProductBtn.addEventListener('click', () => {
-            showError('Функция добавления товара находится в разработке', 'info');
-        });
-    }
-    
-    // Поиск с дебаунсом
-    if (DOM.searchInput) {
-        const debouncedSearch = debounce(() => {
-            state.searchQuery = DOM.searchInput.value.trim().toLowerCase();
-            applyFilters();
-        }, SEARCH_DEBOUNCE_MS);
+function showConfirmDialog({ title, message, confirmText = 'Да', cancelText = 'Нет' }) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal confirm-dialog">
+                <div class="modal-header">
+                    <h3>${escapeHtml(title)}</h3>
+                    <button class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirm-message">${escapeHtml(message)}</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" data-action="cancel">${escapeHtml(cancelText)}</button>
+                    <button class="btn-primary" data-action="confirm">${escapeHtml(confirmText)}</button>
+                </div>
+            </div>
+        `;
         
-        DOM.searchInput.addEventListener('input', debouncedSearch);
-    }
-    
-    // Фильтр по статусу
-    if (DOM.statusFilter) {
-        DOM.statusFilter.addEventListener('change', (e) => {
-            state.selectedStatus = e.target.value;
-            applyFilters();
+        document.body.appendChild(modal);
+        
+        const close = () => {
+            modal.remove();
+            resolve(false);
+        };
+        
+        modal.querySelector('.btn-close').addEventListener('click', close);
+        modal.querySelector('[data-action="cancel"]').addEventListener('click', close);
+        modal.querySelector('[data-action="confirm"]').addEventListener('click', () => {
+            modal.remove();
+            resolve(true);
         });
+    });
+}
+
+function showError(message, type = 'error') {
+    if (DOM.errorBanner && DOM.errorMessage) {
+        DOM.errorMessage.textContent = message;
+        DOM.errorBanner.style.display = 'flex';
+        DOM.errorBanner.className = `error-banner error-banner-${type}`;
+        
+        if (type === 'success' || type === 'info') {
+            setTimeout(() => {
+                DOM.errorBanner.style.display = 'none';
+            }, 3000);
+        }
+    } else {
+        showNotification(message, type);
     }
-    
-    // Фильтр по категории
-    if (DOM.categoryFilter) {
-        DOM.categoryFilter.addEventListener('change', (e) => {
-            state.selectedCategory = e.target.value;
-            applyFilters();
-        });
+}
+
+function hideError() {
+    if (DOM.errorBanner) {
+        DOM.errorBanner.style.display = 'none';
     }
-    
-    // Сортировка
-    if (DOM.sortSelect) {
-        DOM.sortSelect.addEventListener('change', (e) => {
-            state.sortBy = e.target.value;
-            applyFilters();
-        });
+}
+
+// ========== КЭШИРОВАНИЕ ==========
+
+function saveProductsToCache(products) {
+    try {
+        sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
+            data: products,
+            timestamp: Date.now()
+        }));
+    } catch (e) {
+        console.warn('[Inventory] Failed to cache products:', e);
     }
+}
+
+function loadProductsFromCache() {
+    try {
+        const cached = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
+        if (cached) {
+            const { data, timestamp } = JSON.parse(cached);
+            if (Date.now() - timestamp < CACHE_TTL) {
+                return data;
+            }
+            sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
+        }
+    } catch (e) {
+        console.warn('[Inventory] Failed to load cached products:', e);
+    }
+    return null;
 }
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
-/**
- * Загружает список товаров из Supabase
- */
-async function loadProducts() {
-    // Проверяем офлайн
+async function loadProducts(forceRefresh = false) {
+    if (state.isLoading) return;
+    
+    // Проверяем кэш
+    if (!forceRefresh && !isOnline()) {
+        const cached = loadProductsFromCache();
+        if (cached) {
+            state.products = cached;
+            updateCategoryFilter();
+            applyFilters();
+            updateStats();
+            showNotification('Работа в офлайн-режиме (данные из кэша)', 'warning');
+            return;
+        }
+    }
+    
     if (!isOnline()) {
-        showError('Отсутствует подключение к интернету. Проверьте соединение.', 'warning');
+        showError('Отсутствует подключение к интернету', 'warning');
         return;
     }
     
-    // Предотвращаем повторную загрузку
-    if (state.isLoading) return;
-    
     state.isLoading = true;
-    showLoader();
-    hideError();
-    hideEmptyState();
+    renderLoadingState();
     
     try {
-        const supabase = window.supabase;
-        if (!supabase) {
-            throw new Error('Supabase client not initialized');
-        }
-        
-        // Запрос к Supabase
+        const supabase = getSupabase();
         const { data, error } = await supabase
             .from('products')
             .select('*')
-            .order('created_at', { ascending: false })
-            .limit(PRODUCTS_PER_PAGE);
+            .order('created_at', { ascending: false });
         
         if (error) throw error;
         
-        // Сохраняем данные
         state.products = data || [];
-        
-        // Обновляем список категорий для фильтра
-        updateCategoryFilter(state.products);
-        
-        // Применяем фильтры и отображаем
+        saveProductsToCache(state.products);
+        updateCategoryFilter();
         applyFilters();
-        
-        // Обновляем статистику
-        updateStats(state.products);
+        updateStats();
         
     } catch (error) {
         console.error('[Inventory] Load products error:', error);
-        showError(`Ошибка загрузки товаров: ${error.message || 'Неизвестная ошибка'}`, 'error');
-        showEmptyState('Ошибка загрузки', 'Нажмите "Обновить" для повторной попытки');
+        showError('Ошибка загрузки товаров: ' + error.message);
+        
+        // Пробуем загрузить из кэша
+        const cached = loadProductsFromCache();
+        if (cached) {
+            state.products = cached;
+            updateCategoryFilter();
+            applyFilters();
+            updateStats();
+            showNotification('Загружены данные из кэша', 'info');
+        }
     } finally {
         state.isLoading = false;
-        hideLoader();
+        render();
     }
 }
 
-/**
- * Обновляет выпадающий список категорий на основе загруженных товаров
- * @param {Array} products - Массив товаров
- */
-function updateCategoryFilter(products) {
-    if (!DOM.categoryFilter) return;
-    
-    // Собираем уникальные категории
+function updateCategoryFilter() {
     const categories = new Set();
-    products.forEach(p => {
+    state.products.forEach(p => {
         if (p.category) categories.add(p.category);
     });
     
     state.categories = Array.from(categories).sort();
     
-    // Обновляем DOM (сохраняем первый option "Все категории")
-    const currentValue = DOM.categoryFilter.value;
-    
-    // Удаляем старые опции (кроме первой)
-    while (DOM.categoryFilter.options.length > 1) {
-        DOM.categoryFilter.remove(1);
-    }
-    
-    // Добавляем новые опции
-    state.categories.forEach(cat => {
-        const option = document.createElement('option');
-        option.value = cat;
-        option.textContent = getCategoryDisplayName(cat);
-        DOM.categoryFilter.appendChild(option);
-    });
-    
-    // Восстанавливаем выбранное значение
-    if (currentValue) {
-        DOM.categoryFilter.value = currentValue;
+    if (DOM.categoryFilter) {
+        const currentValue = DOM.categoryFilter.value;
+        
+        while (DOM.categoryFilter.options.length > 1) {
+            DOM.categoryFilter.remove(1);
+        }
+        
+        state.categories.forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = getCategoryName(cat);
+            DOM.categoryFilter.appendChild(option);
+        });
+        
+        if (currentValue) {
+            DOM.categoryFilter.value = currentValue;
+        }
     }
 }
 
-/**
- * Применяет все фильтры и сортировку к списку товаров
- */
 function applyFilters() {
     let filtered = [...state.products];
     
-    // Поиск по названию
     if (state.searchQuery) {
+        const q = state.searchQuery.toLowerCase();
         filtered = filtered.filter(p => 
-            p.name?.toLowerCase().includes(state.searchQuery) ||
-            p.id?.toLowerCase().includes(state.searchQuery)
+            p.name?.toLowerCase().includes(q) ||
+            p.id?.toLowerCase().includes(q)
         );
     }
     
-    // Фильтр по статусу
     if (state.selectedStatus) {
         filtered = filtered.filter(p => p.status === state.selectedStatus);
     }
     
-    // Фильтр по категории
     if (state.selectedCategory) {
         filtered = filtered.filter(p => p.category === state.selectedCategory);
     }
     
-    // Сортировка
     filtered = sortProducts(filtered, state.sortBy);
-    
     state.filteredProducts = filtered;
-    
-    // Отрисовываем
-    renderTable(filtered);
+    render();
 }
 
-/**
- * Сортирует массив товаров
- * @param {Array} products - Массив товаров
- * @param {string} sortBy - Критерий сортировки
- * @returns {Array} Отсортированный массив
- */
 function sortProducts(products, sortBy) {
     const sorted = [...products];
     
@@ -368,152 +323,14 @@ function sortProducts(products, sortBy) {
     }
 }
 
-// ========== ОТРИСОВКА ==========
-
-/**
- * Отрисовывает таблицу товаров
- * @param {Array} products - Массив товаров для отображения
- */
-function renderTable(products) {
-    if (!DOM.tableBody) return;
-    
-    // Скрываем пустое состояние
-    hideEmptyState();
-    
-    // Если товаров нет — показываем пустое состояние
-    if (products.length === 0) {
-        const message = state.searchQuery || state.selectedStatus || state.selectedCategory
-            ? 'По вашему запросу ничего не найдено'
-            : 'Товары не найдены';
-        showEmptyState('Нет товаров', message);
-        DOM.tableBody.innerHTML = '';
-        return;
-    }
-    
-    // Генерируем HTML строк таблицы
-    DOM.tableBody.innerHTML = products.map(product => {
-        const statusText = getStatusText(product.status);
-        const statusClass = getStatusClass(product.status);
-        
-        // Экранируем все пользовательские данные
-        const safeName = escapeHtml(product.name || 'Без названия');
-        const safeId = escapeHtml(product.id?.slice(0, 8) || '—');
-        const safePhotoUrl = product.photo_url ? escapeHtml(product.photo_url) : null;
-        
-        return `
-            <tr data-id="${safeId}" class="product-row">
-                <td class="photo-cell">
-                    <div class="product-thumb">
-                        ${safePhotoUrl 
-                            ? `<img src="${safePhotoUrl}" alt="${safeName}" loading="lazy">` 
-                            : '<span class="thumb-placeholder">📦</span>'
-                        }
-                    </div>
-                </td>
-                <td class="name-cell">
-                    <div class="product-name">${safeName}</div>
-                    <div class="product-id">ID: ${safeId}</div>
-                </td>
-                <td class="category-cell">${getCategoryDisplayName(product.category)}</td>
-                <td class="price-cell">${formatMoney(product.price)}</td>
-                <td class="status-cell">
-                    <span class="status-badge ${statusClass}">${statusText}</span>
-                </td>
-                <td class="actions-cell">
-                    <div class="row-actions">
-                        <button class="btn-icon" data-action="edit" data-id="${safeId}" title="Редактировать">
-                            ✎
-                        </button>
-                        <button class="btn-icon btn-danger" data-action="delete" data-id="${safeId}" title="Удалить">
-                            ✕
-                        </button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    }).join('');
-    
-    // Привязываем обработчики к кнопкам действий
-    attachRowEvents();
-}
-
-/**
- * Привязывает обработчики к кнопкам в строках таблицы
- */
-function attachRowEvents() {
-    if (!DOM.tableBody) return;
-    
-    // Кнопки редактирования
-    DOM.tableBody.querySelectorAll('[data-action="edit"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const id = btn.dataset.id;
-            showError(`Редактирование товара ${id} в разработке`, 'info');
-        });
-    });
-    
-    // Кнопки удаления
-    DOM.tableBody.querySelectorAll('[data-action="delete"]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const id = btn.dataset.id;
-            deleteProduct(id);
-        });
-    });
-}
-
-/**
- * Удаляет товар по ID
- * @param {string} id - ID товара
- */
-async function deleteProduct(id) {
-    if (!confirm('Вы уверены, что хотите удалить этот товар? Это действие нельзя отменить.')) {
-        return;
-    }
-    
-    if (!isOnline()) {
-        showError('Отсутствует подключение к интернету', 'warning');
-        return;
-    }
-    
-    try {
-        const supabase = window.supabase;
-        const { error } = await supabase
-            .from('products')
-            .delete()
-            .eq('id', id);
-        
-        if (error) throw error;
-        
-        // Удаляем из локального состояния
-        state.products = state.products.filter(p => p.id !== id);
-        state.filteredProducts = state.filteredProducts.filter(p => p.id !== id);
-        
-        // Обновляем отображение
-        renderTable(state.filteredProducts);
-        updateStats(state.products);
-        
-        showError('Товар успешно удален', 'success');
-        
-    } catch (error) {
-        console.error('[Inventory] Delete error:', error);
-        showError(`Ошибка удаления: ${error.message}`, 'error');
-    }
-}
-
-/**
- * Обновляет панель статистики
- * @param {Array} products - Массив товаров
- */
-function updateStats(products) {
+function updateStats() {
     if (!DOM.statsBar) return;
     
-    const total = products.length;
-    const inStock = products.filter(p => p.status === 'in_stock').length;
-    const sold = products.filter(p => p.status === 'sold').length;
-    const reserved = products.filter(p => p.status === 'reserved').length;
-    
-    const totalValue = products
+    const total = state.products.length;
+    const inStock = state.products.filter(p => p.status === 'in_stock').length;
+    const sold = state.products.filter(p => p.status === 'sold').length;
+    const reserved = state.products.filter(p => p.status === 'reserved').length;
+    const totalValue = state.products
         .filter(p => p.status === 'in_stock')
         .reduce((sum, p) => sum + (p.price || 0), 0);
     
@@ -541,108 +358,89 @@ function updateStats(products) {
     `;
 }
 
-// ========== UI СОСТОЯНИЯ ==========
+// ========== CRUD ОПЕРАЦИИ ==========
 
-/**
- * Показывает скелетон-лоадер
- */
-function showLoader() {
-    if (DOM.skeletonLoader) {
-        DOM.skeletonLoader.style.display = 'block';
-    }
-    if (DOM.tableBody) {
-        DOM.tableBody.style.display = 'none';
-    }
-}
-
-/**
- * Скрывает скелетон-лоадер
- */
-function hideLoader() {
-    if (DOM.skeletonLoader) {
-        DOM.skeletonLoader.style.display = 'none';
-    }
-    if (DOM.tableBody) {
-        DOM.tableBody.style.display = '';
-    }
-}
-
-/**
- * Показывает баннер с ошибкой
- * @param {string} message - Сообщение об ошибке
- * @param {string} type - Тип ошибки ('error', 'warning', 'info', 'success')
- */
-function showError(message, type = 'error') {
-    if (!DOM.errorBanner || !DOM.errorMessage) return;
+async function deleteProduct(id) {
+    const product = state.products.find(p => p.id === id);
+    if (!product) return;
     
-    const typeClasses = {
-        error: 'error-banner-danger',
-        warning: 'error-banner-warning',
-        info: 'error-banner-info',
-        success: 'error-banner-success'
-    };
-    
-    // Удаляем старые классы типа
-    Object.values(typeClasses).forEach(cls => {
-        DOM.errorBanner.classList.remove(cls);
+    const confirmed = await showConfirmDialog({
+        title: 'Удаление товара',
+        message: `Вы уверены, что хотите удалить товар "${product.name}"? Это действие нельзя отменить.`,
+        confirmText: 'Удалить'
     });
     
-    // Добавляем новый класс
-    DOM.errorBanner.classList.add(typeClasses[type] || typeClasses.error);
+    if (!confirmed) return;
     
-    DOM.errorMessage.textContent = message;
-    DOM.errorBanner.style.display = 'flex';
+    if (!isOnline()) {
+        showError('Отсутствует подключение к интернету', 'warning');
+        return;
+    }
     
-    // Автоматически скрываем success/info через 3 секунды
-    if (type === 'success' || type === 'info') {
-        setTimeout(() => {
-            hideError();
-        }, 3000);
+    try {
+        const supabase = getSupabase();
+        const { error } = await supabase
+            .from('products')
+            .delete()
+            .eq('id', id);
+        
+        if (error) throw error;
+        
+        state.products = state.products.filter(p => p.id !== id);
+        saveProductsToCache(state.products);
+        updateCategoryFilter();
+        applyFilters();
+        updateStats();
+        
+        showNotification('Товар удален', 'success');
+        
+    } catch (error) {
+        console.error('[Inventory] Delete error:', error);
+        showError('Ошибка удаления: ' + error.message);
     }
 }
 
-/**
- * Скрывает баннер ошибки
- */
-function hideError() {
-    if (DOM.errorBanner) {
-        DOM.errorBanner.style.display = 'none';
+function openAddProductForm() {
+    showNotification('Функция добавления товара в разработке', 'info');
+}
+
+function openEditProductForm(id) {
+    showNotification(`Редактирование товара ${id} в разработке`, 'info');
+}
+
+// ========== РЕНДЕРИНГ ==========
+
+function renderLoadingState() {
+    if (!DOM.tableBody) return;
+    
+    DOM.tableBody.innerHTML = `
+        <tr class="skeleton-row">
+            <td colspan="6">
+                <div class="loading-spinner"></div>
+                <span style="margin-left: 12px;">Загрузка товаров...</span>
+            </td>
+        </tr>
+    `;
+}
+
+function renderEmptyState() {
+    if (!DOM.tableBody) return;
+    
+    let message = 'Товары не найдены';
+    if (state.searchQuery || state.selectedStatus || state.selectedCategory) {
+        message = 'По вашему запросу ничего не найдено';
     }
+    
+    DOM.tableBody.innerHTML = `
+        <tr class="empty-row">
+            <td colspan="6">
+                <div class="empty-state-icon">📦</div>
+                <p>${escapeHtml(message)}</p>
+            </td>
+        </tr>
+    `;
 }
 
-/**
- * Показывает пустое состояние
- * @param {string} title - Заголовок
- * @param {string} message - Сообщение
- */
-function showEmptyState(title, message) {
-    if (!DOM.emptyState) return;
-    
-    const titleEl = DOM.emptyState.querySelector('.empty-state-title');
-    const messageEl = DOM.emptyState.querySelector('.empty-state-message');
-    
-    if (titleEl) titleEl.textContent = title;
-    if (messageEl) messageEl.textContent = message;
-    
-    DOM.emptyState.style.display = 'flex';
-}
-
-/**
- * Скрывает пустое состояние
- */
-function hideEmptyState() {
-    if (DOM.emptyState) {
-        DOM.emptyState.style.display = 'none';
-    }
-}
-
-// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-
-/**
- * Возвращает CSS-класс для статуса товара
- * @param {string} status - Статус товара
- * @returns {string} CSS-класс
- */
 function getStatusClass(status) {
     const classes = {
         'in_stock': 'status-in_stock',
@@ -653,28 +451,167 @@ function getStatusClass(status) {
     return classes[status] || 'status-unknown';
 }
 
-/**
- * Возвращает отображаемое имя категории
- * @param {string} category - Ключ категории
- * @returns {string} Отображаемое имя
- */
-function getCategoryDisplayName(category) {
-    const names = {
-        'clothes': 'Одежда',
-        'toys': 'Игрушки',
-        'dishes': 'Посуда',
-        'other': 'Другое',
-        'electronics': 'Электроника',
-        'books': 'Книги',
-        'furniture': 'Мебель'
-    };
-    return names[category] || category || '—';
+function render() {
+    if (!DOM.tableBody) return;
+    
+    if (state.isLoading && state.products.length === 0) {
+        renderLoadingState();
+        return;
+    }
+    
+    if (state.filteredProducts.length === 0) {
+        renderEmptyState();
+        return;
+    }
+    
+    DOM.tableBody.innerHTML = state.filteredProducts.map(product => {
+        const statusText = getStatusText(product.status);
+        const statusClass = getStatusClass(product.status);
+        const safeName = escapeHtml(product.name || 'Без названия');
+        const safeId = escapeHtml(product.id?.slice(0, 8) || '—');
+        const safePhotoUrl = product.photo_url ? escapeHtml(product.photo_url) : null;
+        
+        return `
+            <tr class="product-row" data-id="${product.id}">
+                <td class="photo-cell">
+                    <div class="product-thumb">
+                        ${safePhotoUrl 
+                            ? `<img src="${safePhotoUrl}" alt="${safeName}" loading="lazy">` 
+                            : '<span class="thumb-placeholder">📦</span>'
+                        }
+                    </div>
+                </td>
+                <td class="name-cell">
+                    <div class="product-name">${safeName}</div>
+                    <div class="product-id">ID: ${safeId}</div>
+                </td>
+                <td class="category-cell">${getCategoryName(product.category)}</td>
+                <td class="price-cell">${formatMoney(product.price)}</td>
+                <td class="status-cell">
+                    <span class="status-badge ${statusClass}">${statusText}</span>
+                </td>
+                <td class="actions-cell">
+                    <div class="row-actions">
+                        <button class="btn-icon" data-action="edit" data-id="${product.id}" title="Редактировать">
+                            ✎
+                        </button>
+                        <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" title="Удалить">
+                            ✕
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    attachRowEvents();
 }
 
-// ========== ЗАПУСК ==========
+function attachRowEvents() {
+    if (!DOM.tableBody) return;
+    
+    DOM.tableBody.querySelectorAll('[data-action="edit"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openEditProductForm(btn.dataset.id);
+        });
+    });
+    
+    DOM.tableBody.querySelectorAll('[data-action="delete"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteProduct(btn.dataset.id);
+        });
+    });
+}
 
-// Запускаем инициализацию после загрузки DOM
+// ========== ИНИЦИАЛИЗАЦИЯ ==========
+
+function cacheElements() {
+    DOM.tableBody = document.getElementById('tableBody');
+    DOM.statsBar = document.getElementById('statsBar');
+    DOM.errorBanner = document.getElementById('errorBanner');
+    DOM.errorMessage = document.getElementById('errorMessage');
+    DOM.emptyState = document.getElementById('emptyState');
+    DOM.searchInput = document.getElementById('searchInput');
+    DOM.statusFilter = document.getElementById('statusFilter');
+    DOM.categoryFilter = document.getElementById('categoryFilter');
+    DOM.sortSelect = document.getElementById('sortSelect');
+    DOM.addProductBtn = document.getElementById('addProductBtn');
+    DOM.refreshBtn = document.getElementById('refreshBtn');
+    DOM.logoutBtn = document.getElementById('logoutBtn');
+    DOM.userEmail = document.getElementById('userEmail');
+    DOM.modalContainer = document.getElementById('modalContainer');
+}
+
+function displayUserInfo() {
+    if (DOM.userEmail && state.user) {
+        DOM.userEmail.textContent = state.user.email || 'Пользователь';
+    }
+}
+
+function attachEvents() {
+    if (DOM.logoutBtn) {
+        DOM.logoutBtn.addEventListener('click', () => logout());
+    }
+    
+    if (DOM.refreshBtn) {
+        DOM.refreshBtn.addEventListener('click', () => {
+            hideError();
+            loadProducts(true);
+        });
+    }
+    
+    if (DOM.addProductBtn) {
+        DOM.addProductBtn.addEventListener('click', openAddProductForm);
+    }
+    
+    if (DOM.searchInput) {
+        const debouncedSearch = debounce(() => {
+            state.searchQuery = DOM.searchInput.value.trim().toLowerCase();
+            applyFilters();
+        }, 300);
+        DOM.searchInput.addEventListener('input', debouncedSearch);
+    }
+    
+    if (DOM.statusFilter) {
+        DOM.statusFilter.addEventListener('change', (e) => {
+            state.selectedStatus = e.target.value;
+            applyFilters();
+        });
+    }
+    
+    if (DOM.categoryFilter) {
+        DOM.categoryFilter.addEventListener('change', (e) => {
+            state.selectedCategory = e.target.value;
+            applyFilters();
+        });
+    }
+    
+    if (DOM.sortSelect) {
+        DOM.sortSelect.addEventListener('change', (e) => {
+            state.sortBy = e.target.value;
+            applyFilters();
+        });
+    }
+}
+
+async function init() {
+    console.log('[Inventory] Initializing MPA page...');
+    
+    cacheElements();
+    
+    state.user = await requireAuth();
+    if (!state.user) return;
+    
+    displayUserInfo();
+    attachEvents();
+    
+    await loadProducts();
+    
+    console.log('[Inventory] Page initialized');
+}
+
 document.addEventListener('DOMContentLoaded', init);
 
-// Экспорт для возможного использования в других модулях (не обязательно)
 export { init };
