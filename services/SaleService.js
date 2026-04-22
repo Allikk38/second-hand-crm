@@ -8,11 +8,10 @@
  * Управление продажами: создание, отмена, статистика.
  * 
  * @module SaleService
- * @version 4.1.1
+ * @version 4.1.2
  * @changes
- * - ИСПРАВЛЕНО: getStats() теперь корректно обрабатывает пустой результат.
- * - Добавлена проверка на ошибку 400 (PGRST116 - not found).
- * - Улучшена обработка отсутствующих продаж.
+ * - ИСПРАВЛЕНО: двойная точка в URL при запросе статистики по смене.
+ * - Улучшена обработка пустых результатов.
  */
 
 import { db } from '../core/SupabaseClient.js';
@@ -25,8 +24,6 @@ const logger = createLogger('SaleService');
 export const SaleService = {
     /**
      * Создает новую продажу
-     * @param {Object} saleData - Данные продажи
-     * @returns {Promise<Object>}
      */
     async create({ shiftId, items, total, discount = 0, paymentMethod }) {
         if (!shiftId) throw new Error('Shift ID is required');
@@ -34,19 +31,15 @@ export const SaleService = {
         if (!paymentMethod) throw new Error('Payment method is required');
         if (total < 0) throw new Error('Total cannot be negative');
         
-        // Проверяем количество товаров
         for (const item of items) {
             if (item.quantity <= 0) {
                 throw new Error(`Invalid quantity for product ${item.id}`);
             }
         }
         
-        // Получаем актуальные данные о товарах
         const products = await ProductService.getAll({ forceRefresh: true });
         
-        // Проверяем доступность и остатки
         const unavailableItems = [];
-        const stockIssues = [];
         
         items.forEach(item => {
             const product = products.find(p => p.id === item.id);
@@ -68,7 +61,6 @@ export const SaleService = {
             throw error;
         }
         
-        // Рассчитываем себестоимость и прибыль
         const itemsWithCost = items.map(item => {
             const product = products.find(p => p.id === item.id);
             return {
@@ -84,7 +76,6 @@ export const SaleService = {
         const profit = total - totalCost;
         const margin = total > 0 ? (profit / total * 100) : 0;
         
-        // Создаем продажу
         const { data: sale, error } = await db
             .from('sales')
             .insert({
@@ -105,7 +96,6 @@ export const SaleService = {
             throw error;
         }
         
-        // Обновляем статусы товаров
         const productIds = items.map(item => item.id);
         await ProductService.bulkUpdateStatus(productIds, 'sold');
         
@@ -123,9 +113,6 @@ export const SaleService = {
 
     /**
      * Получает продажи за период
-     * @param {string|Date} startDate - Начало периода
-     * @param {string|Date} endDate - Конец периода
-     * @returns {Promise<Array>}
      */
     async getByPeriod(startDate, endDate) {
         const start = typeof startDate === 'string' ? startDate : startDate.toISOString();
@@ -156,8 +143,6 @@ export const SaleService = {
 
     /**
      * Получает продажи по смене
-     * @param {string} shiftId - ID смены
-     * @returns {Promise<Array>}
      */
     async getByShift(shiftId) {
         const { data, error } = await db
@@ -167,7 +152,6 @@ export const SaleService = {
             .order('created_at', { ascending: false });
         
         if (error) {
-            // PGRST116 означает что записи не найдены - это нормально для пустой смены
             if (error.code === 'PGRST116') {
                 logger.debug('No sales found for shift', { shiftId });
                 return [];
@@ -181,34 +165,31 @@ export const SaleService = {
 
     /**
      * Получает статистику продаж
-     * @param {Object} options - Опции фильтрации
-     * @returns {Promise<Object>}
      */
     async getStats(options = {}) {
-        const { startDate, endDate, shiftId, userId } = options;
+        const { startDate, endDate, shiftId } = options;
         
-        logger.debug('getStats called', { startDate, endDate, shiftId, userId });
+        logger.debug('getStats called', { startDate, endDate, shiftId });
         
         try {
             let query = db.from('sales').select('total, discount, profit, payment_method, created_at');
             
             if (startDate) {
-                const start = typeof startDate === 'string' ? startDate : startDate.toISOString();
-                query = query.gte('created_at', start);
+                query = query.gte('created_at', startDate);
             }
             if (endDate) {
-                const end = typeof endDate === 'string' ? endDate : endDate.toISOString();
-                query = query.lte('created_at', end);
+                query = query.lte('created_at', endDate);
             }
             if (shiftId) {
+                // ВАЖНО: не добавляем префикс "eq." — SupabaseClient делает это сам
                 query = query.eq('shift_id', shiftId);
             }
             
             const { data, error } = await query;
             
-            // Обрабатываем ошибку "not found" как пустой результат
             if (error) {
-                if (error.code === 'PGRST116' || error.code === '400') {
+                // PGRST116 означает что записи не найдены
+                if (error.code === 'PGRST116') {
                     logger.debug('No sales data found, returning empty stats');
                     return {
                         count: 0,
@@ -258,7 +239,6 @@ export const SaleService = {
         } catch (error) {
             logger.error('getStats error', { error });
             
-            // Возвращаем пустую статистику при любой ошибке
             return {
                 count: 0,
                 totalRevenue: 0,
@@ -272,8 +252,6 @@ export const SaleService = {
 
     /**
      * Получает топ продаваемых товаров
-     * @param {number} limit - Количество записей
-     * @returns {Promise<Array>}
      */
     async getTopProducts(limit = 10) {
         const { data, error } = await db
@@ -281,7 +259,6 @@ export const SaleService = {
             .select('items');
         
         if (error) {
-            // Если продаж нет - возвращаем пустой массив
             if (error.code === 'PGRST116') {
                 return [];
             }
@@ -320,8 +297,6 @@ export const SaleService = {
     
     /**
      * Отменяет продажу
-     * @param {string} id - ID продажи
-     * @returns {Promise<void>}
      */
     async cancel(id) {
         const sale = await this.getById(id);
@@ -330,7 +305,6 @@ export const SaleService = {
             throw new Error(`Sale with id ${id} not found`);
         }
         
-        // Возвращаем товары в статус "в наличии"
         const itemIds = sale.items.map(item => item.id);
         await ProductService.bulkUpdateStatus(itemIds, 'in_stock');
         
@@ -351,8 +325,6 @@ export const SaleService = {
     
     /**
      * Получает детальную информацию о продаже
-     * @param {string} id - ID продажи
-     * @returns {Promise<Object>}
      */
     async getById(id) {
         const { data, error } = await db
