@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./modules/reports/views/ProfitView.js
+// ========================================
+
 /**
  * Profit View Component
  * 
@@ -5,7 +9,10 @@
  * Показывает валовую прибыль, маржинальность и ROI.
  * 
  * @module ProfitView
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Исправлены пути импорта на относительные (../../../ вместо корневых).
+ * - Добавлен именованный экспорт для совместимости.
  */
 
 import { BaseComponent } from '../../../core/BaseComponent.js';
@@ -101,3 +108,6 @@ export class ProfitView extends BaseComponent {
         return recommendations.join('');
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default ProfitView;
