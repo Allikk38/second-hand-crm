@@ -7,17 +7,21 @@
  * 
  * Отвечает за рендеринг каркаса приложения и ленивую загрузку независимых виджетов.
  * Реализует принцип "Ошибка в одном виджете не ломает все приложение".
+ * Управляет аутентификацией и защитой маршрутов.
  * 
  * Архитектурные решения:
  * - Сканирование DOM по атрибуту `data-widget`.
  * - Динамический импорт модулей виджетов.
  * - Оборачивание каждого виджета в Error Boundary (try/catch).
- * - Полная изоляция: виджеты не импортируют друг друга, общение только через EventBus.
+ * - Интеграция с AuthWidget для защиты маршрутов.
  * 
  * @module AppShell
- * @version 1.0.0
+ * @version 1.2.0
  * @changes
- * - Создан с нуля для новой архитектуры.
+ * - Добавлена интеграция с AuthWidget.
+ * - Реализована защита виджетов (требуется авторизация).
+ * - Условная загрузка виджетов после входа.
+ * - Метод getCurrentUserId() для передачи в виджеты.
  */
 
 import { EventBus, EventTypes, EventSource } from './EventBus.js';
@@ -39,22 +43,41 @@ export class AppShell {
         
         /** @type {boolean} Флаг инициализации */
         this.initialized = false;
+        
+        /** @type {string} Активная вкладка */
+        this.activeTab = 'inventory';
+        
+        /** @type {boolean} Флаг аутентификации */
+        this.isAuthenticated = false;
+        
+        /** @type {Object|null} Текущий пользователь */
+        this.currentUser = null;
+        
+        // Привязка методов
+        this.handleAuthSuccess = this.handleAuthSuccess.bind(this);
+        this.handleAuthLogout = this.handleAuthLogout.bind(this);
     }
 
     /**
      * Регистрирует маппинг "название виджета -> путь к файлу".
-     * Это единственное место, где прописаны пути к модулям.
      * @private
      */
     getWidgetRegistry() {
         return {
-            // Пути относительно корня проекта (где лежит index.html)
             'auth': '../widgets/AuthWidget.js',
             'inventory': '../widgets/InventoryWidget.js',
             'cashier': '../widgets/CashierWidget.js',
             'reports': '../widgets/ReportsWidget.js',
             'notifications': '../widgets/NotificationsWidget.js'
         };
+    }
+    
+    /**
+     * Список виджетов, требующих аутентификации.
+     * @private
+     */
+    getProtectedWidgets() {
+        return ['inventory', 'cashier', 'reports'];
     }
 
     /**
@@ -64,27 +87,54 @@ export class AppShell {
     renderBaseLayout() {
         return `
             <div class="app-shell">
-                <!-- Шапка с навигацией (статическая часть) -->
+                <!-- Шапка с навигацией -->
                 <header class="app-header">
-                    <h1>SH CRM 2.0</h1>
+                    <div class="header-left">
+                        <h1>🔄 SH CRM 2.0</h1>
+                        <span class="version-badge">v2.0</span>
+                    </div>
                     <nav class="app-nav">
-                        <button data-nav="inventory">📦 Склад</button>
-                        <button data-nav="cashier">💰 Касса</button>
-                        <button data-nav="reports">📊 Отчеты</button>
+                        ${this.isAuthenticated ? `
+                            <button data-nav="inventory" class="${this.activeTab === 'inventory' ? 'active' : ''}">
+                                <span class="nav-icon">📦</span>
+                                <span>Склад</span>
+                            </button>
+                            <button data-nav="cashier" class="${this.activeTab === 'cashier' ? 'active' : ''}">
+                                <span class="nav-icon">💰</span>
+                                <span>Касса</span>
+                            </button>
+                            <button data-nav="reports" class="${this.activeTab === 'reports' ? 'active' : ''}">
+                                <span class="nav-icon">📊</span>
+                                <span>Отчеты</span>
+                            </button>
+                        ` : ''}
                     </nav>
-                    <div class="user-actions">
-                        <span data-widget="auth"></span>
+                    <div class="header-right">
+                        <span data-widget="auth" style="display: contents;"></span>
                     </div>
                 </header>
 
                 <!-- Основная зона контента -->
                 <main class="app-main">
-                    <!-- Здесь будут рендериться виджеты через data-widget -->
-                    <div id="widget-inventory" data-widget="inventory" style="display: none;"></div>
-                    <div id="widget-cashier" data-widget="cashier" style="display: none;"></div>
-                    <div id="widget-reports" data-widget="reports" style="display: none;"></div>
+                    ${this.isAuthenticated ? `
+                        <!-- Склад -->
+                        <div id="widget-inventory" data-widget="inventory" style="display: ${this.activeTab === 'inventory' ? 'block' : 'none'};"></div>
+                        
+                        <!-- Касса -->
+                        <div id="widget-cashier" data-widget="cashier" style="display: ${this.activeTab === 'cashier' ? 'block' : 'none'};"></div>
+                        
+                        <!-- Отчеты -->
+                        <div id="widget-reports" data-widget="reports" style="display: ${this.activeTab === 'reports' ? 'block' : 'none'};"></div>
+                    ` : `
+                        <!-- Сообщение для неавторизованных -->
+                        <div class="auth-required-message">
+                            <div class="auth-required-icon">🔐</div>
+                            <h2>Требуется авторизация</h2>
+                            <p>Войдите в систему, чтобы получить доступ к приложению</p>
+                        </div>
+                    `}
                     
-                    <!-- Общая зона для уведомлений -->
+                    <!-- Уведомления (всегда видимы) -->
                     <div data-widget="notifications"></div>
                 </main>
             </div>
@@ -99,30 +149,112 @@ export class AppShell {
         
         console.log('[AppShell] Initializing...');
         
-        // 1. Рендерим HTML
+        // 1. Подписываемся на события аутентификации
+        this.subscribeToAuthEvents();
+        
+        // 2. Определяем активную вкладку из хэша
+        const hash = window.location.hash.slice(1);
+        if (hash && ['inventory', 'cashier', 'reports'].includes(hash)) {
+            this.activeTab = hash;
+        }
+        
+        // 3. Рендерим HTML
         this.root.innerHTML = this.renderBaseLayout();
         
-        // 2. Находим все контейнеры для виджетов
+        // 4. Находим все контейнеры для виджетов
         this.scanWidgetContainers();
         
-        // 3. Привязываем базовые события навигации
-        this.attachNavigationEvents();
+        // 5. Загружаем виджет аутентификации ПЕРВЫМ
+        await this.loadWidget('auth');
         
-        // 4. Автоматически загружаем виджеты, которые видны на старте
-        await this.loadVisibleWidgets();
+        // 6. Загружаем виджет уведомлений
+        await this.loadWidget('notifications');
+        
+        // 7. Привязываем события навигации (если есть кнопки)
+        if (this.isAuthenticated) {
+            this.attachNavigationEvents();
+        }
         
         this.initialized = true;
         
-        // 5. Сообщаем системе, что оболочка готова
-        EventBus.emit(EventTypes.SYSTEM.APP_READY, { timestamp: Date.now() }, EventSource.KERNEL);
+        // 8. Сообщаем системе, что оболочка готова
+        EventBus.emit(EventTypes.SYSTEM.APP_READY, { 
+            timestamp: Date.now(),
+            activeTab: this.activeTab,
+            authenticated: this.isAuthenticated
+        }, EventSource.KERNEL);
         
-        console.log('[AppShell] Initialization complete');
+        // 9. Уведомляем внешний мир
+        window.dispatchEvent(new CustomEvent('app:ready'));
+        
+        console.log('[AppShell] ✅ Initialization complete (Authenticated:', this.isAuthenticated, ')');
+    }
+    
+    /**
+     * Подписывается на события аутентификации.
+     */
+    subscribeToAuthEvents() {
+        EventBus.on(EventTypes.AUTH.LOGIN_SUCCESS, this.handleAuthSuccess);
+        EventBus.on(EventTypes.AUTH.LOGOUT, this.handleAuthLogout);
+    }
+    
+    /**
+     * Обработчик успешного входа.
+     * @param {Object} data - Данные события
+     */
+    async handleAuthSuccess(data) {
+        console.log('[AppShell] Auth success, reloading UI...');
+        
+        this.isAuthenticated = true;
+        this.currentUser = data.user;
+        
+        // Перерендериваем весь UI
+        this.root.innerHTML = this.renderBaseLayout();
+        this.scanWidgetContainers();
+        
+        // Загружаем уведомления
+        await this.loadWidget('notifications');
+        
+        // Загружаем виджет активной вкладки
+        await this.loadWidget(this.activeTab);
+        
+        // Привязываем навигацию
+        this.attachNavigationEvents();
+        
+        console.log('[AppShell] UI reloaded for authenticated user');
+    }
+    
+    /**
+     * Обработчик выхода из системы.
+     */
+    async handleAuthLogout() {
+        console.log('[AppShell] Auth logout, clearing UI...');
+        
+        this.isAuthenticated = false;
+        this.currentUser = null;
+        this.activeTab = 'inventory';
+        
+        // Выгружаем защищенные виджеты
+        for (const widgetName of this.getProtectedWidgets()) {
+            await this.unloadWidget(widgetName);
+        }
+        
+        // Перерендериваем UI
+        this.root.innerHTML = this.renderBaseLayout();
+        this.scanWidgetContainers();
+        
+        // Загружаем уведомления
+        await this.loadWidget('notifications');
+        
+        console.log('[AppShell] UI cleared after logout');
     }
 
     /**
      * Сканирует DOM и сохраняет ссылки на контейнеры виджетов.
      */
     scanWidgetContainers() {
+        this.containers.clear();
+        
         const elements = this.root.querySelectorAll('[data-widget]');
         
         elements.forEach(el => {
@@ -144,9 +276,25 @@ export class AppShell {
             btn.addEventListener('click', async (e) => {
                 const targetWidget = e.currentTarget.dataset.nav;
                 
+                // Проверяем аутентификацию для защищенных виджетов
+                if (this.getProtectedWidgets().includes(targetWidget) && !this.isAuthenticated) {
+                    EventBus.emit(EventTypes.UI.NOTIFICATION_SHOW, {
+                        type: 'warning',
+                        message: 'Требуется авторизация'
+                    }, EventSource.KERNEL);
+                    return;
+                }
+                
+                // Обновляем хэш
+                window.location.hash = targetWidget;
+                
+                // Обновляем активный класс кнопок
+                navButtons.forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                
                 // Скрываем все виджеты
                 this.containers.forEach((container, name) => {
-                    if (name !== 'notifications') {
+                    if (name !== 'notifications' && name !== 'auth') {
                         container.style.display = 'none';
                     }
                 });
@@ -162,37 +310,31 @@ export class AppShell {
                     }
                 }
                 
+                this.activeTab = targetWidget;
+                
                 // Уведомляем систему о смене вкладки
-                EventBus.emit(EventTypes.UI.TAB_CHANGED, { tab: targetWidget }, EventSource.KERNEL);
+                EventBus.emit(EventTypes.UI.TAB_CHANGED, { 
+                    tab: targetWidget,
+                    previousTab: this.activeTab
+                }, EventSource.KERNEL);
             });
         });
         
-        // Активируем первую вкладку по умолчанию (если нет хэша)
-        const defaultTab = window.location.hash.slice(1) || 'inventory';
-        const defaultBtn = this.root.querySelector(`[data-nav="${defaultTab}"]`);
-        if (defaultBtn) {
-            defaultBtn.click();
-        }
-    }
-
-    /**
-     * Загружает виджеты, которые сейчас видны пользователю.
-     */
-    async loadVisibleWidgets() {
-        const promises = [];
-        
-        this.containers.forEach((container, name) => {
-            if (container.style.display !== 'none' && !this.widgets.has(name)) {
-                promises.push(this.loadWidget(name));
+        // Слушаем изменения хэша
+        window.addEventListener('hashchange', async () => {
+            const hash = window.location.hash.slice(1);
+            if (hash && hash !== this.activeTab && ['inventory', 'cashier', 'reports'].includes(hash)) {
+                const targetBtn = this.root.querySelector(`[data-nav="${hash}"]`);
+                if (targetBtn) {
+                    targetBtn.click();
+                }
             }
         });
-        
-        await Promise.allSettled(promises);
     }
 
     /**
      * Загружает конкретный виджет по имени.
-     * @param {string} widgetName - Имя виджета (например, 'inventory')
+     * @param {string} widgetName - Имя виджета
      */
     async loadWidget(widgetName) {
         const registry = this.getWidgetRegistry();
@@ -209,40 +351,51 @@ export class AppShell {
             return;
         }
         
-        // Показываем скелетон загрузки
-        container.innerHTML = `
-            <div class="widget-loader">
-                <div class="loader-spinner"></div>
-                <span>Загрузка модуля ${widgetName}...</span>
-            </div>
-        `;
+        // Проверяем аутентификацию для защищенных виджетов
+        if (this.getProtectedWidgets().includes(widgetName) && !this.isAuthenticated) {
+            container.innerHTML = `
+                <div class="auth-required-placeholder">
+                    <span>🔐</span>
+                    <p>Требуется авторизация</p>
+                </div>
+            `;
+            console.warn(`[AppShell] Cannot load protected widget "${widgetName}" without auth`);
+            return;
+        }
+        
+        // Особый случай для виджета уведомлений — не показываем лоадер
+        if (widgetName !== 'notifications') {
+            container.innerHTML = `
+                <div class="widget-loader">
+                    <div class="loader-spinner"></div>
+                    <span>Загрузка модуля ${widgetName}...</span>
+                </div>
+            `;
+        }
         
         console.log(`[AppShell] Loading widget: ${widgetName} from ${modulePath}`);
         
         try {
-            // Динамический импорт модуля
-            // Используем cache-busting только в dev режиме
             const cacheBust = window.location.hostname === 'localhost' ? `?v=${Date.now()}` : '';
             const module = await import(modulePath + cacheBust);
             
-            // Ищем экспортированный класс (обычно совпадает с именем или называется Widget)
-            const WidgetClass = module.default || module[`${widgetName.charAt(0).toUpperCase() + widgetName.slice(1)}Widget`];
+            let WidgetClass = module.default;
+            
+            if (!WidgetClass) {
+                const className = widgetName.charAt(0).toUpperCase() + widgetName.slice(1) + 'Widget';
+                WidgetClass = module[className];
+            }
             
             if (!WidgetClass) {
                 throw new Error(`Widget class not found in module ${modulePath}`);
             }
             
-            // Создаем экземпляр виджета
             const widgetInstance = new WidgetClass(container);
             
-            // Вызываем метод mount() если он есть
             if (typeof widgetInstance.mount === 'function') {
                 await widgetInstance.mount();
-            } else {
-                console.warn(`[AppShell] Widget ${widgetName} has no mount() method`);
             }
             
-            // Сохраняем экземпляр
             this.widgets.set(widgetName, widgetInstance);
             
             console.log(`[AppShell] ✅ Widget ${widgetName} loaded successfully`);
@@ -250,33 +403,34 @@ export class AppShell {
         } catch (error) {
             console.error(`[AppShell] ❌ Failed to load widget ${widgetName}:`, error);
             
-            // Показываем красивую ошибку вместо белого экрана
+            if (widgetName === 'notifications') {
+                console.warn('[AppShell] Notifications widget failed, continuing without notifications');
+                return;
+            }
+            
             container.innerHTML = `
                 <div class="widget-error">
                     <div class="error-icon">⚠️</div>
-                    <h4>Не удалось загрузить модуль</h4>
+                    <h4>Не удалось загрузить модуль "${widgetName}"</h4>
                     <p>${this.escapeHtml(error.message)}</p>
-                    <button class="retry-btn" onclick="window.location.reload()">Обновить</button>
+                    <button class="retry-btn" data-retry="${widgetName}">🔄 Попробовать снова</button>
                 </div>
             `;
             
-            // Отправляем системное событие об ошибке
+            const retryBtn = container.querySelector('.retry-btn');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', () => {
+                    this.loadWidget(widgetName);
+                });
+            }
+            
             EventBus.emit(EventTypes.SYSTEM.ERROR, {
                 source: EventSource.KERNEL,
                 widget: widgetName,
-                error: error.message
+                error: error.message,
+                stack: error.stack
             }, EventSource.KERNEL);
         }
-    }
-
-    /**
-     * Экранирование HTML
-     */
-    escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
     }
 
     /**
@@ -290,7 +444,6 @@ export class AppShell {
         }
         this.widgets.delete(widgetName);
         
-        // Очищаем подписки EventBus для этого виджета
         EventBus.clearSource(widgetName);
         
         console.log(`[AppShell] Widget ${widgetName} unloaded`);
@@ -302,7 +455,9 @@ export class AppShell {
     async destroy() {
         console.log('[AppShell] Destroying...');
         
-        // Выгружаем все виджеты
+        EventBus.off(EventTypes.AUTH.LOGIN_SUCCESS, this.handleAuthSuccess);
+        EventBus.off(EventTypes.AUTH.LOGOUT, this.handleAuthLogout);
+        
         const promises = [];
         this.widgets.forEach((_, name) => {
             promises.push(this.unloadWidget(name));
@@ -314,6 +469,60 @@ export class AppShell {
         this.containers.clear();
         this.root.innerHTML = '';
         this.initialized = false;
+        
+        console.log('[AppShell] 💀 Destroyed');
+    }
+    
+    /**
+     * Экранирование HTML
+     */
+    escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+    
+    /**
+     * Получить экземпляр виджета по имени.
+     * @param {string} name - Имя виджета
+     * @returns {any|null}
+     */
+    getWidget(name) {
+        return this.widgets.get(name) || null;
+    }
+    
+    /**
+     * Проверить, загружен ли виджет.
+     * @param {string} name - Имя виджета
+     * @returns {boolean}
+     */
+    isWidgetLoaded(name) {
+        return this.widgets.has(name);
+    }
+    
+    /**
+     * Получить ID текущего пользователя.
+     * @returns {string|null}
+     */
+    getCurrentUserId() {
+        return this.currentUser?.id || null;
+    }
+    
+    /**
+     * Получить текущего пользователя.
+     * @returns {Object|null}
+     */
+    getCurrentUser() {
+        return this.currentUser ? { ...this.currentUser } : null;
+    }
+    
+    /**
+     * Проверить, аутентифицирован ли пользователь.
+     * @returns {boolean}
+     */
+    isUserAuthenticated() {
+        return this.isAuthenticated;
     }
 }
 
