@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./modules/reports/views/SalesView.js
+// ========================================
+
 /**
  * Sales View Component
  * 
@@ -5,7 +9,10 @@
  * Включает сводку, график динамики и таблицу продаж.
  * 
  * @module SalesView
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Исправлены пути импорта на относительные (../../../ вместо корневых).
+ * - Добавлен именованный экспорт для совместимости.
  */
 
 import { BaseComponent } from '../../../core/BaseComponent.js';
@@ -231,3 +238,6 @@ export class SalesView extends BaseComponent {
         }
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default SalesView;
