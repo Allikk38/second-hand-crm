@@ -7,10 +7,11 @@
     
     <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/components/forms.css">
+    <link rel="stylesheet" href="../css/components/buttons.css">
     
-    <!-- Дополнительные стили для страницы входа -->
     <style>
-        /* Стили специфичные только для страницы входа */
+        /* Стили только для страницы входа */
         .login-page {
             display: flex;
             align-items: center;
@@ -56,58 +57,6 @@
             gap: var(--spacing-4);
         }
         
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-1);
-        }
-        
-        .form-group label {
-            font-size: var(--font-size-sm);
-            font-weight: var(--font-weight-medium);
-            color: var(--color-text);
-        }
-        
-        .form-control {
-            height: var(--input-height-lg);
-            padding: 0 var(--spacing-4);
-            font-size: var(--font-size-base);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            background: var(--color-white);
-            transition: border-color var(--transition-fast);
-        }
-        
-        .form-control:focus {
-            outline: none;
-            border-color: var(--color-primary);
-            box-shadow: var(--shadow-outline);
-        }
-        
-        .form-control.error {
-            border-color: var(--color-danger);
-        }
-        
-        .error-message {
-            font-size: var(--font-size-xs);
-            color: var(--color-danger);
-            min-height: 20px;
-        }
-        
-        .form-error {
-            padding: var(--spacing-3);
-            background: var(--color-danger-bg);
-            border-radius: var(--radius-md);
-            color: var(--color-danger-dark);
-            font-size: var(--font-size-sm);
-            border-left: 3px solid var(--color-danger);
-            display: none;
-        }
-        
-        .form-error.show {
-            display: block;
-        }
-        
         .btn-login {
             width: 100%;
             height: var(--button-height-lg);
@@ -121,23 +70,7 @@
             cursor: not-allowed;
         }
         
-        .login-footer {
-            margin-top: var(--spacing-6);
-            text-align: center;
-            font-size: var(--font-size-sm);
-            color: var(--color-text-secondary);
-        }
-        
-        .login-footer a {
-            color: var(--color-primary);
-            font-weight: var(--font-weight-medium);
-            text-decoration: none;
-        }
-        
-        .login-footer a:hover {
-            text-decoration: underline;
-        }
-        
+        /* Офлайн-баннер */
         .offline-banner {
             padding: var(--spacing-3);
             margin-bottom: var(--spacing-4);
@@ -154,36 +87,34 @@
             display: block;
         }
         
-        /* Модальное окно регистрации */
-        .register-modal .modal {
-            max-width: 480px;
+        /* Лоадер внутри кнопки */
+        .btn-loader {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-2);
         }
         
-        .register-form {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-4);
+        .loading-spinner.small {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--color-border);
+            border-top-color: var(--color-white);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
         }
         
-        .demo-credentials {
-            margin-top: var(--spacing-4);
-            padding: var(--spacing-3);
-            background: var(--color-gray-50);
-            border-radius: var(--radius-md);
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-            text-align: center;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
-        .demo-credentials code {
-            background: var(--color-gray-200);
-            padding: var(--spacing-0-5) var(--spacing-1);
-            border-radius: var(--radius-sm);
-        }
-        
+        /* Адаптивность */
         @media (max-width: 480px) {
             .login-card {
                 padding: var(--spacing-5);
+            }
+            
+            .login-header h1 {
+                font-size: var(--font-size-xl);
             }
         }
     </style>
@@ -237,34 +168,64 @@
                         <span class="btn-text">Войти</span>
                         <span class="btn-loader" style="display: none;">
                             <span class="loading-spinner small"></span>
-                            Вход...
+                            <span>Вход...</span>
                         </span>
                     </button>
                 </form>
-                
-                <div class="login-footer">
-                    <p>
-                        Нет аккаунта? 
-                        <a href="#" id="showRegisterBtn">Зарегистрироваться</a>
-                    </p>
-                </div>
-                
-                <!-- Демо-доступ (только для разработки) -->
-                <div class="demo-credentials" id="demoCredentials" style="display: none;">
-                    <p>Демо доступ:</p>
-                    <code>demo@example.com / demo123</code>
-                </div>
             </div>
         </div>
     </div>
-    
-    <!-- Контейнер для модальных окон -->
-    <div id="modalContainer"></div>
     
     <!-- Контейнер для уведомлений -->
     <div id="notificationContainer"></div>
     
     <!-- Основной скрипт страницы -->
     <script type="module" src="../js/login.js"></script>
+    
+    <!-- Fallback на случай ошибки -->
+    <script>
+        (function() {
+            const form = document.getElementById('loginForm');
+            const loginBtn = document.getElementById('loginBtn');
+            const offlineBanner = document.getElementById('offlineBanner');
+            
+            // Проверка сети при загрузке
+            if (!navigator.onLine && offlineBanner) {
+                offlineBanner.classList.add('show');
+            }
+            
+            window.addEventListener('online', function() {
+                if (offlineBanner) offlineBanner.classList.remove('show');
+            });
+            
+            window.addEventListener('offline', function() {
+                if (offlineBanner) offlineBanner.classList.add('show');
+            });
+            
+            // Таймаут для проверки загрузки модуля
+            const timeoutId = setTimeout(function() {
+                if (loginBtn && loginBtn.disabled === false) {
+                    console.warn('[Login] Module load timeout');
+                    const formError = document.getElementById('formError');
+                    if (formError) {
+                        formError.textContent = 'Ошибка загрузки страницы. Обновите страницу.';
+                        formError.classList.add('show');
+                    }
+                }
+            }, 8000);
+            
+            window.addEventListener('error', function(e) {
+                if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('login.js')) {
+                    clearTimeout(timeoutId);
+                    const formError = document.getElementById('formError');
+                    if (formError) {
+                        formError.textContent = 'Не удалось загрузить модуль входа. Обновите страницу.';
+                        formError.classList.add('show');
+                    }
+                    if (loginBtn) loginBtn.disabled = false;
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
