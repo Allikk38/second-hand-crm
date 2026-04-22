@@ -1,48 +1,60 @@
+// ========================================
+// FILE: ./modules/reports/ReportsPage.js
+// ========================================
+
 /**
  * Reports Page Controller
  * 
  * Контроллер страницы отчетов. Координирует работу компонентов:
- * - ReportsState (состояние)
  * - ReportsHeader (заголовок с фильтрами периода)
  * - ReportsTabs (вкладки)
  * - DashboardView, SalesView, ProductsView, SellersView, ProfitView
  * 
+ * Архитектурные решения:
+ * - Полный переход на глобальный `Store`.
+ * - Удалена зависимость от легаси `ReportsState`.
+ * - Делегирование загрузки данных `ReportService`.
+ * - Ленивая загрузка представлений.
+ * 
  * @module ReportsPage
- * @version 4.1.0
+ * @version 6.0.0
  * @changes
- * - Упрощена загрузка вкладок
- * - Добавлена обработка ошибок
- * - Улучшено кэширование
- * - Добавлено принудительное обновление
+ * - Полностью удален `ReportsState`.
+ * - Подключение к `Store.state.reports`.
+ * - Упрощена логика загрузки и кэширования.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
-import { ReportsState, TABS } from './reportsState.js';
+import { Store } from '../../core/Store.js';
 import { ReportsHeader } from './ReportsHeader.js';
 import { ReportsTabs } from './ReportsTabs.js';
 import { ReportService } from '../../services/ReportService.js';
 import { PermissionManager } from '../../core/PermissionManager.js';
 import { Notification } from '../common/Notification.js';
 
+// ========== КОНСТАНТЫ ==========
+const TABS = [
+    { id: 'dashboard', label: 'Дашборд', icon: '📊' },
+    { id: 'sales', label: 'Продажи', icon: '💰' },
+    { id: 'products', label: 'Товары', icon: '📦' },
+    { id: 'sellers', label: 'Продавцы', icon: '👥' },
+    { id: 'profit', label: 'Прибыль', icon: '📈' }
+];
+
 export class ReportsPage extends BaseComponent {
     constructor(container) {
         super(container);
         
-        // Компоненты
         this.header = null;
         this.tabs = null;
         this.currentView = null;
         
-        // Права
         this.permissions = {
             canViewFull: PermissionManager.can('reports:view'),
             canExport: PermissionManager.can('reports:export')
         };
         
-        // Отписки
         this.unsubscribers = [];
-        
-        // Флаг загрузки
         this._loadingTab = null;
     }
     
@@ -71,6 +83,8 @@ export class ReportsPage extends BaseComponent {
             const headerContainer = this.refs.get('headerContainer');
             if (headerContainer) {
                 this.header = new ReportsHeader(headerContainer, {
+                    period: Store.state.reports.period,
+                    compareWithPrevious: Store.state.reports.compareWithPrevious,
                     onPeriodChange: (preset) => this.handlePeriodPresetChange(preset),
                     onCustomPeriodChange: (start, end) => this.handleCustomPeriodChange(start, end),
                     onCompareToggle: (value) => this.handleCompareToggle(value),
@@ -85,7 +99,7 @@ export class ReportsPage extends BaseComponent {
             if (tabsContainer) {
                 this.tabs = new ReportsTabs(tabsContainer, {
                     tabs: TABS,
-                    activeTab: ReportsState.get('activeTab'),
+                    activeTab: Store.state.reports.activeTab,
                     onTabChange: (tabId) => this.switchTab(tabId)
                 });
                 await this.tabs.mount();
@@ -99,34 +113,19 @@ export class ReportsPage extends BaseComponent {
             this.showError('Ошибка при загрузке страницы отчетов');
         }
         
-        // Подписки
-        this.unsubscribers.push(
-            ReportsState.subscribe((changes) => {
-                const periodChanged = changes.some(c => c.key === 'period');
-                const tabChanged = changes.some(c => c.key === 'activeTab');
-                
-                if (periodChanged) {
-                    this.refresh();
-                }
-                
-                if (tabChanged) {
-                    this.loadCurrentTab();
-                }
-            })
-        );
+        this.subscribeToStore();
     }
     
     // ========== ЗАГРУЗКА ДАННЫХ ==========
     
     async loadCurrentTab() {
-        const activeTab = ReportsState.get('activeTab');
+        const activeTab = Store.state.reports.activeTab;
         
-        // Проверяем, не загружается ли уже эта вкладка
         if (this._loadingTab === activeTab) return;
-        
         this._loadingTab = activeTab;
         
-        // Показываем лоадер
+        Store.state.reports.isLoading = true;
+        
         const contentContainer = this.refs.get('contentContainer');
         if (contentContainer) {
             contentContainer.innerHTML = `
@@ -138,30 +137,26 @@ export class ReportsPage extends BaseComponent {
         }
         
         try {
-            // Проверяем кэш
-            let data = ReportsState.getCachedData(activeTab);
+            let data = Store.state.reports.reportData[activeTab];
             
             if (!data) {
                 data = await this.fetchTabData(activeTab);
-                ReportsState.setCachedData(activeTab, data);
+                Store.state.reports.reportData[activeTab] = data;
             }
             
-            // Обновляем состояние
-            ReportsState.setReportData(activeTab, data);
-            
-            // Рендерим представление
             await this.renderView(activeTab, data);
             
         } catch (error) {
             console.error(`[ReportsPage] Load ${activeTab} error:`, error);
             this.showError(`Ошибка при загрузке отчета "${this.getTabTitle(activeTab)}"`);
         } finally {
+            Store.state.reports.isLoading = false;
             this._loadingTab = null;
         }
     }
     
     async fetchTabData(tabId) {
-        const { startDate, endDate } = ReportsState.get('period');
+        const { startDate, endDate } = Store.state.reports.period;
         
         switch (tabId) {
             case 'dashboard':
@@ -188,32 +183,40 @@ export class ReportsPage extends BaseComponent {
         const container = this.refs.get('contentContainer');
         if (!container) return;
         
-        // Уничтожаем предыдущее представление
         if (this.currentView) {
             this.currentView.destroy();
             this.currentView = null;
         }
         
-        // Создаем новое представление
-        const ViewClass = this.getViewClass(tabId);
+        const ViewClass = await this.getViewClass(tabId);
         this.currentView = new ViewClass(container, {
             data,
-            permissions: this.permissions,
-            onLoadMore: () => this.loadMoreSales()
+            permissions: this.permissions
         });
         
         await this.currentView.mount();
     }
     
-    getViewClass(tabId) {
-        const views = {
-            dashboard: DashboardView,
-            sales: SalesView,
-            products: ProductsView,
-            sellers: SellersView,
-            profit: ProfitView
-        };
-        return views[tabId];
+    async getViewClass(tabId) {
+        switch (tabId) {
+            case 'dashboard':
+                const { DashboardView } = await import('./views/DashboardView.js');
+                return DashboardView;
+            case 'sales':
+                const { SalesView } = await import('./views/SalesView.js');
+                return SalesView;
+            case 'products':
+                const { ProductsView } = await import('./views/ProductsView.js');
+                return ProductsView;
+            case 'sellers':
+                const { SellersView } = await import('./views/SellersView.js');
+                return SellersView;
+            case 'profit':
+                const { ProfitView } = await import('./views/ProfitView.js');
+                return ProfitView;
+            default:
+                throw new Error(`Unknown tab: ${tabId}`);
+        }
     }
     
     getTabTitle(tabId) {
@@ -225,43 +228,51 @@ export class ReportsPage extends BaseComponent {
     
     async refresh(force = false) {
         if (force) {
-            // Очищаем кэш
-            ReportsState.clearCache();
             ReportService.clearCache();
+            Store.state.reports.reportData = {
+                dashboard: null,
+                sales: null,
+                products: null,
+                sellers: null,
+                profit: null
+            };
         }
         
-        const activeTab = ReportsState.get('activeTab');
+        const activeTab = Store.state.reports.activeTab;
+        Store.state.reports.reportData[activeTab] = null;
         
-        // Сбрасываем кэш для активной вкладки
-        ReportsState.clearCacheForTab(activeTab);
-        
-        // Перезагружаем
         await this.loadCurrentTab();
-        
         Notification.info('Данные обновлены');
-    }
-    
-    async loadMoreSales() {
-        // Для пагинации в SalesView
-        // Можно добавить позже при необходимости
     }
     
     // ========== ОБРАБОТЧИКИ ==========
     
     handlePeriodPresetChange(preset) {
-        ReportsState.setPeriodPreset(preset);
+        const range = this.getPresetDateRange(preset);
+        Store.state.reports.period = {
+            preset,
+            startDate: range.start,
+            endDate: range.end
+        };
+        this.refresh();
     }
     
     handleCustomPeriodChange(start, end) {
-        ReportsState.setCustomPeriod(start, end);
+        Store.state.reports.period = {
+            preset: 'custom',
+            startDate: new Date(start),
+            endDate: new Date(end)
+        };
+        this.refresh();
     }
     
     handleCompareToggle(value) {
-        ReportsState.set('compareWithPrevious', value);
+        Store.state.reports.compareWithPrevious = value;
     }
     
     async switchTab(tabId) {
-        ReportsState.set('activeTab', tabId);
+        Store.state.reports.activeTab = tabId;
+        await this.loadCurrentTab();
     }
     
     async handleExport() {
@@ -273,8 +284,8 @@ export class ReportsPage extends BaseComponent {
         try {
             Notification.info('Подготовка экспорта...');
             
-            const activeTab = ReportsState.get('activeTab');
-            const data = ReportsState.get('reportData')[activeTab];
+            const activeTab = Store.state.reports.activeTab;
+            const data = Store.state.reports.reportData[activeTab];
             
             if (!data) {
                 Notification.warning('Нет данных для экспорта');
@@ -294,22 +305,49 @@ export class ReportsPage extends BaseComponent {
     downloadCSV(content, filename) {
         const blob = new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', filename);
-        link.style.display = 'none';
-        
-        document.body.appendChild(link);
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
         link.click();
-        document.body.removeChild(link);
-        
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(link.href);
     }
     
     formatDateForFilename() {
         const d = new Date();
         return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    }
+    
+    getPresetDateRange(preset) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        switch (preset) {
+            case 'today':
+                return { start: today, end: now };
+            case 'yesterday':
+                const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+                return { start: yesterday, end: today };
+            case 'week':
+                const weekStart = new Date(today);
+                weekStart.setDate(today.getDate() - today.getDay() + 1);
+                return { start: weekStart, end: now };
+            case 'month':
+                return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: now };
+            case 'quarter':
+                const quarter = Math.floor(now.getMonth() / 3);
+                return { start: new Date(now.getFullYear(), quarter * 3, 1), end: now };
+            case 'year':
+                return { start: new Date(now.getFullYear(), 0, 1), end: now };
+            default:
+                return this.getPresetDateRange('week');
+        }
+    }
+    
+    // ========== ПОДПИСКИ ==========
+    
+    subscribeToStore() {
+        this.unsubscribers.push(
+            Store.subscribe('reports.activeTab', () => this.loadCurrentTab())
+        );
     }
     
     // ========== ОШИБКИ ==========
@@ -336,44 +374,10 @@ export class ReportsPage extends BaseComponent {
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
-        this.unsubscribers.forEach(unsub => unsub());
+        this.unsubscribers.forEach(u => u());
         
         this.header?.destroy();
         this.tabs?.destroy();
         this.currentView?.destroy();
     }
 }
-
-// Импорты для представлений (ленивая загрузка)
-let DashboardView, SalesView, ProductsView, SellersView, ProfitView;
-
-// Функция для ленивой загрузки представлений
-async function lazyLoadViews() {
-    if (!DashboardView) {
-        const module = await import('./views/DashboardView.js');
-        DashboardView = module.DashboardView;
-    }
-    if (!SalesView) {
-        const module = await import('./views/SalesView.js');
-        SalesView = module.SalesView;
-    }
-    if (!ProductsView) {
-        const module = await import('./views/ProductsView.js');
-        ProductsView = module.ProductsView;
-    }
-    if (!SellersView) {
-        const module = await import('./views/SellersView.js');
-        SellersView = module.SellersView;
-    }
-    if (!ProfitView) {
-        const module = await import('./views/ProfitView.js');
-        ProfitView = module.ProfitView;
-    }
-}
-
-// Вызываем ленивую загрузку при первом использовании
-const originalGetViewClass = ReportsPage.prototype.getViewClass;
-ReportsPage.prototype.getViewClass = async function(tabId) {
-    await lazyLoadViews();
-    return originalGetViewClass.call(this, tabId);
-};
