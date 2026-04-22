@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./core/BaseComponent.js
+// ========================================
+
 /**
  * Base Component
  * 
@@ -14,10 +18,18 @@
  * @abstract
  * @module BaseComponent
  * @requires EventBus
+ * @version 4.1.0
+ * @changes
+ * - Добавлено логирование жизненного цикла для диагностики.
+ * - Улучшена обработка ошибок в mount().
  */
 
 import { EventBus } from './EventBus.js';
 import { formatMoney } from '../utils/formatters.js';
+import { createLogger } from '../utils/logger.js';
+
+// Создаём логгер с именем класса (будет переопределён в наследниках)
+const logger = createLogger('BaseComponent');
 
 export class BaseComponent {
     /**
@@ -36,6 +48,15 @@ export class BaseComponent {
         this._state = {};
         this._isDestroyed = false;
         this._isMounted = false;
+        
+        // Определяем имя компонента для логов
+        this._componentName = this.constructor.name;
+        this._logger = createLogger(this._componentName);
+        
+        this._logger.debug('Component constructed', {
+            containerId: container.id,
+            containerClasses: container.className
+        });
     }
 
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
@@ -56,6 +77,14 @@ export class BaseComponent {
     attachEvents() {
         // Опционально реализуется в наследниках
     }
+    
+    /**
+     * Хук, вызываемый после рендеринга и перед attachEvents
+     * Полезен для инициализации дочерних компонентов
+     */
+    async afterRender() {
+        // Опционально реализуется в наследниках
+    }
 
     /**
      * Вызывается перед уничтожением компонента
@@ -70,41 +99,94 @@ export class BaseComponent {
      * @returns {Promise<void>}
      */
     async mount() {
-        if (this._isDestroyed) {
-            console.warn('[BaseComponent] Attempted to mount destroyed component');
-            return;
-        }
-        
-        this.container.innerHTML = '';
-        
-        try {
-            const html = await this.render();
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = html.trim();
-            this.element = wrapper.firstChild;
+        this._logger.group(`Mounting ${this._componentName}`, async () => {
+            this._logger.debug('mount() started');
             
-            if (this.element) {
-                this.container.appendChild(this.element);
-                this.cacheRefs();
-                this.attachEvents();
-                this._isMounted = true;
+            if (this._isDestroyed) {
+                this._logger.warn('Attempted to mount destroyed component');
+                return;
             }
             
-            this.hideLoader();
-        } catch (error) {
-            console.error('[BaseComponent] Mount failed:', error);
-            this.container.innerHTML = `
-                <div class="error-state">
-                    <div class="error-state-icon">⚠️</div>
-                    <p>Ошибка загрузки компонента</p>
-                    <small>${this.escapeHtml(error.message)}</small>
-                    <button class="btn-secondary" onclick="location.reload()" style="margin-top: 16px;">
-                        Обновить страницу
-                    </button>
-                </div>
-            `;
-            throw error;
+            if (this._isMounted) {
+                this._logger.warn('Component already mounted, unmounting first');
+                this.unmount();
+            }
+            
+            this.container.innerHTML = '';
+            
+            try {
+                this._logger.debug('Calling render()');
+                const html = await this.render();
+                this._logger.debug('render() completed', { 
+                    htmlLength: html?.length || 0,
+                    hasHtml: !!html
+                });
+                
+                if (!html) {
+                    throw new Error('render() returned empty HTML');
+                }
+                
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = html.trim();
+                this.element = wrapper.firstChild;
+                
+                if (!this.element) {
+                    throw new Error('Failed to create element from rendered HTML');
+                }
+                
+                this._logger.debug('Element created', {
+                    tagName: this.element.tagName,
+                    className: this.element.className
+                });
+                
+                this.container.appendChild(this.element);
+                this.cacheRefs();
+                
+                this._logger.debug('Calling afterRender()');
+                await this.afterRender();
+                
+                this._logger.debug('Calling attachEvents()');
+                this.attachEvents();
+                
+                this._isMounted = true;
+                
+                this._logger.info('Component mounted successfully');
+                this.hideLoader();
+                
+            } catch (error) {
+                this._logger.error('Mount failed', {
+                    error: error.message,
+                    stack: error.stack,
+                    component: this._componentName
+                });
+                
+                this.container.innerHTML = `
+                    <div class="error-state">
+                        <div class="error-state-icon">⚠️</div>
+                        <p>Ошибка загрузки компонента ${this._componentName}</p>
+                        <small>${this.escapeHtml(error.message)}</small>
+                        <button class="btn-secondary" onclick="location.reload()" style="margin-top: 16px;">
+                            Обновить страницу
+                        </button>
+                    </div>
+                `;
+                throw error;
+            }
+        });
+    }
+    
+    /**
+     * Размонтирует компонент (удаляет из DOM, но сохраняет состояние)
+     */
+    unmount() {
+        this._logger.debug('Unmounting component');
+        
+        if (this.element?.parentNode) {
+            this.element.remove();
         }
+        
+        this._isMounted = false;
+        this._logger.debug('Component unmounted');
     }
 
     /**
@@ -116,8 +198,11 @@ export class BaseComponent {
      */
     async update() {
         if (this._isDestroyed || !this.element?.parentNode) {
+            this._logger.warn('Cannot update: component destroyed or not in DOM');
             return;
         }
+        
+        this._logger.debug('Updating component');
         
         const parent = this.element.parentNode;
         const nextSibling = this.element.nextSibling;
@@ -138,7 +223,10 @@ export class BaseComponent {
         
         this.element = newElement;
         this.cacheRefs();
+        await this.afterRender();
         this.attachEvents();
+        
+        this._logger.debug('Component updated');
     }
 
     /**
@@ -171,6 +259,8 @@ export class BaseComponent {
     destroy() {
         if (this._isDestroyed) return;
         
+        this._logger.debug('Destroying component');
+        
         this.beforeDestroy();
         
         // Отписка от EventBus
@@ -195,6 +285,8 @@ export class BaseComponent {
         this.refs.clear();
         this._isDestroyed = true;
         this._isMounted = false;
+        
+        this._logger.debug('Component destroyed');
     }
 
     // ========== УПРАВЛЕНИЕ СОБЫТИЯМИ ==========
@@ -245,7 +337,7 @@ export class BaseComponent {
             ];
             
             if (!conditionalRefs.includes(refName)) {
-                console.warn(`[BaseComponent] Ref "${refName}" not found for event listener`);
+                this._logger.warn(`Ref "${refName}" not found for event listener`);
             }
             return false;
         }
@@ -315,6 +407,8 @@ export class BaseComponent {
                 this.refs.set(refName, el);
             }
         });
+        
+        this._logger.debug(`Cached ${this.refs.size} refs`);
     }
 
     /**
