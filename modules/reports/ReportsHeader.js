@@ -1,10 +1,23 @@
+// ========================================
+// FILE: ./modules/reports/ReportsHeader.js
+// ========================================
+
 /**
  * Reports Header Component
  * 
  * Компонент заголовка отчетов с выбором периода.
+ * Поддерживает пресеты периода, кастомный диапазон и экспорт.
+ * 
+ * Архитектурные решения:
+ * - Получает начальные значения через пропсы из `Store.state.reports`.
+ * - Не зависит от легаси стейтов.
+ * - Колбэки для взаимодействия с родительским контроллером.
  * 
  * @module ReportsHeader
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Исправлен путь импорта BaseComponent на относительный.
+ * - Добавлен именованный экспорт для совместимости.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -23,9 +36,7 @@ export class ReportsHeader extends BaseComponent {
     constructor(container, options = {}) {
         super(container);
         this.options = {
-            periodPreset: 'week',
-            startDate: null,
-            endDate: null,
+            period: { preset: 'week', startDate: null, endDate: null },
             compareWithPrevious: true,
             onPeriodChange: null,
             onCustomPeriodChange: null,
@@ -39,19 +50,20 @@ export class ReportsHeader extends BaseComponent {
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
     
     async render() {
-        const { periodPreset, startDate, endDate, compareWithPrevious } = this.options;
+        const { period, compareWithPrevious } = this.options;
+        const { preset, startDate, endDate } = period;
         
         const startDateStr = startDate ? this.formatDateForInput(startDate) : '';
         const endDateStr = endDate ? this.formatDateForInput(endDate) : '';
-        const showCustom = periodPreset === 'custom';
+        const showCustom = preset === 'custom';
         
         return `
             <div class="reports-header">
                 <div class="period-selector">
                     <select class="period-preset" data-ref="periodPreset">
-                        ${PERIOD_PRESETS.map(preset => `
-                            <option value="${preset.value}" ${periodPreset === preset.value ? 'selected' : ''}>
-                                ${preset.label}
+                        ${PERIOD_PRESETS.map(p => `
+                            <option value="${p.value}" ${preset === p.value ? 'selected' : ''}>
+                                ${p.label}
                             </option>
                         `).join('')}
                     </select>
@@ -139,10 +151,8 @@ export class ReportsHeader extends BaseComponent {
     
     // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
     
-    setPeriod(preset, startDate, endDate) {
-        this.options.periodPreset = preset;
-        this.options.startDate = startDate;
-        this.options.endDate = endDate;
+    setPeriod(period) {
+        this.options.period = period;
         this.update();
     }
     
@@ -152,3 +162,6 @@ export class ReportsHeader extends BaseComponent {
         if (checkbox) checkbox.checked = value;
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default ReportsHeader;
