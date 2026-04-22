@@ -13,12 +13,9 @@
  * - Управление скидками через `Store.state.cashier`.
  * 
  * @module Cart
- * @version 5.0.0
+ * @version 5.0.1
  * @changes
- * - Удалена зависимость от `CashierState`.
- * - Подключение к `Store.state.cashier`.
- * - Убраны вложенные компоненты (CartItem, CartSummary).
- * - Убрана логика сканера и сохранения в localStorage.
+ * - Исправлен импорт ConfirmDialog.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
