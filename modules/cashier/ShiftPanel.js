@@ -5,43 +5,47 @@
 /**
  * Shift Panel Component
  * 
- * Панель управления кассовой сменой.
- * Отображает статистику и предоставляет кнопки открытия/закрытия смены.
- * Поддерживает офлайн-режим при недоступности сервера.
+ * Панель отображения статистики кассовой смены и кнопок управления.
  * 
  * Архитектурные решения:
- * - Полный переход на глобальный `Store`.
- * - Офлайн-режим: сохранение смены в localStorage.
- * - Автоматическая синхронизация при восстановлении сети.
+ * - Dumb-компонент: только отображение и эмит событий.
+ * - Бизнес-логика вынесена в `CashierApp` и `ShiftService`.
+ * - Использует глобальный `Store` для чтения состояния.
+ * - Эмитит события через `EventBus` для запросов открытия/закрытия.
+ * - Поддерживает отображение офлайн-смен (is_local).
  * 
  * @module ShiftPanel
- * @version 5.0.1
+ * @version 6.0.0
  * @changes
- * - Добавлена обработка ошибок сети.
- * - Добавлен офлайн-режим открытия смены.
- * - Улучшены уведомления.
+ * - Полный рефакторинг: удалена бизнес-логика.
+ * - Добавлено структурированное логирование.
+ * - Компонент стал чисто презентационным.
+ * - Добавлена поддержка пропсов загрузки из Store.
+ * - Убрана работа с localStorage (перенесена в ShiftService).
+ * - Добавлено отображение статуса офлайн-смены.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
 import { Store } from '../../core/Store.js';
-import { ShiftService } from '../../services/ShiftService.js';
-import { AuthManager } from '../auth/AuthManager.js';
-import { Notification } from '../common/Notification.js';
-import { ConfirmDialog } from '../common/ConfirmDialog.js';
+import { EventBus } from '../../core/EventBus.js';
+import { createLogger } from '../../utils/logger.js';
 import { formatMoney, formatNumber } from '../../utils/formatters.js';
+
+// ========== LOGGER ==========
+const logger = createLogger('ShiftPanel');
 
 export class ShiftPanel extends BaseComponent {
     constructor(container, options = {}) {
         super(container);
+        
         this.options = {
-            onShiftOpened: null,
-            onShiftClosed: null,
+            // Колбэки теперь не нужны, используем EventBus
             ...options
         };
         
-        this.user = AuthManager.getUser();
         this.unsubscribers = [];
-        this.isOpeningShift = false;
+        
+        logger.debug('ShiftPanel constructed');
     }
     
     // ========== ЖИЗНЕННЫЙ ЦИКЛ ==========
@@ -51,19 +55,44 @@ export class ShiftPanel extends BaseComponent {
         const currentShift = cashier.currentShift;
         const stats = cashier.shiftStats || { revenue: 0, salesCount: 0, averageCheck: 0, profit: 0 };
         
+        // Проверяем глобальное состояние загрузки операций со сменой
+        const isShiftActionPending = cashier.isShiftActionPending || false;
+        
         const hasOpenShift = currentShift !== null;
+        const isLocalShift = currentShift?.is_local || false;
+        
+        logger.debug('Rendering ShiftPanel', {
+            hasOpenShift,
+            isLocalShift,
+            shiftId: currentShift?.id,
+            isShiftActionPending,
+            stats: {
+                revenue: stats.revenue,
+                salesCount: stats.salesCount
+            }
+        });
 
         return `
             <div class="shift-bar">
                 <div class="shift-info">
                     <div class="shift-indicator ${hasOpenShift ? '' : 'closed'}">
-                        <span class="indicator-dot"></span>
-                        <span>${hasOpenShift ? 'Смена открыта' : 'Смена закрыта'}</span>
+                        <span class="indicator-dot ${isLocalShift ? 'local' : ''}"></span>
+                        <span>
+                            ${hasOpenShift 
+                                ? (isLocalShift ? 'Смена открыта (офлайн)' : 'Смена открыта') 
+                                : 'Смена закрыта'
+                            }
+                        </span>
                     </div>
                     ${hasOpenShift && currentShift ? `
                         <span class="shift-time">
                             ${new Date(currentShift.opened_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                         </span>
+                        ${isLocalShift ? `
+                            <span class="shift-badge local" title="Смена создана офлайн, будет синхронизирована при подключении к сети">
+                                📡 Ожидает синхронизации
+                            </span>
+                        ` : ''}
                     ` : ''}
                 </div>
                 
@@ -90,14 +119,24 @@ export class ShiftPanel extends BaseComponent {
                     </div>
                     
                     <div class="shift-actions">
-                        <button class="btn-secondary btn-sm" data-action="closeShift" ${this.isOpeningShift ? 'disabled' : ''}>
-                            Закрыть смену
+                        <button 
+                            class="btn-secondary btn-sm" 
+                            data-action="closeShift" 
+                            ${isShiftActionPending ? 'disabled' : ''}
+                            title="${isLocalShift ? 'Смена будет закрыта локально' : 'Закрыть смену и сформировать отчёт'}"
+                        >
+                            ${isShiftActionPending ? 'Закрытие...' : 'Закрыть смену'}
                         </button>
                     </div>
                 ` : `
                     <div class="shift-actions">
-                        <button class="btn-primary btn-sm" data-action="openShift" ${this.isOpeningShift ? 'disabled' : ''}>
-                            ${this.isOpeningShift ? 'Открытие...' : 'Открыть смену'}
+                        <button 
+                            class="btn-primary btn-sm" 
+                            data-action="openShift" 
+                            ${isShiftActionPending ? 'disabled' : ''}
+                            title="Открыть новую кассовую смену"
+                        >
+                            ${isShiftActionPending ? 'Открытие...' : 'Открыть смену'}
                         </button>
                     </div>
                 `}
@@ -108,272 +147,157 @@ export class ShiftPanel extends BaseComponent {
     // ========== ПРИВЯЗКА СОБЫТИЙ ==========
     
     attachEvents() {
-        // Кнопки управления
-        this.container.addEventListener('click', async (e) => {
+        logger.debug('Attaching events');
+        
+        // Кнопки управления (делегирование)
+        this.container.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action]');
             if (!btn) return;
             
             const action = btn.dataset.action;
             
+            logger.debug('Button clicked', { action });
+            
             if (action === 'openShift') {
-                await this.handleOpenShift();
+                this.emitOpenShiftRequest();
             } else if (action === 'closeShift') {
-                await this.handleCloseShift();
+                this.emitCloseShiftRequest();
             }
         });
         
-        // Подписка на изменения смены и статистики
+        // Подписка на изменения состояния в Store
         this.unsubscribers.push(
-            Store.subscribe('cashier.currentShift', () => this.update()),
-            Store.subscribe('cashier.shiftStats', () => this.update())
+            Store.subscribe('cashier.currentShift', (change) => {
+                logger.debug('Store changed: currentShift', { 
+                    oldValue: change.oldValue?.id, 
+                    newValue: change.newValue?.id 
+                });
+                this.update();
+            }),
+            
+            Store.subscribe('cashier.shiftStats', (change) => {
+                logger.debug('Store changed: shiftStats', { 
+                    revenue: change.newValue?.revenue,
+                    salesCount: change.newValue?.salesCount
+                });
+                this.update();
+            }),
+            
+            Store.subscribe('cashier.isShiftActionPending', (change) => {
+                logger.debug('Store changed: isShiftActionPending', { 
+                    oldValue: change.oldValue, 
+                    newValue: change.newValue 
+                });
+                this.update();
+            })
         );
         
-        // Подписка на восстановление сети
-        window.addEventListener('online', () => this.handleOnline());
-    }
-    
-    // ========== ОБРАБОТЧИКИ СМЕНЫ ==========
-    
-    async handleOpenShift() {
-        if (this.isOpeningShift) return;
-        
-        this.isOpeningShift = true;
-        this.update();
-        
-        try {
-            let shift = null;
-            
-            // Проверяем соединение с сервером
-            const isOnline = navigator.onLine;
-            
-            if (isOnline) {
-                try {
-                    // Пытаемся открыть смену на сервере
-                    shift = await ShiftService.openShift(this.user.id);
-                    console.log('[ShiftPanel] Shift opened on server:', shift.id);
-                } catch (error) {
-                    console.warn('[ShiftPanel] Server shift open failed:', error);
-                    
-                    // Если ошибка не критичная (например, таймаут), создаем локальную смену
-                    if (error.message?.includes('timeout') || error.message?.includes('network') || error.message?.includes('fetch')) {
-                        Notification.warning('Сервер недоступен. Смена открыта локально.');
-                        shift = this.createLocalShift();
-                    } else {
-                        throw error;
-                    }
-                }
-            } else {
-                // Офлайн - создаем локальную смену
-                Notification.info('Работа в офлайн-режиме. Смена открыта локально.');
-                shift = this.createLocalShift();
-            }
-            
-            if (!shift) {
-                shift = this.createLocalShift();
-            }
-            
-            // Сохраняем смену в Store
-            Store.state.cashier.currentShift = shift;
-            Store.state.cashier.shiftStats = {
-                revenue: 0,
-                salesCount: 0,
-                averageCheck: 0,
-                profit: 0
-            };
-            
-            // Сохраняем в localStorage для восстановления
-            this.saveShiftToStorage(shift);
-            
-            Notification.success('Смена успешно открыта');
-            
-            if (this.options.onShiftOpened) {
-                this.options.onShiftOpened(shift);
-            }
-            
-        } catch (error) {
-            console.error('[ShiftPanel] Open shift error:', error);
-            
-            let errorMessage = 'Ошибка при открытии смены';
-            if (error.message?.includes('already has an open shift')) {
-                errorMessage = 'У вас уже есть открытая смена';
-            } else if (error.message) {
-                errorMessage = error.message;
-            }
-            
-            Notification.error(errorMessage);
-        } finally {
-            this.isOpeningShift = false;
-            this.update();
-        }
-    }
-    
-    /**
-     * Создает локальную смену для офлайн-режима
-     */
-    createLocalShift() {
-        const localId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
-        return {
-            id: localId,
-            user_id: this.user.id,
-            opened_at: new Date().toISOString(),
-            initial_cash: 0,
-            status: 'active',
-            is_local: true, // Флаг локальной смены
-            created_at: new Date().toISOString()
-        };
-    }
-    
-    /**
-     * Сохраняет смену в localStorage
-     */
-    saveShiftToStorage(shift) {
-        try {
-            const shifts = JSON.parse(localStorage.getItem('cashier_shifts') || '[]');
-            shifts.push(shift);
-            localStorage.setItem('cashier_shifts', JSON.stringify(shifts));
-        } catch (error) {
-            console.warn('[ShiftPanel] Failed to save shift to storage:', error);
-        }
-    }
-    
-    /**
-     * Обработчик восстановления сети
-     */
-    async handleOnline() {
-        const currentShift = Store.state.cashier.currentShift;
-        
-        // Если есть локальная смена, пытаемся синхронизировать
-        if (currentShift?.is_local) {
-            console.log('[ShiftPanel] Online detected, syncing local shift...');
-            
-            try {
-                // Пытаемся создать смену на сервере
-                const serverShift = await ShiftService.openShift(this.user.id);
-                
-                // Обновляем ID смены в Store
-                Store.state.cashier.currentShift = {
-                    ...serverShift,
-                    local_id: currentShift.id // Сохраняем связь с локальной
-                };
-                
-                // Обновляем в localStorage
-                this.updateShiftInStorage(currentShift.id, serverShift);
-                
-                Notification.success('Смена синхронизирована с сервером');
-            } catch (error) {
-                console.warn('[ShiftPanel] Failed to sync shift:', error);
-                Notification.warning('Не удалось синхронизировать смену. Продолжайте работу.');
-            }
-        }
-    }
-    
-    /**
-     * Обновляет смену в localStorage
-     */
-    updateShiftInStorage(localId, serverShift) {
-        try {
-            const shifts = JSON.parse(localStorage.getItem('cashier_shifts') || '[]');
-            const index = shifts.findIndex(s => s.id === localId);
-            
-            if (index !== -1) {
-                shifts[index] = { ...shifts[index], ...serverShift, is_local: false, synced_at: new Date().toISOString() };
-                localStorage.setItem('cashier_shifts', JSON.stringify(shifts));
-            }
-        } catch (error) {
-            console.warn('[ShiftPanel] Failed to update shift in storage:', error);
-        }
-    }
-
-    async handleCloseShift() {
-        const shiftId = Store.getShiftId();
-        if (!shiftId) return;
-        
-        const confirmed = await ConfirmDialog.show({
-            title: 'Закрытие смены',
-            message: 'Вы уверены, что хотите закрыть смену? Будет сформирован итоговый отчет.',
-            confirmText: 'Закрыть смену',
-            cancelText: 'Отмена',
-            type: 'warning'
+        // Подписка на события синхронизации (для отображения статуса)
+        EventBus.on('shift:sync:started', () => {
+            logger.debug('Shift sync started');
+            // Можно показать индикатор синхронизации
         });
         
-        if (!confirmed) return;
+        EventBus.on('shift:sync:completed', (data) => {
+            logger.debug('Shift sync completed', data);
+            // Обновляем UI после синхронизации
+            this.update();
+        });
         
-        try {
-            const currentShift = Store.state.cashier.currentShift;
-            
-            let result = null;
-            
-            // Если смена локальная или нет сети
-            if (currentShift?.is_local || !navigator.onLine) {
-                // Закрываем локально
-                result = {
-                    id: shiftId,
-                    total_revenue: Store.state.cashier.shiftStats.revenue,
-                    total_profit: Store.state.cashier.shiftStats.profit,
-                    sales_count: Store.state.cashier.shiftStats.salesCount,
-                    closed_at: new Date().toISOString(),
-                    is_local: true
-                };
-                
-                // Сохраняем в архив
-                this.archiveLocalShift(currentShift, result);
-                
-                Notification.warning('Смена закрыта локально. Данные будут отправлены при восстановлении сети.');
-            } else {
-                // Закрываем на сервере
-                result = await ShiftService.closeShift(shiftId);
-            }
-            
-            // Очищаем состояние
-            Store.state.cashier.currentShift = null;
-            Store.state.cashier.shiftStats = {
-                revenue: 0,
-                salesCount: 0,
-                averageCheck: 0,
-                profit: 0
-            };
-            Store.state.cashier.cartItems = [];
-            Store.state.cashier.cartTotalDiscount = 0;
-            
-            Notification.success(`Смена закрыта. Выручка: ${formatMoney(result.total_revenue || 0)}`);
-            
-            if (this.options.onShiftClosed) {
-                this.options.onShiftClosed(result);
-            }
-        } catch (error) {
-            console.error('[ShiftPanel] Close shift error:', error);
-            Notification.error('Ошибка при закрытии смены: ' + (error.message || 'Неизвестная ошибка'));
+        EventBus.on('shift:sync:failed', (error) => {
+            logger.warn('Shift sync failed', error);
+            // Можно показать предупреждение
+        });
+    }
+    
+    // ========== ЭМИТ СОБЫТИЙ ==========
+    
+    /**
+     * Эмитит запрос на открытие смены
+     */
+    emitOpenShiftRequest() {
+        const currentShift = Store.state.cashier.currentShift;
+        
+        if (currentShift) {
+            logger.warn('Open shift requested but shift already open', { shiftId: currentShift.id });
+            return;
         }
+        
+        logger.info('Emitting shift:open-requested event');
+        
+        EventBus.emit('shift:open-requested', {
+            timestamp: new Date().toISOString()
+        });
     }
     
     /**
-     * Архивирует локальную смену
+     * Эмитит запрос на закрытие смены
      */
-    archiveLocalShift(shift, result) {
-        try {
-            const archive = JSON.parse(localStorage.getItem('cashier_shifts_archive') || '[]');
-            archive.push({
-                ...shift,
-                ...result,
-                archived_at: new Date().toISOString()
-            });
-            localStorage.setItem('cashier_shifts_archive', JSON.stringify(archive));
-            
-            // Удаляем из активных
-            const shifts = JSON.parse(localStorage.getItem('cashier_shifts') || '[]');
-            const filtered = shifts.filter(s => s.id !== shift.id);
-            localStorage.setItem('cashier_shifts', JSON.stringify(filtered));
-        } catch (error) {
-            console.warn('[ShiftPanel] Failed to archive shift:', error);
+    emitCloseShiftRequest() {
+        const currentShift = Store.state.cashier.currentShift;
+        
+        if (!currentShift) {
+            logger.warn('Close shift requested but no shift open');
+            return;
         }
+        
+        logger.info('Emitting shift:close-requested event', { 
+            shiftId: currentShift.id,
+            isLocal: currentShift.is_local || false
+        });
+        
+        EventBus.emit('shift:close-requested', {
+            shiftId: currentShift.id,
+            isLocal: currentShift.is_local || false,
+            currentStats: Store.state.cashier.shiftStats
+        });
+    }
+    
+    // ========== ПУБЛИЧНЫЕ МЕТОДЫ ==========
+    
+    /**
+     * Принудительно обновляет панель
+     */
+    refresh() {
+        logger.debug('Manual refresh requested');
+        this.update();
+    }
+    
+    /**
+     * Проверяет, открыта ли смена
+     * @returns {boolean}
+     */
+    isShiftOpen() {
+        return Store.state.cashier.currentShift !== null;
+    }
+    
+    /**
+     * Проверяет, является ли текущая смена локальной (офлайн)
+     * @returns {boolean}
+     */
+    isLocalShift() {
+        return Store.state.cashier.currentShift?.is_local || false;
     }
     
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
-        this.unsubscribers.forEach(u => u());
+        logger.debug('Destroying ShiftPanel');
+        
+        this.unsubscribers.forEach(unsub => {
+            try {
+                unsub();
+            } catch (error) {
+                logger.warn('Error during unsubscribe', { error });
+            }
+        });
         this.unsubscribers = [];
-        window.removeEventListener('online', () => this.handleOnline());
     }
 }
+
+// Для отладки
+if (typeof window !== 'undefined') {
+    window.__ShiftPanel = ShiftPanel;
+}
+
+export default ShiftPanel;
