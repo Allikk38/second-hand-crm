@@ -4,6 +4,7 @@
 
 import { supabase } from '../core/supabase.js';
 import { requireAuth, logout } from '../core/auth.js';
+import { formatMoney, escapeHtml, getCategoryName } from '../utils/formatters.js';
 
 // Проверяем авторизацию
 const user = await requireAuth();
@@ -197,7 +198,18 @@ async function checkout() {
     if (!currentShift) return;
     
     const total = cartItems.reduce((sum, i) => sum + (i.price * i.quantity), 0);
-    const method = prompt('Способ оплаты (cash/card/transfer):', 'cash') || 'cash';
+    
+    // Простое окно выбора оплаты
+    const paymentMethods = ['cash', 'card', 'transfer'];
+    const methodNames = ['Наличные', 'Карта', 'Перевод'];
+    
+    const methodChoice = prompt(
+        'Выберите способ оплаты:\n1 - Наличные\n2 - Карта\n3 - Перевод',
+        '1'
+    );
+    
+    const methodIndex = parseInt(methodChoice) - 1;
+    const method = paymentMethods[methodIndex] || 'cash';
     
     try {
         const items = cartItems.map(i => ({
@@ -272,13 +284,13 @@ function render() {
     
     if (!currentShift) {
         content.innerHTML = `
-            <div class="shift-closed-message">
-                <h2>🔒 Смена закрыта</h2>
-                <p style="margin-bottom: 20px;">Для начала работы откройте смену</p>
-                <button class="btn-primary" onclick="window.openShift()">Открыть смену</button>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 56px); text-align: center;">
+                <h2 style="margin-bottom: 12px;">🔒 Смена закрыта</h2>
+                <p style="margin-bottom: 20px; color: #64748b;">Для начала работы откройте смену</p>
+                <button class="btn-primary" id="openShiftBtn">Открыть смену</button>
             </div>
         `;
-        window.openShift = openShift;
+        document.getElementById('openShiftBtn').addEventListener('click', openShift);
         return;
     }
     
@@ -311,7 +323,7 @@ function render() {
                             <span class="stat-value">${formatMoney(shiftStats.profit)}</span>
                         </div>
                     </div>
-                    <button class="btn-secondary" onclick="window.closeShift()">Закрыть смену</button>
+                    <button class="btn-secondary" id="closeShiftBtn">Закрыть смену</button>
                 </div>
                 
                 <div class="products-toolbar">
@@ -361,12 +373,12 @@ function render() {
                 <div class="cart-header">
                     <h3>🛒 Корзина</h3>
                     <span class="cart-count">${cartCount} поз.</span>
-                    ${cartCount > 0 ? '<button class="btn-ghost" onclick="window.clearCart()">Очистить</button>' : ''}
+                    ${cartCount > 0 ? '<button class="btn-ghost" id="clearCartBtn">Очистить</button>' : ''}
                 </div>
                 
                 <div class="cart-items">
                     ${cartItems.length === 0 ? `
-                        <div class="empty-cart">
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; color: #94a3b8;">
                             <div style="font-size: 48px; opacity: 0.3;">🛒</div>
                             <p>Корзина пуста</p>
                         </div>
@@ -377,11 +389,11 @@ function render() {
                                 <div class="cart-item-price">${formatMoney(item.price)} × ${item.quantity}</div>
                             </div>
                             <div class="cart-item-actions">
-                                <button class="qty-btn" onclick="window.updateQuantity('${item.id}', -1)">−</button>
+                                <button class="qty-btn" data-decrease="${item.id}">−</button>
                                 <span class="item-qty">${item.quantity}</span>
-                                <button class="qty-btn" onclick="window.updateQuantity('${item.id}', 1)">+</button>
+                                <button class="qty-btn" data-increase="${item.id}">+</button>
                                 <span class="item-total">${formatMoney(item.price * item.quantity)}</span>
-                                <button class="remove-btn" onclick="window.removeItem('${item.id}')">✕</button>
+                                <button class="remove-btn" data-remove="${item.id}">✕</button>
                             </div>
                         </div>
                     `).join('')}
@@ -392,7 +404,7 @@ function render() {
                         <span>ИТОГО</span>
                         <span>${formatMoney(cartTotal)}</span>
                     </div>
-                    <button class="btn-checkout" onclick="window.checkout()" ${cartCount === 0 ? 'disabled' : ''}>
+                    <button class="btn-checkout" id="checkoutBtn" ${cartCount === 0 ? 'disabled' : ''}>
                         Оформить продажу
                     </button>
                 </div>
@@ -401,10 +413,17 @@ function render() {
     `;
     
     // Привязка событий
-    document.getElementById('searchInput')?.addEventListener('input', (e) => {
-        searchQuery = e.target.value;
-        render();
-    });
+    document.getElementById('closeShiftBtn')?.addEventListener('click', closeShift);
+    document.getElementById('clearCartBtn')?.addEventListener('click', clearCart);
+    document.getElementById('checkoutBtn')?.addEventListener('click', checkout);
+    
+    const searchInputEl = document.getElementById('searchInput');
+    if (searchInputEl) {
+        searchInputEl.addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            render();
+        });
+    }
     
     document.querySelectorAll('[data-category]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -421,30 +440,17 @@ function render() {
         });
     });
     
-    window.updateQuantity = updateQuantity;
-    window.removeItem = removeItem;
-    window.clearCart = clearCart;
-    window.checkout = checkout;
-    window.closeShift = closeShift;
-}
-
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
-function formatMoney(amount) {
-    return new Intl.NumberFormat('ru-RU', {
-        style: 'currency',
-        currency: 'RUB',
-        minimumFractionDigits: 0
-    }).format(amount || 0);
-}
-
-function getCategoryName(cat) {
-    const names = { clothes: 'Одежда', toys: 'Игрушки', dishes: 'Посуда', other: 'Другое' };
-    return names[cat] || cat;
+    document.querySelectorAll('[data-decrease]').forEach(btn => {
+        btn.addEventListener('click', () => updateQuantity(btn.dataset.decrease, -1));
+    });
+    
+    document.querySelectorAll('[data-increase]').forEach(btn => {
+        btn.addEventListener('click', () => updateQuantity(btn.dataset.increase, 1));
+    });
+    
+    document.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.addEventListener('click', () => removeItem(btn.dataset.remove));
+    });
 }
 
 // Запуск
