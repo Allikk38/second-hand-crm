@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./core/Store.js
+// ========================================
+
 /**
  * Store - Centralized State Management
  * 
@@ -12,12 +16,11 @@
  * - Иммутабельные снапшоты для предотвращения случайных мутаций
  * 
  * @module Store
- * @version 5.0.0
+ * @version 6.0.0
  * @changes
- * - Полная замена InventoryState, CashierState, ReportsState
- * - Добавлена автоматическая реактивность через Proxy (больше не нужен .set())
- * - Добавлена поддержка плагинов (persist, logger)
- * - Единая система событий store:changed
+ * - Добавлены методы для работы с корзиной.
+ * - Добавлен PersistPlugin для сохранения состояния.
+ * - Расширен batch для асинхронных операций.
  */
 
 import { EventBus } from './EventBus.js';
@@ -98,7 +101,6 @@ class StoreClass {
         };
 
         // Подписчики на изменения
-        // Формат: Map<pathPattern, Set<callback>>
         this._subscribers = new Map();
         
         // Плагины
@@ -123,6 +125,9 @@ class StoreClass {
         this.state.reports.period.startDate = range.start;
         this.state.reports.period.endDate = range.end;
         
+        // Добавляем плагин сохранения состояния
+        this.use(new PersistPlugin());
+        
         console.log('[Store] Initialized with reactive state');
     }
 
@@ -142,12 +147,6 @@ class StoreClass {
 
     // ========== РЕАКТИВНЫЙ PROXY ==========
 
-    /**
-     * Создает рекурсивный Proxy для отслеживания изменений
-     * @param {Object} target - Целевой объект
-     * @param {string} path - Текущий путь в дереве состояния
-     * @returns {Proxy}
-     */
     _createReactiveProxy(target, path) {
         const self = this;
         
@@ -156,9 +155,7 @@ class StoreClass {
                 const value = obj[prop];
                 const newPath = path ? `${path}.${prop}` : prop;
                 
-                // Если значение - объект и не является примитивом, оборачиваем в Proxy
                 if (value && typeof value === 'object') {
-                    // Не оборачиваем Set и Map (они не должны быть реактивными глубоко)
                     if (value instanceof Set || value instanceof Map) {
                         return value;
                     }
@@ -171,18 +168,14 @@ class StoreClass {
             set(obj, prop, value) {
                 const oldValue = obj[prop];
                 
-                // Если значение не изменилось - ничего не делаем
                 if (oldValue === value) {
                     return true;
                 }
                 
-                // Устанавливаем новое значение
                 obj[prop] = value;
                 
-                // Формируем полный путь к измененному свойству
                 const changePath = path ? `${path}.${prop}` : prop;
                 
-                // Оповещаем подписчиков
                 self._notifyChange(changePath, value, oldValue);
                 
                 return true;
@@ -202,33 +195,20 @@ class StoreClass {
         });
     }
 
-    /**
-     * Оповещает подписчиков об изменении
-     * @param {string} path - Путь к измененному свойству
-     * @param {*} newValue - Новое значение
-     * @param {*} oldValue - Старое значение
-     */
     _notifyChange(path, newValue, oldValue) {
         const change = { path, newValue, oldValue, timestamp: Date.now() };
         
-        // Если в режиме пакетной обработки - накапливаем изменения
         if (this._batchMode) {
             this._pendingChanges.push(change);
             return;
         }
         
-        // Иначе отправляем немедленно
         this._dispatchChange(change);
     }
 
-    /**
-     * Отправляет изменение подписчикам
-     * @param {Object} change - Объект изменения
-     */
     _dispatchChange(change) {
         const { path } = change;
         
-        // Проходим по всем подписчикам и проверяем совпадение путей
         this._subscribers.forEach((callbacks, pattern) => {
             if (this._pathMatches(path, pattern)) {
                 callbacks.forEach(callback => {
@@ -241,10 +221,8 @@ class StoreClass {
             }
         });
         
-        // Глобальное событие для отладки
         EventBus.emit('store:changed', change);
         
-        // Вызываем хуки плагинов
         this._plugins.forEach(plugin => {
             if (plugin.onChange) {
                 try {
@@ -256,40 +234,20 @@ class StoreClass {
         });
     }
 
-    /**
-     * Проверяет, соответствует ли путь паттерну подписки
-     * @param {string} path - Полный путь ('inventory.products')
-     * @param {string} pattern - Паттерн подписки ('inventory.*' или 'inventory.products')
-     * @returns {boolean}
-     */
     _pathMatches(path, pattern) {
-        // Точное совпадение
-        if (path === pattern) {
-            return true;
-        }
-        
-        // Паттерн с wildcard (*)
+        if (path === pattern) return true;
         if (pattern.endsWith('.*')) {
             const prefix = pattern.slice(0, -2);
             return path.startsWith(prefix + '.') || path === prefix;
         }
-        
-        // Паттерн - префикс пути
         if (pattern.endsWith('.')) {
             return path.startsWith(pattern);
         }
-        
         return false;
     }
 
     // ========== ПУБЛИЧНЫЙ API ==========
 
-    /**
-     * Подписаться на изменения в состоянии
-     * @param {string} pathPattern - Паттерн пути ('inventory.*', 'cashier.cartItems')
-     * @param {Function} callback - Функция обратного вызова (change) => void
-     * @returns {Function} Функция отписки
-     */
     subscribe(pathPattern, callback) {
         if (!this._subscribers.has(pathPattern)) {
             this._subscribers.set(pathPattern, new Set());
@@ -297,9 +255,6 @@ class StoreClass {
         
         this._subscribers.get(pathPattern).add(callback);
         
-        console.log(`[Store] Subscribed to: ${pathPattern}`);
-        
-        // Возвращаем функцию отписки
         return () => {
             const callbacks = this._subscribers.get(pathPattern);
             if (callbacks) {
@@ -307,30 +262,15 @@ class StoreClass {
                 if (callbacks.size === 0) {
                     this._subscribers.delete(pathPattern);
                 }
-                console.log(`[Store] Unsubscribed from: ${pathPattern}`);
             }
         };
     }
 
-    /**
-     * Подписаться на несколько паттернов одновременно
-     * @param {string[]} patterns - Массив паттернов
-     * @param {Function} callback - Функция обратного вызова
-     * @returns {Function} Функция отписки от всех
-     */
     subscribeMany(patterns, callback) {
         const unsubscribers = patterns.map(pattern => this.subscribe(pattern, callback));
-        
-        return () => {
-            unsubscribers.forEach(unsub => unsub());
-        };
+        return () => unsubscribers.forEach(unsub => unsub());
     }
 
-    /**
-     * Получить значение по пути
-     * @param {string} path - Путь к свойству ('inventory.products')
-     * @returns {*} Значение или undefined
-     */
     get(path) {
         const parts = path.split('.');
         let current = this._state;
@@ -345,11 +285,6 @@ class StoreClass {
         return current;
     }
 
-    /**
-     * Получить иммутабельный снапшот части состояния
-     * @param {string} path - Путь к свойству
-     * @returns {*} Копия значения
-     */
     getSnapshot(path) {
         const value = this.get(path);
         
@@ -357,48 +292,30 @@ class StoreClass {
             return value;
         }
         
-        // Для Set и Map создаем новые экземпляры
-        if (value instanceof Set) {
-            return new Set(value);
-        }
-        if (value instanceof Map) {
-            return new Map(value);
-        }
-        
-        // Для объектов - глубокая копия
-        if (typeof value === 'object') {
-            return JSON.parse(JSON.stringify(value));
-        }
+        if (value instanceof Set) return new Set(value);
+        if (value instanceof Map) return new Map(value);
+        if (typeof value === 'object') return JSON.parse(JSON.stringify(value));
         
         return value;
     }
 
-    /**
-     * Начать пакетное обновление (все изменения отправятся разом)
-     */
     beginBatch() {
         this._batchMode = true;
         this._pendingChanges = [];
     }
 
-    /**
-     * Завершить пакетное обновление и отправить все изменения
-     */
     endBatch() {
         this._batchMode = false;
         
-        // Группируем изменения по путям (берем последнее для каждого пути)
         const latestChanges = new Map();
         this._pendingChanges.forEach(change => {
             latestChanges.set(change.path, change);
         });
         
-        // Отправляем сгруппированные изменения
         latestChanges.forEach(change => {
             this._dispatchChange(change);
         });
         
-        // Отправляем событие о завершении пакета
         if (this._pendingChanges.length > 0) {
             EventBus.emit('store:batch-completed', {
                 changes: Array.from(latestChanges.values()),
@@ -409,10 +326,6 @@ class StoreClass {
         this._pendingChanges = [];
     }
 
-    /**
-     * Выполнить функцию в пакетном режиме
-     * @param {Function} fn - Функция для выполнения
-     */
     batch(fn) {
         this.beginBatch();
         try {
@@ -422,10 +335,6 @@ class StoreClass {
         }
     }
 
-    /**
-     * Сбросить определенную ветку состояния к начальному значению
-     * @param {string} branch - Имя ветки ('inventory', 'cashier', 'reports')
-     */
     reset(branch) {
         const defaultState = {
             inventory: {
@@ -444,12 +353,7 @@ class StoreClass {
             },
             cashier: {
                 currentShift: null,
-                shiftStats: {
-                    revenue: 0,
-                    salesCount: 0,
-                    averageCheck: 0,
-                    profit: 0
-                },
+                shiftStats: { revenue: 0, salesCount: 0, averageCheck: 0, profit: 0 },
                 products: [],
                 filteredProducts: [],
                 categories: [],
@@ -475,13 +379,7 @@ class StoreClass {
                 },
                 compareWithPrevious: true,
                 isLoading: false,
-                reportData: {
-                    dashboard: null,
-                    sales: null,
-                    products: null,
-                    sellers: null,
-                    profit: null
-                }
+                reportData: { dashboard: null, sales: null, products: null, sellers: null, profit: null }
             }
         };
         
@@ -489,14 +387,9 @@ class StoreClass {
             this.batch(() => {
                 Object.assign(this._state[branch], defaultState[branch]);
             });
-            
-            console.log(`[Store] Reset branch: ${branch}`);
         }
     }
 
-    /**
-     * Полностью сбросить все состояние (при выходе из системы)
-     */
     resetAll() {
         const defaultState = {
             inventory: {
@@ -559,16 +452,8 @@ class StoreClass {
         this.batch(() => {
             Object.assign(this._state, JSON.parse(JSON.stringify(defaultState)));
         });
-        
-        console.log('[Store] Full reset completed');
     }
 
-    // ========== ПЛАГИНЫ ==========
-
-    /**
-     * Зарегистрировать плагин
-     * @param {Object} plugin - Объект плагина с методами init, onChange, destroy
-     */
     use(plugin) {
         this._plugins.push(plugin);
         
@@ -579,40 +464,22 @@ class StoreClass {
                 console.error('[Store] Plugin init error:', error);
             }
         }
-        
-        console.log(`[Store] Plugin registered: ${plugin.name || 'unnamed'}`);
     }
 
-    // ========== УТИЛИТЫ ДЛЯ КОНКРЕТНЫХ ВЕТОК ==========
+    // ========== УТИЛИТЫ ДЛЯ ИНВЕНТАРЯ ==========
 
-    /**
-     * Получить количество выбранных товаров в инвентаре
-     * @returns {number}
-     */
     getInventorySelectedCount() {
         return this.state.inventory.selectedIds.size;
     }
 
-    /**
-     * Получить массив выбранных ID товаров
-     * @returns {string[]}
-     */
     getInventorySelectedIds() {
         return Array.from(this.state.inventory.selectedIds);
     }
 
-    /**
-     * Проверить, выбран ли товар в инвентаре
-     * @param {string} id - ID товара
-     * @returns {boolean}
-     */
     isInventoryItemSelected(id) {
         return this.state.inventory.selectedIds.has(id);
     }
 
-    /**
-     * Выбрать все видимые товары в инвентаре
-     */
     selectAllInventory() {
         const products = this.state.inventory.products;
         const selectedIds = this.state.inventory.selectedIds;
@@ -621,61 +488,102 @@ class StoreClass {
         this.state.inventory.isAllSelected = true;
     }
 
-    /**
-     * Очистить выделение в инвентаре
-     */
     clearInventorySelection() {
         this.state.inventory.selectedIds.clear();
         this.state.inventory.isAllSelected = false;
     }
 
-    /**
-     * Получить итоговую сумму корзины
-     * @returns {number}
-     */
-    getCartTotal() {
-        const items = this.state.cashier.cartItems;
-        const totalDiscount = this.state.cashier.cartTotalDiscount;
-        const itemDiscounts = this.state.cashier.cartItemDiscounts;
-        
-        const subtotal = items.reduce((sum, item) => {
-            const itemDiscount = itemDiscounts.get(item.id) || 0;
-            const price = item.price * (1 - itemDiscount / 100);
-            return sum + (price * item.quantity);
+    // ========== УТИЛИТЫ ДЛЯ КАССЫ ==========
+
+    getCartSubtotal() {
+        return this.state.cashier.cartItems.reduce((sum, item) => {
+            return sum + (item.price * item.quantity);
         }, 0);
-        
-        return subtotal * (1 - totalDiscount / 100);
     }
 
-    /**
-     * Получить количество товаров в корзине
-     * @returns {number}
-     */
+    getCartItemsDiscount() {
+        return this.state.cashier.cartItems.reduce((sum, item) => {
+            const discount = this.state.cashier.cartItemDiscounts.get(item.id) || 0;
+            return sum + (item.price * item.quantity * discount / 100);
+        }, 0);
+    }
+
+    getCartTotalDiscountAmount() {
+        const subtotal = this.getCartSubtotal();
+        const itemsDiscount = this.getCartItemsDiscount();
+        return Math.max(0, subtotal - itemsDiscount) * (this.state.cashier.cartTotalDiscount / 100);
+    }
+
+    getCartTotal() {
+        const subtotal = this.getCartSubtotal();
+        const itemsDiscount = this.getCartItemsDiscount();
+        const totalDiscount = this.getCartTotalDiscountAmount();
+        return Math.max(0, subtotal - itemsDiscount - totalDiscount);
+    }
+
     getCartItemsCount() {
         return this.state.cashier.cartItems.reduce((sum, item) => sum + item.quantity, 0);
     }
 
-    /**
-     * Проверить, открыта ли смена
-     * @returns {boolean}
-     */
     hasOpenShift() {
         return this.state.cashier.currentShift !== null;
     }
 
-    /**
-     * Получить ID текущей смены
-     * @returns {string|null}
-     */
     getShiftId() {
         return this.state.cashier.currentShift?.id || null;
     }
 
+    addToCart(product) {
+        if (product.status !== 'in_stock') return false;
+        
+        const items = this.state.cashier.cartItems;
+        const existing = items.find(i => i.id === product.id);
+        
+        if (existing) {
+            existing.quantity += 1;
+        } else {
+            items.push({ ...product, quantity: 1 });
+        }
+        
+        this.state.cashier.cartItems = [...items];
+        return true;
+    }
+
+    updateCartItemQuantity(id, quantity) {
+        const items = this.state.cashier.cartItems;
+        const item = items.find(i => i.id === id);
+        
+        if (item) {
+            const newQuantity = Math.max(1, Math.min(quantity, 999));
+            if (item.quantity !== newQuantity) {
+                item.quantity = newQuantity;
+                this.state.cashier.cartItems = [...items];
+            }
+        }
+    }
+
+    removeFromCart(id) {
+        const items = this.state.cashier.cartItems;
+        const newItems = items.filter(i => i.id !== id);
+        
+        if (items.length !== newItems.length) {
+            this.state.cashier.cartItems = newItems;
+            this.state.cashier.cartItemDiscounts.delete(id);
+            return true;
+        }
+        
+        return false;
+    }
+
+    clearCart() {
+        this.state.cashier.cartItems = [];
+        this.state.cashier.cartTotalDiscount = 0;
+        this.state.cashier.cartItemDiscounts.clear();
+        this.state.cashier.cartPaymentMethod = 'cash';
+    }
+
     // ========== ОТЛАДКА ==========
 
-    /**
-     * Включить режим отладки (логирование всех изменений)
-     */
     enableDebug() {
         this.use({
             name: 'Logger',
@@ -688,10 +596,6 @@ class StoreClass {
         });
     }
 
-    /**
-     * Получить все состояние (для отладки)
-     * @returns {Object}
-     */
     debug() {
         return JSON.parse(JSON.stringify({
             inventory: {
@@ -713,13 +617,87 @@ class StoreClass {
     }
 }
 
+// ========== PLUGINS ==========
+
+class PersistPlugin {
+    constructor(options = {}) {
+        this.name = 'PersistPlugin';
+        this.key = options.key || 'sh_crm_store';
+        this.paths = options.paths || ['cashier.cartItems', 'cashier.currentShift', 'reports.period'];
+        this.debounceTimer = null;
+    }
+
+    init(store) {
+        this.store = store;
+        this.loadFromStorage();
+        
+        this.paths.forEach(path => {
+            store.subscribe(path, () => this.saveToStorage());
+        });
+    }
+
+    loadFromStorage() {
+        try {
+            const stored = localStorage.getItem(this.key);
+            if (!stored) return;
+            
+            const data = JSON.parse(stored);
+            
+            if (data.cashier?.cartItems) {
+                this.store.state.cashier.cartItems = data.cashier.cartItems;
+            }
+            if (data.cashier?.cartTotalDiscount !== undefined) {
+                this.store.state.cashier.cartTotalDiscount = data.cashier.cartTotalDiscount;
+            }
+            if (data.cashier?.cartPaymentMethod) {
+                this.store.state.cashier.cartPaymentMethod = data.cashier.cartPaymentMethod;
+            }
+            if (data.reports?.period) {
+                this.store.state.reports.period = {
+                    ...data.reports.period,
+                    startDate: new Date(data.reports.period.startDate),
+                    endDate: new Date(data.reports.period.endDate)
+                };
+            }
+        } catch (error) {
+            console.error('[PersistPlugin] Load error:', error);
+        }
+    }
+
+    saveToStorage() {
+        clearTimeout(this.debounceTimer);
+        
+        this.debounceTimer = setTimeout(() => {
+            try {
+                const data = {
+                    cashier: {
+                        cartItems: this.store.state.cashier.cartItems,
+                        cartTotalDiscount: this.store.state.cashier.cartTotalDiscount,
+                        cartPaymentMethod: this.store.state.cashier.cartPaymentMethod
+                    },
+                    reports: {
+                        period: {
+                            preset: this.store.state.reports.period.preset,
+                            startDate: this.store.state.reports.period.startDate?.toISOString(),
+                            endDate: this.store.state.reports.period.endDate?.toISOString()
+                        }
+                    },
+                    savedAt: Date.now()
+                };
+                
+                localStorage.setItem(this.key, JSON.stringify(data));
+            } catch (error) {
+                console.error('[PersistPlugin] Save error:', error);
+            }
+        }, 500);
+    }
+}
+
 // Создаем и экспортируем синглтон
 export const Store = new StoreClass();
 
-// Для отладки в консоли браузера
 if (typeof window !== 'undefined') {
     window.Store = Store;
-    console.log('[Store] Available in console as window.Store');
 }
 
 export default Store;
