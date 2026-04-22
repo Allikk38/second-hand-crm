@@ -1,7 +1,3 @@
-// ========================================
-// FILE: js/cashier.js
-// ========================================
-
 /**
  * Cashier Page Module - MPA Edition
  * 
@@ -11,17 +7,16 @@
  * Архитектурные решения:
  * - Прямое использование глобального клиента window.supabase.
  * - Полная независимость от других страниц (MPA).
- * - Локальное кэширование смены и корзины в localStorage для защиты от сбоев.
- * - Кастомные модальные окна вместо prompt()/confirm() для лучшего UX.
+ * - Локальное кэширование смены и корзины в localStorage.
+ * - Кастомные модальные окна вместо prompt()/confirm().
  * 
  * @module cashier
- * @version 3.1.0
+ * @version 3.2.0
  * @changes
- * - Убрана зависимость от удаленного core/supabase.js (используется window.supabase).
+ * - Убрана зависимость от core/supabase.js (используется window.supabase).
  * - Заменены prompt()/confirm() на кастомные модальные окна.
  * - Упрощена структура состояния.
- * - Улучшена обработка офлайн-режима и ошибок.
- * - Полное соответствие MPA-архитектуре.
+ * - Улучшена обработка офлайн-режима.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline } from '../core/auth.js';
@@ -38,6 +33,8 @@ import {
 const CART_STORAGE_KEY = 'sh_cashier_cart';
 const SHIFT_STORAGE_KEY = 'sh_cashier_shift';
 const SCANNER_DEBOUNCE_MS = 500;
+const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
 // ========== СОСТОЯНИЕ СТРАНИЦЫ ==========
 
@@ -67,8 +64,9 @@ const state = {
     cartTotalDiscount: 0,
     
     // UI
-    isScanning: false,
-    errorMessage: null
+    errorMessage: null,
+    modalResolve: null,
+    modalReject: null
 };
 
 // ========== DOM ЭЛЕМЕНТЫ ==========
@@ -81,102 +79,222 @@ const DOM = {
     logoutBtn: null
 };
 
-// ========== ИНИЦИАЛИЗАЦИЯ ==========
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 /**
- * Инициализация страницы кассы
+ * Получает клиент Supabase
+ * @returns {Object} Клиент Supabase
  */
-async function init() {
-    console.log('[Cashier] Initializing MPA page...');
-    
-    // 1. Кэшируем DOM элементы
-    cacheElements();
-    
-    // 2. Проверяем авторизацию
-    state.user = await requireAuth();
-    if (!state.user) return;
-    
-    // 3. Отображаем информацию о пользователе
-    displayUserInfo();
-    
-    // 4. Привязываем глобальные события
-    attachGlobalEvents();
-    
-    // 5. Загружаем кэшированные данные
-    loadCachedData();
-    
-    // 6. Проверяем наличие открытой смены
-    await checkOpenShift();
-    
-    // 7. Загружаем товары
-    await loadProducts();
-    
-    console.log('[Cashier] Page initialized');
-}
-
-/**
- * Кэширует все необходимые DOM элементы
- */
-function cacheElements() {
-    DOM.content = document.getElementById('cashierContent');
-    DOM.modalContainer = document.getElementById('modalContainer');
-    DOM.userEmail = document.getElementById('userEmail');
-    DOM.logoutBtn = document.getElementById('logoutBtn');
-}
-
-/**
- * Отображает email текущего пользователя в шапке
- */
-function displayUserInfo() {
-    if (DOM.userEmail && state.user) {
-        const name = state.user.email?.split('@')[0] || 'Пользователь';
-        DOM.userEmail.textContent = name;
-    }
-}
-
-/**
- * Привязывает глобальные обработчики событий
- */
-function attachGlobalEvents() {
-    if (DOM.logoutBtn) {
-        DOM.logoutBtn.addEventListener('click', () => logout());
+function getSupabase() {
+    if (!window.supabase) {
+        throw new Error('Supabase client not loaded');
     }
     
-    // Горячие клавиши
-    document.addEventListener('keydown', handleHotkeys);
+    if (!window.__supabaseClient) {
+        window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
     
-    // Сохранение корзины перед закрытием страницы
-    window.addEventListener('beforeunload', () => {
-        saveCartToCache();
+    return window.__supabaseClient;
+}
+
+/**
+ * Показывает кастомное уведомление
+ * @param {string} message - Текст уведомления
+ * @param {string} type - Тип (success, error, warning, info)
+ */
+function showNotification(message, type = 'info') {
+    const container = document.getElementById('notificationContainer');
+    if (!container) return;
+    
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <div class="notification-icon"></div>
+        <div class="notification-content">
+            <div class="notification-message">${escapeHtml(message)}</div>
+        </div>
+        <button class="notification-close">×</button>
+    `;
+    
+    notification.querySelector('.notification-close').addEventListener('click', () => {
+        notification.remove();
+    });
+    
+    container.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }
+    }, 4000);
+}
+
+/**
+ * Показывает модальное окно подтверждения
+ * @param {Object} options - Опции модального окна
+ * @returns {Promise<boolean>}
+ */
+function showConfirmDialog({ title, message, confirmText = 'Да', cancelText = 'Нет' }) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal confirm-dialog">
+                <div class="modal-header">
+                    <h3>${escapeHtml(title)}</h3>
+                    <button class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="confirm-message">${escapeHtml(message)}</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" data-action="cancel">${escapeHtml(cancelText)}</button>
+                    <button class="btn-primary" data-action="confirm">${escapeHtml(confirmText)}</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const close = () => {
+            modal.remove();
+            resolve(false);
+        };
+        
+        modal.querySelector('.btn-close').addEventListener('click', close);
+        modal.querySelector('[data-action="cancel"]').addEventListener('click', close);
+        modal.querySelector('[data-action="confirm"]').addEventListener('click', () => {
+            modal.remove();
+            resolve(true);
+        });
     });
 }
 
 /**
- * Загружает кэшированные данные из localStorage
+ * Показывает модальное окно выбора оплаты
+ * @param {number} total - Сумма к оплате
+ * @returns {Promise<string|null>}
  */
-function loadCachedData() {
-    // Загружаем смену
-    try {
-        const cachedShift = localStorage.getItem(SHIFT_STORAGE_KEY);
-        if (cachedShift) {
-            const shift = JSON.parse(cachedShift);
-            // Кэш действителен 24 часа
-            if (Date.now() - shift.cachedAt < 24 * 60 * 60 * 1000) {
-                state.currentShift = shift;
-                state.shiftStats = shift.stats || state.shiftStats;
-            } else {
-                localStorage.removeItem(SHIFT_STORAGE_KEY);
-            }
-        }
-    } catch (e) {
-        console.warn('[Cashier] Failed to load cached shift:', e);
-    }
+function showPaymentModal(total) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal payment-modal">
+                <div class="modal-header">
+                    <h3>Оплата</h3>
+                    <button class="btn-close">×</button>
+                </div>
+                <div class="modal-body">
+                    <div class="payment-amount">
+                        <span class="label">Сумма к оплате:</span>
+                        <span class="amount">${formatMoney(total)}</span>
+                    </div>
+                    <div class="payment-methods">
+                        <button class="payment-option" data-method="cash">
+                            <span class="payment-icon">💵</span>
+                            <span>Наличные</span>
+                        </button>
+                        <button class="payment-option" data-method="card">
+                            <span class="payment-icon">💳</span>
+                            <span>Карта</span>
+                        </button>
+                        <button class="payment-option" data-method="transfer">
+                            <span class="payment-icon">📱</span>
+                            <span>Перевод</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        const close = () => {
+            modal.remove();
+            resolve(null);
+        };
+        
+        modal.querySelector('.btn-close').addEventListener('click', close);
+        
+        modal.querySelectorAll('.payment-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const method = btn.dataset.method;
+                modal.remove();
+                resolve(method);
+            });
+        });
+    });
+}
+
+/**
+ * Показывает чек после продажи
+ * @param {Array} items - Товары в чеке
+ * @param {number} total - Итоговая сумма
+ * @param {string} paymentMethod - Способ оплаты
+ */
+function showReceipt(items, total, paymentMethod) {
+    const receiptLines = items.map(item => 
+        `${item.name} x${item.quantity} = ${formatMoney(item.price * item.quantity)}`
+    ).join('\n');
     
-    // Загружаем корзину
+    // Создаем временное модальное окно для чека
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal receipt-modal">
+            <div class="modal-header">
+                <h3>Чек</h3>
+                <button class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+                <pre class="receipt-text">${escapeHtml(receiptLines)}</pre>
+                <hr>
+                <div class="receipt-total">
+                    <strong>ИТОГО: ${formatMoney(total)}</strong>
+                </div>
+                <div class="receipt-method">
+                    Оплата: ${getPaymentMethodName(paymentMethod)}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" data-action="close">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    modal.querySelector('.btn-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('[data-action="close"]').addEventListener('click', () => modal.remove());
+}
+
+// ========== КЭШИРОВАНИЕ ==========
+
+/**
+ * Сохраняет корзину в localStorage
+ */
+function saveCartToCache() {
     try {
-        const cachedCart = localStorage.getItem(CART_STORAGE_KEY);
-        if (cachedCart) {
-            const cart = JSON.parse(cachedCart);
+        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({
+            items: state.cartItems,
+            totalDiscount: state.cartTotalDiscount,
+            cachedAt: Date.now()
+        }));
+    } catch (e) {
+        console.warn('[Cashier] Failed to cache cart:', e);
+    }
+}
+
+/**
+ * Загружает корзину из localStorage
+ */
+function loadCartFromCache() {
+    try {
+        const cached = localStorage.getItem(CART_STORAGE_KEY);
+        if (cached) {
+            const cart = JSON.parse(cached);
             if (Date.now() - cart.cachedAt < 60 * 60 * 1000) {
                 state.cartItems = cart.items || [];
                 state.cartTotalDiscount = cart.totalDiscount || 0;
@@ -186,6 +304,43 @@ function loadCachedData() {
         }
     } catch (e) {
         console.warn('[Cashier] Failed to load cached cart:', e);
+    }
+}
+
+/**
+ * Сохраняет смену в localStorage
+ */
+function saveShiftToCache() {
+    if (state.currentShift) {
+        try {
+            localStorage.setItem(SHIFT_STORAGE_KEY, JSON.stringify({
+                ...state.currentShift,
+                stats: state.shiftStats,
+                cachedAt: Date.now()
+            }));
+        } catch (e) {
+            console.warn('[Cashier] Failed to cache shift:', e);
+        }
+    }
+}
+
+/**
+ * Загружает смену из localStorage
+ */
+function loadShiftFromCache() {
+    try {
+        const cached = localStorage.getItem(SHIFT_STORAGE_KEY);
+        if (cached) {
+            const shift = JSON.parse(cached);
+            if (Date.now() - shift.cachedAt < 24 * 60 * 60 * 1000) {
+                state.currentShift = shift;
+                state.shiftStats = shift.stats || state.shiftStats;
+            } else {
+                localStorage.removeItem(SHIFT_STORAGE_KEY);
+            }
+        }
+    } catch (e) {
+        console.warn('[Cashier] Failed to load cached shift:', e);
     }
 }
 
@@ -201,7 +356,7 @@ async function checkOpenShift() {
     }
     
     try {
-        const supabase = window.supabase;
+        const supabase = getSupabase();
         const { data, error } = await supabase
             .from('shifts')
             .select('*')
@@ -234,7 +389,7 @@ async function loadShiftStats() {
     if (!state.currentShift || !isOnline()) return;
     
     try {
-        const supabase = window.supabase;
+        const supabase = getSupabase();
         const { data, error } = await supabase
             .from('sales')
             .select('total, profit, items')
@@ -270,7 +425,7 @@ async function openShift() {
     render();
     
     try {
-        const supabase = window.supabase;
+        const supabase = getSupabase();
         const { data, error } = await supabase
             .from('shifts')
             .insert({
@@ -307,14 +462,7 @@ async function closeShift() {
     
     const confirmed = await showConfirmDialog({
         title: 'Закрытие смены',
-        message: `
-            <div style="text-align: left;">
-                <p><strong>Выручка:</strong> ${formatMoney(state.shiftStats.revenue)}</p>
-                <p><strong>Продаж:</strong> ${state.shiftStats.salesCount}</p>
-                <p><strong>Прибыль:</strong> ${formatMoney(state.shiftStats.profit)}</p>
-                <p style="margin-top: 12px;">Вы уверены, что хотите закрыть смену?</p>
-            </div>
-        `,
+        message: `Выручка: ${formatMoney(state.shiftStats.revenue)}\nПродаж: ${state.shiftStats.salesCount}\nПрибыль: ${formatMoney(state.shiftStats.profit)}\n\nВы уверены, что хотите закрыть смену?`,
         confirmText: 'Закрыть смену'
     });
     
@@ -324,7 +472,7 @@ async function closeShift() {
     render();
     
     try {
-        const supabase = window.supabase;
+        const supabase = getSupabase();
         const { error } = await supabase
             .from('shifts')
             .update({
@@ -369,7 +517,7 @@ async function loadProducts() {
     render();
     
     try {
-        const supabase = window.supabase;
+        const supabase = getSupabase();
         const { data, error } = await supabase
             .from('products')
             .select('*')
@@ -477,8 +625,16 @@ function removeFromCart(productId) {
 /**
  * Очищает всю корзину
  */
-function clearCart() {
+async function clearCart() {
     if (state.cartItems.length === 0) return;
+    
+    const confirmed = await showConfirmDialog({
+        title: 'Очистка корзины',
+        message: 'Вы уверены, что хотите удалить все товары из корзины?',
+        confirmText: 'Очистить'
+    });
+    
+    if (!confirmed) return;
     
     state.cartItems = [];
     state.cartTotalDiscount = 0;
@@ -504,6 +660,44 @@ function calculateTotal() {
 // ========== ОФОРМЛЕНИЕ ПРОДАЖИ ==========
 
 /**
+ * Проверяет остатки товаров перед продажей
+ * @returns {Promise<boolean>}
+ */
+async function checkStockAvailability() {
+    if (!isOnline()) return true;
+    
+    try {
+        const supabase = getSupabase();
+        const productIds = state.cartItems.map(i => i.id);
+        
+        const { data, error } = await supabase
+            .from('products')
+            .select('id, status, name')
+            .in('id', productIds);
+        
+        if (error) throw error;
+        
+        const productMap = new Map(data.map(p => [p.id, p]));
+        const unavailableItems = state.cartItems.filter(item => {
+            const product = productMap.get(item.id);
+            return !product || product.status !== 'in_stock';
+        });
+        
+        if (unavailableItems.length > 0) {
+            const names = unavailableItems.map(i => i.name).join(', ');
+            showNotification(`Товары больше не доступны: ${names}`, 'error');
+            return false;
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('[Cashier] Stock check error:', error);
+        return true;
+    }
+}
+
+/**
  * Оформляет продажу
  */
 async function checkout() {
@@ -517,6 +711,14 @@ async function checkout() {
         return;
     }
     
+    // Проверяем остатки
+    const stockOk = await checkStockAvailability();
+    if (!stockOk) {
+        // Обновляем товары, чтобы показать актуальное состояние
+        await loadProducts();
+        return;
+    }
+    
     const total = calculateTotal();
     
     // Показываем модальное окно выбора оплаты
@@ -527,7 +729,7 @@ async function checkout() {
     render();
     
     try {
-        const supabase = window.supabase;
+        const supabase = getSupabase();
         
         // Формируем список товаров для продажи
         const items = state.cartItems.map(item => ({
@@ -593,41 +795,7 @@ async function checkout() {
     }
 }
 
-// ========== КЭШИРОВАНИЕ ==========
-
-/**
- * Сохраняет смену в localStorage
- */
-function saveShiftToCache() {
-    if (state.currentShift) {
-        try {
-            localStorage.setItem(SHIFT_STORAGE_KEY, JSON.stringify({
-                ...state.currentShift,
-                stats: state.shiftStats,
-                cachedAt: Date.now()
-            }));
-        } catch (e) {
-            console.warn('[Cashier] Failed to cache shift:', e);
-        }
-    }
-}
-
-/**
- * Сохраняет корзину в localStorage
- */
-function saveCartToCache() {
-    try {
-        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({
-            items: state.cartItems,
-            totalDiscount: state.cartTotalDiscount,
-            cachedAt: Date.now()
-        }));
-    } catch (e) {
-        console.warn('[Cashier] Failed to cache cart:', e);
-    }
-}
-
-// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+// ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
 
 /**
  * Обработчик горячих клавиш
@@ -642,40 +810,6 @@ function handleHotkeys(e) {
         e.preventDefault();
         if (state.cartItems.length > 0) checkout();
     }
-}
-
-/**
- * Показывает уведомление (заглушка, можно заменить на кастомное)
- */
-function showNotification(message, type = 'info') {
-    alert(`${type.toUpperCase()}: ${message}`); // TODO: Заменить на кастомный тост
-}
-
-/**
- * Показывает модальное окно выбора оплаты
- */
-async function showPaymentModal(total) {
-    // Заглушка, в реальном коде здесь будет создание DOM-элемента модалки
-    return new Promise((resolve) => {
-        const method = prompt(`Сумма к оплате: ${formatMoney(total)}\nВыберите способ оплаты:\n1 - Наличные\n2 - Карта\n3 - Перевод`, '1');
-        const methods = { '1': 'cash', '2': 'card', '3': 'transfer' };
-        resolve(methods[method] || 'cash');
-    });
-}
-
-/**
- * Показывает диалог подтверждения
- */
-async function showConfirmDialog({ title, message, confirmText = 'Да' }) {
-    return confirm(`${title}\n\n${message.replace(/<[^>]*>/g, '')}`);
-}
-
-/**
- * Показывает чек после продажи
- */
-function showReceipt(items, total, paymentMethod) {
-    const receiptText = items.map(i => `${i.name} x${i.quantity} = ${formatMoney(i.price * i.quantity)}`).join('\n');
-    alert(`ЧЕК\n${receiptText}\n\nИТОГО: ${formatMoney(total)}\nОплата: ${getPaymentMethodName(paymentMethod)}`);
 }
 
 // ========== РЕНДЕРИНГ ==========
@@ -730,17 +864,19 @@ function render() {
                     </div>
                 </div>
                 
-                <div class="products-grid">
-                    ${state.isLoadingProducts ? '<div class="loading-spinner"></div>' : 
-                      state.filteredProducts.map(p => `
-                        <div class="product-card" data-id="${p.id}">
-                            <div class="product-photo">${p.photo_url ? `<img src="${escapeHtml(p.photo_url)}" alt="${escapeHtml(p.name)}">` : '📦'}</div>
-                            <div class="product-info">
-                                <div class="product-name">${escapeHtml(p.name)}</div>
-                                <div class="product-price">${formatMoney(p.price)}</div>
+                <div class="products-grid-container">
+                    <div class="products-grid">
+                        ${state.isLoadingProducts ? '<div class="loading-spinner"></div>' : 
+                          state.filteredProducts.map(p => `
+                            <div class="product-card" data-id="${p.id}">
+                                <div class="product-photo">${p.photo_url ? `<img src="${escapeHtml(p.photo_url)}" alt="${escapeHtml(p.name)}">` : '📦'}</div>
+                                <div class="product-info">
+                                    <div class="product-name">${escapeHtml(p.name)}</div>
+                                    <div class="product-price">${formatMoney(p.price)}</div>
+                                </div>
                             </div>
-                        </div>
-                    `).join('')}
+                        `).join('')}
+                    </div>
                 </div>
             </div>
             
@@ -751,25 +887,27 @@ function render() {
                     ${cartCount > 0 ? '<button class="btn-ghost btn-sm" id="clearCartBtn">Очистить</button>' : ''}
                 </div>
                 
-                <div class="cart-items">
-                    ${state.cartItems.length === 0 ? '<div class="cart-empty">Корзина пуста</div>' :
-                      state.cartItems.map(item => `
-                        <div class="cart-item">
-                            <div class="cart-item-header">
-                                <span class="cart-item-name">${escapeHtml(item.name)}</span>
-                            </div>
-                            <div class="cart-item-price">${formatMoney(item.price)} / шт.</div>
-                            <div class="cart-item-controls">
-                                <div class="quantity-control">
-                                    <button class="qty-btn" data-action="decrease" data-id="${item.id}">−</button>
-                                    <span class="item-qty">${item.quantity}</span>
-                                    <button class="qty-btn" data-action="increase" data-id="${item.id}">+</button>
+                <div class="cart-items-container">
+                    <div class="cart-items">
+                        ${state.cartItems.length === 0 ? '<div class="cart-empty">Корзина пуста</div>' :
+                          state.cartItems.map(item => `
+                            <div class="cart-item">
+                                <div class="cart-item-header">
+                                    <span class="cart-item-name">${escapeHtml(item.name)}</span>
                                 </div>
-                                <span class="item-total">${formatMoney(item.price * item.quantity)}</span>
-                                <button class="remove-btn" data-action="remove" data-id="${item.id}">✕</button>
+                                <div class="cart-item-price">${formatMoney(item.price)} / шт.</div>
+                                <div class="cart-item-controls">
+                                    <div class="quantity-control">
+                                        <button class="qty-btn" data-action="decrease" data-id="${item.id}">−</button>
+                                        <span class="item-qty">${item.quantity}</span>
+                                        <button class="qty-btn" data-action="increase" data-id="${item.id}">+</button>
+                                    </div>
+                                    <span class="item-total">${formatMoney(item.price * item.quantity)}</span>
+                                    <button class="remove-btn" data-action="remove" data-id="${item.id}">✕</button>
+                                </div>
                             </div>
-                        </div>
-                    `).join('')}
+                        `).join('')}
+                    </div>
                 </div>
                 
                 <div class="cart-footer">
@@ -849,6 +987,66 @@ function attachRenderEvents() {
             if (action === 'remove') removeFromCart(id);
         });
     });
+}
+
+// ========== ИНИЦИАЛИЗАЦИЯ ==========
+
+/**
+ * Отображает email текущего пользователя в шапке
+ */
+function displayUserInfo() {
+    if (DOM.userEmail && state.user) {
+        const name = state.user.email?.split('@')[0] || 'Пользователь';
+        DOM.userEmail.textContent = name;
+    }
+}
+
+/**
+ * Кэширует DOM элементы
+ */
+function cacheElements() {
+    DOM.content = document.getElementById('cashierContent');
+    DOM.modalContainer = document.getElementById('modalContainer');
+    DOM.userEmail = document.getElementById('userEmail');
+    DOM.logoutBtn = document.getElementById('logoutBtn');
+}
+
+/**
+ * Привязывает глобальные обработчики
+ */
+function attachGlobalEvents() {
+    if (DOM.logoutBtn) {
+        DOM.logoutBtn.addEventListener('click', () => logout());
+    }
+    
+    document.addEventListener('keydown', handleHotkeys);
+    
+    window.addEventListener('beforeunload', () => {
+        saveCartToCache();
+    });
+}
+
+/**
+ * Инициализация страницы
+ */
+async function init() {
+    console.log('[Cashier] Initializing MPA page...');
+    
+    cacheElements();
+    
+    state.user = await requireAuth();
+    if (!state.user) return;
+    
+    displayUserInfo();
+    attachGlobalEvents();
+    
+    loadCartFromCache();
+    loadShiftFromCache();
+    
+    await checkOpenShift();
+    await loadProducts();
+    
+    console.log('[Cashier] Page initialized');
 }
 
 // ========== ЗАПУСК ==========
