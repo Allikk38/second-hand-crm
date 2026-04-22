@@ -2,52 +2,217 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SH CRM</title>
     <link rel="stylesheet" href="css/styles.css">
     <style>
-        .splash {
+        /* Сплэш-экран */
+        .splash-screen {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            background: #f1f5f9;
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
-        .splash h1 {
-            font-size: 32px;
-            margin-bottom: 20px;
+        
+        .splash-content {
+            text-align: center;
+            padding: var(--spacing-8);
+            background: var(--color-white);
+            border-radius: var(--radius-2xl);
+            box-shadow: var(--shadow-lg);
         }
-        .loader {
-            width: 40px;
-            height: 40px;
-            border: 3px solid #e2e8f0;
-            border-top-color: #0f172a;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+        
+        .splash-logo {
+            font-size: 48px;
+            margin-bottom: var(--spacing-4);
         }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        
+        .splash-title {
+            font-size: var(--font-size-3xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-text);
+            margin-bottom: var(--spacing-2);
+        }
+        
+        .splash-subtitle {
+            font-size: var(--font-size-base);
+            color: var(--color-text-muted);
+            margin-bottom: var(--spacing-6);
+        }
+        
+        .splash-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--spacing-3);
+        }
+        
+        .splash-error {
+            color: var(--color-danger);
+            margin-top: var(--spacing-4);
+            display: none;
+        }
+        
+        .splash-error.show {
+            display: block;
+        }
+        
+        .btn-retry {
+            margin-top: var(--spacing-4);
         }
     </style>
 </head>
 <body>
-    <div class="splash">
-        <h1>SH CRM</h1>
-        <div class="loader"></div>
-        <p style="margin-top: 16px; color: #64748b;">Загрузка...</p>
+    <div class="splash-screen" id="splashScreen">
+        <div class="splash-content">
+            <div class="splash-logo">🛍️</div>
+            <h1 class="splash-title">SH CRM</h1>
+            <p class="splash-subtitle">Управление комиссионным магазином</p>
+            
+            <div class="splash-loader" id="splashLoader">
+                <div class="loading-spinner large"></div>
+                <p id="splashMessage">Проверка сессии...</p>
+            </div>
+            
+            <div class="splash-error" id="splashError">
+                <p id="errorMessage">Не удалось подключиться к серверу</p>
+                <button class="btn-primary btn-retry" id="retryBtn">Попробовать снова</button>
+            </div>
+        </div>
     </div>
-    
+
     <script type="module">
-        import { checkAuth } from './core/auth.js';
+        // ========================================
+        // FILE: ./index.html (встроенный скрипт)
+        // ========================================
         
-        const user = await checkAuth();
+        /**
+         * Entry Point Script
+         * 
+         * Проверяет сессию и выполняет редирект на нужную страницу.
+         * 
+         * @module index
+         * @version 1.0.0
+         */
         
-        if (user) {
-            window.location.href = 'pages/inventory.html';
-        } else {
-            window.location.href = 'pages/login.html';
+        import { supabase } from './core/supabase.js';
+        
+        const DOM = {
+            splashLoader: document.getElementById('splashLoader'),
+            splashMessage: document.getElementById('splashMessage'),
+            splashError: document.getElementById('splashError'),
+            errorMessage: document.getElementById('errorMessage'),
+            retryBtn: document.getElementById('retryBtn')
+        };
+        
+        /**
+         * Проверяет сессию и редиректит
+         */
+        async function checkSessionAndRedirect() {
+            try {
+                DOM.splashMessage.textContent = 'Проверка сессии...';
+                
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error) {
+                    throw error;
+                }
+                
+                if (session?.user) {
+                    DOM.splashMessage.textContent = 'Вход выполнен, загружаем приложение...';
+                    
+                    // Проверяем, есть ли сохраненный URL для возврата
+                    const returnUrl = sessionStorage.getItem('sh_auth_return_url');
+                    
+                    if (returnUrl) {
+                        sessionStorage.removeItem('sh_auth_return_url');
+                        window.location.href = returnUrl;
+                    } else {
+                        window.location.href = 'pages/inventory.html';
+                    }
+                } else {
+                    DOM.splashMessage.textContent = 'Перенаправление на страницу входа...';
+                    
+                    // Сохраняем текущий URL если нужно
+                    const currentPath = window.location.pathname;
+                    if (currentPath !== '/' && currentPath !== '/index.html') {
+                        sessionStorage.setItem('sh_auth_return_url', currentPath);
+                    }
+                    
+                    setTimeout(() => {
+                        window.location.href = 'pages/login.html';
+                    }, 500);
+                }
+                
+            } catch (error) {
+                console.error('[Index] Session check error:', error);
+                
+                DOM.splashLoader.style.display = 'none';
+                DOM.splashError.classList.add('show');
+                
+                let errorText = 'Не удалось подключиться к серверу';
+                
+                if (error.message.includes('fetch')) {
+                    errorText = 'Проблемы с подключением к интернету';
+                } else if (error.message.includes('Invalid API key')) {
+                    errorText = 'Ошибка конфигурации приложения';
+                }
+                
+                DOM.errorMessage.textContent = errorText;
+            }
         }
+        
+        /**
+         * Повторная попытка
+         */
+        function retry() {
+            DOM.splashError.classList.remove('show');
+            DOM.splashLoader.style.display = 'flex';
+            checkSessionAndRedirect();
+        }
+        
+        // Привязываем события
+        if (DOM.retryBtn) {
+            DOM.retryBtn.addEventListener('click', retry);
+        }
+        
+        // Запускаем проверку
+        checkSessionAndRedirect();
+        
+        // Если загрузка зависла, показываем кнопку входа
+        setTimeout(() => {
+            if (DOM.splashLoader.style.display !== 'none') {
+                const message = DOM.splashMessage.textContent;
+                
+                if (message.includes('Проверка сессии') || message.includes('Перенаправление')) {
+                    console.warn('[Index] Session check timeout, showing manual entry');
+                    
+                    DOM.splashLoader.style.display = 'none';
+                    
+                    // Показываем кнопки ручного входа
+                    const manualEntry = document.createElement('div');
+                    manualEntry.style.marginTop = 'var(--spacing-4)';
+                    manualEntry.innerHTML = `
+                        <button class="btn-primary" id="goToLoginBtn" style="margin-right: var(--spacing-2);">Войти</button>
+                        <button class="btn-secondary" id="goToInventoryBtn">Продолжить без входа</button>
+                    `;
+                    
+                    DOM.splashLoader.parentNode.appendChild(manualEntry);
+                    
+                    document.getElementById('goToLoginBtn')?.addEventListener('click', () => {
+                        window.location.href = 'pages/login.html';
+                    });
+                    
+                    document.getElementById('goToInventoryBtn')?.addEventListener('click', () => {
+                        window.location.href = 'pages/inventory.html';
+                    });
+                }
+            }
+        }, 10000); // 10 секунд таймаут
+        
     </script>
 </body>
 </html>
