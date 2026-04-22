@@ -15,9 +15,10 @@
  * - Единая обработка ошибок с публикацией в EventBus.
  * 
  * @module SupabaseAdapter
- * @version 1.0.0
+ * @version 1.1.0
  * @changes
- * - Создан с нуля для новой архитектуры.
+ * - Добавлен обработчик DATA.REPORTS_FETCH.
+ * - Реализована агрегация данных для отчетов.
  */
 
 import { EventBus, EventTypes, EventSource } from './EventBus.js';
@@ -29,6 +30,12 @@ const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
 // Время жизни кэша в миллисекундах
 const CACHE_TTL = 30000; // 30 секунд
+
+// Типы событий для отчетов (добавляем, если нет в EventTypes)
+const REPORTS_EVENTS = {
+    FETCH: 'data:reports:fetch',
+    FETCHED: 'data:reports:fetched'
+};
 
 export class SupabaseAdapter {
     constructor() {
@@ -54,7 +61,6 @@ export class SupabaseAdapter {
     
     /**
      * Инициализация адаптера.
-     * Подключается к Supabase и начинает слушать события данных.
      */
     async init() {
         if (this.initialized) return;
@@ -62,29 +68,20 @@ export class SupabaseAdapter {
         console.log('[SupabaseAdapter] Initializing...');
         
         try {
-            // Инициализируем клиент Supabase
             this.client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-                auth: {
-                    persistSession: true,
-                    autoRefreshToken: true
-                },
-                db: {
-                    schema: 'public'
-                }
+                auth: { persistSession: true, autoRefreshToken: true },
+                db: { schema: 'public' }
             });
             
             console.log('[SupabaseAdapter] Supabase client created');
             
-            // Подписываемся на события данных
             this.subscribeToEvents();
             
-            // Подписываемся на события сети
             window.addEventListener('online', this.handleOnline);
             window.addEventListener('offline', this.handleOffline);
             
             this.initialized = true;
             
-            // Сообщаем системе, что адаптер готов
             EventBus.emit('adapter:ready', { 
                 type: 'supabase', 
                 online: this.isOnline 
@@ -146,6 +143,14 @@ export class SupabaseAdapter {
             )
         );
         
+        // Отчеты
+        this._unsubscribers.push(
+            EventBus.on(REPORTS_EVENTS.FETCH, 
+                (data) => this.handleReportsFetch(data), 
+                EventSource.WIDGET_REPORTS
+            )
+        );
+        
         console.log('[SupabaseAdapter] Subscribed to data events');
     }
     
@@ -156,10 +161,8 @@ export class SupabaseAdapter {
         
         console.log('[SupabaseAdapter] Fetching products', { page, limit, filters, sort });
         
-        // Формируем ключ кэша
         const cacheKey = `products_${page}_${limit}_${JSON.stringify(filters)}_${sort}`;
         
-        // Проверяем кэш (если онлайн и не истек)
         if (this.isOnline) {
             const cached = this.cache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
@@ -173,7 +176,6 @@ export class SupabaseAdapter {
             }
         }
         
-        // Если офлайн - пытаемся взять из локального хранилища
         if (!this.isOnline) {
             const offlineData = await this.getOfflineProducts(page, limit, filters);
             if (offlineData) {
@@ -191,7 +193,6 @@ export class SupabaseAdapter {
                 .from('products')
                 .select('*', { count: 'exact' });
             
-            // Применяем фильтры
             if (filters.search) {
                 query = query.ilike('name', `%${filters.search}%`);
             }
@@ -202,11 +203,9 @@ export class SupabaseAdapter {
                 query = query.eq('status', filters.status);
             }
             
-            // Применяем сортировку
             const [field, direction] = sort.split('-');
             query = query.order(field, { ascending: direction === 'asc' });
             
-            // Пагинация
             const from = page * limit;
             const to = from + limit - 1;
             query = query.range(from, to);
@@ -224,7 +223,6 @@ export class SupabaseAdapter {
                 total: count
             };
             
-            // Сохраняем в кэш
             if (this.isOnline) {
                 this.cache.set(cacheKey, {
                     data: response,
@@ -232,7 +230,6 @@ export class SupabaseAdapter {
                 });
             }
             
-            // Сохраняем в офлайн-хранилище
             await this.saveOfflineProducts(data, page);
             
             console.log('[SupabaseAdapter] Products fetched:', data.length);
@@ -245,7 +242,6 @@ export class SupabaseAdapter {
         } catch (error) {
             console.error('[SupabaseAdapter] Failed to fetch products:', error);
             
-            // Пробуем отдать офлайн-данные при ошибке
             const offlineData = await this.getOfflineProducts(page, limit, filters);
             if (offlineData) {
                 EventBus.emit(EventTypes.DATA.PRODUCTS_FETCHED, {
@@ -281,7 +277,6 @@ export class SupabaseAdapter {
             
             if (error) throw error;
             
-            // Очищаем кэш продуктов
             this.clearProductCache();
             
             EventBus.emit(EventTypes.DATA.PRODUCT_CREATED, {
@@ -293,8 +288,6 @@ export class SupabaseAdapter {
             
         } catch (error) {
             console.error('[SupabaseAdapter] Failed to create product:', error);
-            
-            // Сохраняем в офлайн-очередь
             await this.addToOfflineQueue('create_product', request);
             
             EventBus.emit(EventTypes.SYSTEM.ERROR, {
@@ -334,7 +327,6 @@ export class SupabaseAdapter {
             
         } catch (error) {
             console.error('[SupabaseAdapter] Failed to update product:', error);
-            
             await this.addToOfflineQueue('update_product', { id, ...updates });
             
             EventBus.emit(EventTypes.SYSTEM.ERROR, {
@@ -382,7 +374,6 @@ export class SupabaseAdapter {
             
         } catch (error) {
             console.error('[SupabaseAdapter] Failed to delete product(s):', error);
-            
             await this.addToOfflineQueue('delete_product', request);
             
             EventBus.emit(EventTypes.SYSTEM.ERROR, {
@@ -469,14 +460,311 @@ export class SupabaseAdapter {
         }
     }
     
+    // ========== ОБРАБОТЧИКИ ОТЧЕТОВ ==========
+    
+    async handleReportsFetch(request) {
+        const { reportType, startDate, endDate } = request;
+        
+        console.log('[SupabaseAdapter] Fetching report:', reportType, { startDate, endDate });
+        
+        const cacheKey = `report_${reportType}_${startDate}_${endDate}`;
+        
+        const cached = this.cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+            console.log('[SupabaseAdapter] Returning cached report');
+            EventBus.emit(REPORTS_EVENTS.FETCHED, {
+                reportType,
+                payload: cached.data,
+                source: EventSource.ADAPTER_SUPABASE,
+                fromCache: true
+            }, EventSource.ADAPTER_SUPABASE);
+            return;
+        }
+        
+        try {
+            let payload = null;
+            
+            switch (reportType) {
+                case 'dashboard':
+                    payload = await this.buildDashboardReport(startDate, endDate);
+                    break;
+                case 'sales':
+                    payload = await this.buildSalesReport(startDate, endDate);
+                    break;
+                case 'products':
+                    payload = await this.buildProductsReport();
+                    break;
+                default:
+                    throw new Error(`Unknown report type: ${reportType}`);
+            }
+            
+            this.cache.set(cacheKey, {
+                data: payload,
+                timestamp: Date.now()
+            });
+            
+            EventBus.emit(REPORTS_EVENTS.FETCHED, {
+                reportType,
+                payload,
+                source: EventSource.ADAPTER_SUPABASE
+            }, EventSource.ADAPTER_SUPABASE);
+            
+            console.log('[SupabaseAdapter] Report generated:', reportType);
+            
+        } catch (error) {
+            console.error('[SupabaseAdapter] Failed to generate report:', error);
+            
+            EventBus.emit(EventTypes.SYSTEM.ERROR, {
+                source: EventSource.ADAPTER_SUPABASE,
+                operation: `report_${reportType}`,
+                error: error.message
+            }, EventSource.ADAPTER_SUPABASE);
+        }
+    }
+    
+    async buildDashboardReport(startDate, endDate) {
+        // Получаем продажи за период
+        const { data: sales, error: salesError } = await this.client
+            .from('sales')
+            .select('*')
+            .gte('created_at', startDate)
+            .lte('created_at', endDate)
+            .order('created_at', { ascending: true });
+        
+        if (salesError) throw salesError;
+        
+        // Получаем предыдущий период для трендов
+        const periodLength = new Date(endDate) - new Date(startDate);
+        const prevStart = new Date(new Date(startDate) - periodLength).toISOString();
+        const prevEnd = startDate;
+        
+        const { data: prevSales, error: prevError } = await this.client
+            .from('sales')
+            .select('*')
+            .gte('created_at', prevStart)
+            .lte('created_at', prevEnd);
+        
+        if (prevError) throw prevError;
+        
+        // Получаем товары в наличии
+        const { count: inStock, error: stockError } = await this.client
+            .from('products')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'in_stock');
+        
+        if (stockError) throw stockError;
+        
+        // Вычисляем статистику
+        const salesData = sales || [];
+        const prevSalesData = prevSales || [];
+        
+        const totalRevenue = salesData.reduce((sum, s) => sum + (s.total || 0), 0);
+        const totalProfit = salesData.reduce((sum, s) => sum + (s.profit || 0), 0);
+        const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+        
+        const prevRevenue = prevSalesData.reduce((sum, s) => sum + (s.total || 0), 0);
+        const prevProfit = prevSalesData.reduce((sum, s) => sum + (s.profit || 0), 0);
+        const prevCount = prevSalesData.length;
+        
+        // Тренды
+        const trends = {
+            revenue: this.calculateTrend(totalRevenue, prevRevenue),
+            profit: this.calculateTrend(totalProfit, prevProfit),
+            salesCount: this.calculateTrend(salesData.length, prevCount),
+            averageCheck: this.calculateTrend(
+                salesData.length > 0 ? totalRevenue / salesData.length : 0,
+                prevCount > 0 ? prevRevenue / prevCount : 0
+            )
+        };
+        
+        // Группировка по дням
+        const daily = this.groupSalesByDay(salesData);
+        
+        // Топ товаров
+        const topProducts = this.calculateTopProducts(salesData, 5);
+        
+        // Алерты
+        const alerts = this.generateAlerts({
+            totalRevenue,
+            margin,
+            inStock: inStock || 0,
+            salesCount: salesData.length
+        });
+        
+        return {
+            overview: {
+                revenue: totalRevenue,
+                profit: totalProfit,
+                margin,
+                salesCount: salesData.length,
+                averageCheck: salesData.length > 0 ? totalRevenue / salesData.length : 0,
+                inStock: inStock || 0
+            },
+            trends,
+            daily,
+            topProducts,
+            alerts
+        };
+    }
+    
+    async buildSalesReport(startDate, endDate) {
+        const { data: sales, error } = await this.client
+            .from('sales')
+            .select('*')
+            .gte('created_at', startDate)
+            .lte('created_at', endDate)
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const salesData = sales || [];
+        
+        const totalRevenue = salesData.reduce((sum, s) => sum + (s.total || 0), 0);
+        const totalProfit = salesData.reduce((sum, s) => sum + (s.profit || 0), 0);
+        
+        return {
+            summary: {
+                count: salesData.length,
+                revenue: totalRevenue,
+                profit: totalProfit,
+                averageCheck: salesData.length > 0 ? totalRevenue / salesData.length : 0
+            },
+            sales: salesData
+        };
+    }
+    
+    async buildProductsReport() {
+        // Топ продаваемых товаров
+        const { data: sales, error } = await this.client
+            .from('sales')
+            .select('items');
+        
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        const topProducts = this.calculateTopProducts(sales || [], 10);
+        
+        // Залежавшиеся товары
+        const { data: products, error: prodError } = await this.client
+            .from('products')
+            .select('*')
+            .eq('status', 'in_stock')
+            .order('created_at', { ascending: true });
+        
+        if (prodError) throw prodError;
+        
+        const now = new Date();
+        const slowMoving = (products || [])
+            .map(p => ({
+                ...p,
+                daysInStock: Math.floor((now - new Date(p.created_at)) / (1000 * 60 * 60 * 24))
+            }))
+            .filter(p => p.daysInStock > 30)
+            .sort((a, b) => b.daysInStock - a.daysInStock)
+            .slice(0, 10);
+        
+        return {
+            topProducts,
+            slowMoving
+        };
+    }
+    
+    // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ОТЧЕТОВ ==========
+    
+    calculateTrend(current, previous) {
+        if (!previous || previous === 0) {
+            return { value: 0, direction: 'neutral' };
+        }
+        
+        const change = ((current - previous) / previous) * 100;
+        
+        return {
+            value: Math.abs(change).toFixed(1),
+            direction: change > 0 ? 'up' : change < 0 ? 'down' : 'neutral',
+            raw: change
+        };
+    }
+    
+    groupSalesByDay(sales) {
+        const daily = {};
+        
+        sales.forEach(sale => {
+            const day = sale.created_at.split('T')[0];
+            
+            if (!daily[day]) {
+                daily[day] = { date: day, count: 0, revenue: 0, profit: 0 };
+            }
+            
+            daily[day].count++;
+            daily[day].revenue += sale.total || 0;
+            daily[day].profit += sale.profit || 0;
+        });
+        
+        return Object.values(daily).sort((a, b) => a.date.localeCompare(b.date));
+    }
+    
+    calculateTopProducts(sales, limit) {
+        const productStats = new Map();
+        
+        sales.forEach(sale => {
+            if (!sale.items) return;
+            
+            sale.items.forEach(item => {
+                const key = item.id;
+                const current = productStats.get(key) || {
+                    id: item.id,
+                    name: item.name,
+                    quantity: 0,
+                    revenue: 0
+                };
+                
+                current.quantity += item.quantity || 1;
+                current.revenue += (item.price || 0) * (item.quantity || 1);
+                
+                productStats.set(key, current);
+            });
+        });
+        
+        return Array.from(productStats.values())
+            .sort((a, b) => b.quantity - a.quantity)
+            .slice(0, limit);
+    }
+    
+    generateAlerts(stats) {
+        const alerts = [];
+        
+        if (stats.inStock < 10) {
+            alerts.push({
+                type: 'warning',
+                message: 'Низкий остаток товаров',
+                value: `${stats.inStock} шт.`
+            });
+        }
+        
+        if (stats.margin > 40) {
+            alerts.push({
+                type: 'success',
+                message: 'Отличная маржинальность',
+                value: `${stats.margin.toFixed(1)}%`
+            });
+        }
+        
+        if (stats.salesCount > 50) {
+            alerts.push({
+                type: 'info',
+                message: 'Высокая активность продаж',
+                value: `${stats.salesCount} продаж`
+            });
+        }
+        
+        return alerts;
+    }
+    
     // ========== ОФЛАЙН-РЕЖИМ ==========
     
     handleOnline() {
         console.log('[SupabaseAdapter] 🌐 Online');
         this.isOnline = true;
         EventBus.emit(EventTypes.SYSTEM.NETWORK_ONLINE, null, EventSource.ADAPTER_SUPABASE);
-        
-        // Синхронизируем офлайн-очередь
         this.syncOfflineQueue();
     }
     
@@ -492,8 +780,6 @@ export class SupabaseAdapter {
             if (!stored) return null;
             
             const data = JSON.parse(stored);
-            
-            // Применяем фильтры к офлайн-данным
             let products = data.products || [];
             
             if (filters.search) {
@@ -522,7 +808,6 @@ export class SupabaseAdapter {
     
     async saveOfflineProducts(products, page) {
         try {
-            // Сохраняем только первые 3 страницы для экономии места
             if (page < 3) {
                 localStorage.setItem(`offline_products_page_${page}`, JSON.stringify({
                     products,
@@ -537,11 +822,7 @@ export class SupabaseAdapter {
     async addToOfflineQueue(operation, data) {
         try {
             const queue = JSON.parse(localStorage.getItem('offline_queue') || '[]');
-            queue.push({
-                operation,
-                data,
-                timestamp: Date.now()
-            });
+            queue.push({ operation, data, timestamp: Date.now() });
             localStorage.setItem('offline_queue', JSON.stringify(queue));
             console.log('[SupabaseAdapter] Added to offline queue:', operation);
         } catch (error) {
@@ -555,11 +836,8 @@ export class SupabaseAdapter {
             if (queue.length === 0) return;
             
             console.log('[SupabaseAdapter] Syncing offline queue:', queue.length, 'items');
-            
-            // TODO: Реализовать синхронизацию очереди
-            
+            // TODO: Реализовать синхронизацию
             localStorage.removeItem('offline_queue');
-            
         } catch (error) {
             console.warn('[SupabaseAdapter] Failed to sync offline queue:', error);
         }
@@ -568,7 +846,6 @@ export class SupabaseAdapter {
     // ========== УТИЛИТЫ ==========
     
     clearProductCache() {
-        // Очищаем кэш продуктов
         for (const key of this.cache.keys()) {
             if (key.startsWith('products_')) {
                 this.cache.delete(key);
@@ -577,9 +854,6 @@ export class SupabaseAdapter {
         console.log('[SupabaseAdapter] Product cache cleared');
     }
     
-    /**
-     * Уничтожение адаптера.
-     */
     destroy() {
         console.log('[SupabaseAdapter] Destroying...');
         
