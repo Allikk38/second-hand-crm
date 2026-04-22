@@ -17,7 +17,7 @@
     <meta name="format-detection" content="telephone=no">
     
     <!-- SEO -->
-    <meta name="description" content="Second Hand CRM 2.0 — Профессиональная система управления магазином. Новая модульная архитектура.">
+    <meta name="description" content="Second Hand CRM 2.0 — Профессиональная система управления магазином. Модульная архитектура с изолированными виджетами.">
     <meta name="robots" content="noindex, nofollow">
     
     <title>SH CRM 2.0 — Склад, Касса, Отчеты</title>
@@ -30,14 +30,14 @@
     <link rel="preconnect" href="https://bhdwniiyrrujeoubrvle.supabase.co">
     <link rel="preconnect" href="https://esm.sh">
     <link rel="dns-prefetch" href="https://bhdwniiyrrujeoubrvle.supabase.co">
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     
-    <!-- Базовые стили приложения (старые, но пока оставляем для совместимости) -->
-    <!-- В будущем будут заменены на модульные стили виджетов -->
+    <!-- Подключаем старые стили (пока оставляем для совместимости) -->
     <link rel="stylesheet" href="css/styles.css">
     
-    <!-- Критические стили для мгновенной отрисовки лоадера -->
+    <!-- Критические стили для мгновенной отрисовки -->
     <style>
-        /* Критический CSS — встроен для скорости */
+        /* ========== БАЗОВЫЙ РЕСЕТ ========== */
         * {
             margin: 0;
             padding: 0;
@@ -62,7 +62,7 @@
             width: 100%;
         }
         
-        /* Начальный лоадер (исчезает после инициализации AppShell) */
+        /* ========== НАЧАЛЬНЫЙ ЛОАДЕР ========== */
         .app-initial-loader {
             display: flex;
             flex-direction: column;
@@ -106,7 +106,7 @@
             opacity: 0.6;
         }
         
-        /* Стили для оболочки приложения (будут дополнены после загрузки CSS) */
+        /* ========== ОБОЛОЧКА ПРИЛОЖЕНИЯ ========== */
         .app-shell {
             height: 100%;
             display: flex;
@@ -125,10 +125,25 @@
             flex-shrink: 0;
         }
         
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
         .app-header h1 {
             font-size: 18px;
             font-weight: 600;
             color: #0f172a;
+        }
+        
+        .version-badge {
+            padding: 2px 8px;
+            background: #e2e8f0;
+            color: #475569;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
         }
         
         .app-nav {
@@ -161,6 +176,11 @@
             color: white;
         }
         
+        .header-right {
+            display: flex;
+            align-items: center;
+        }
+        
         .app-main {
             flex: 1;
             min-height: 0;
@@ -168,7 +188,182 @@
             padding: 20px;
         }
         
-        /* Адаптивность */
+        /* ========== СООБЩЕНИЕ ТРЕБОВАНИЯ АВТОРИЗАЦИИ ========== */
+        .auth-required-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 400px;
+            text-align: center;
+            color: #64748b;
+        }
+        
+        .auth-required-icon {
+            font-size: 64px;
+            margin-bottom: 24px;
+            opacity: 0.5;
+        }
+        
+        .auth-required-message h2 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        
+        .auth-required-message p {
+            font-size: 15px;
+        }
+        
+        .auth-required-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            color: #64748b;
+        }
+        
+        /* ========== ЛОАДЕР ВИДЖЕТА ========== */
+        .widget-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+        
+        .loader-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 16px;
+        }
+        
+        .loader-spinner.small {
+            width: 20px;
+            height: 20px;
+            border-width: 2px;
+        }
+        
+        /* ========== ОШИБКА ВИДЖЕТА ========== */
+        .widget-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            text-align: center;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 12px;
+            margin: 20px;
+        }
+        
+        .widget-error .error-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .widget-error h4 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #991b1b;
+            margin-bottom: 8px;
+        }
+        
+        .widget-error p {
+            color: #7f1d1d;
+            margin-bottom: 16px;
+        }
+        
+        .retry-btn {
+            padding: 8px 16px;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .retry-btn:hover {
+            background: #b91c1c;
+        }
+        
+        /* ========== КРИТИЧЕСКАЯ ОШИБКА ========== */
+        .critical-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 40px;
+            text-align: center;
+            font-family: system-ui, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .critical-error .error-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        
+        .critical-error h2 {
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+        
+        .critical-error details {
+            margin: 24px 0;
+            text-align: left;
+            background: rgba(0,0,0,0.2);
+            padding: 16px;
+            border-radius: 8px;
+            max-width: 600px;
+        }
+        
+        .critical-error pre {
+            background: rgba(0,0,0,0.3);
+            padding: 12px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        
+        .critical-error .actions {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .critical-error .btn-primary,
+        .critical-error .btn-secondary {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .critical-error .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+        
+        .critical-error .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+        
+        /* ========== АДАПТИВНОСТЬ ========== */
         @media (max-width: 640px) {
             .app-header {
                 padding: 0 16px;
@@ -181,13 +376,17 @@
             .app-main {
                 padding: 12px;
             }
+            
+            .version-badge {
+                display: none;
+            }
         }
     </style>
 </head>
 <body>
     <!-- Корневой элемент приложения -->
     <div id="app-root">
-        <!-- Начальный лоадер (будет скрыт после инициализации) -->
+        <!-- Начальный лоадер -->
         <div class="app-initial-loader" id="initial-loader">
             <div class="loader-logo">SH CRM 2.0</div>
             <div class="loader-spinner-large"></div>
@@ -200,18 +399,22 @@
     <div id="error-fallback" style="display: none; text-align: center; padding: 40px; font-family: system-ui, sans-serif;">
         <h2 style="color: #0f172a; margin-bottom: 16px;">Не удалось загрузить приложение</h2>
         <p style="color: #64748b; margin-bottom: 24px;">Проверьте подключение к интернету и обновите страницу</p>
-        <button onclick="location.reload()" style="padding: 12px 32px; background: #0f172a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
-            Обновить
-        </button>
+        <div style="display: flex; gap: 12px; justify-content: center;">
+            <button onclick="location.reload()" style="padding: 12px 32px; background: #0f172a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                🔄 Обновить
+            </button>
+            <button onclick="localStorage.clear();location.reload()" style="padding: 12px 32px; background: #e2e8f0; color: #0f172a; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                🧹 Очистить кэш
+            </button>
+        </div>
     </div>
     
-    <!-- Точка входа в приложение -->
-    <!-- Используем ?v=2.0 для сброса кэша при деплое новой версии -->
+    <!-- Точка входа в приложение (НОВАЯ АРХИТЕКТУРА) -->
     <script type="module" src="core-new/main.js?v=2.0.0"></script>
     
-    <!-- Обработка ошибок загрузки модуля -->
+    <!-- Обработка ошибок загрузки -->
     <script>
-        // Таймаут для показа ошибки, если приложение не загрузилось за 10 секунд
+        // Таймаут для показа ошибки
         const loadTimeout = setTimeout(() => {
             const loader = document.getElementById('initial-loader');
             const fallback = document.getElementById('error-fallback');
@@ -243,18 +446,9 @@
         window.addEventListener('unhandledrejection', (e) => {
             console.warn('[Global] Unhandled rejection:', e.reason);
         });
-        
-        // Регистрируем Service Worker для PWA (опционально)
-        if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(err => {
-                    console.log('ServiceWorker registration failed:', err);
-                });
-            });
-        }
     </script>
     
-    <!-- Noscript сообщение -->
+    <!-- Noscript -->
     <noscript>
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; padding: 20px; text-align: center; font-family: system-ui, sans-serif; background: #f1f5f9;">
             <h1 style="margin-bottom: 16px; color: #0f172a;">Требуется JavaScript</h1>
