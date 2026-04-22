@@ -7,13 +7,10 @@
     
     <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
+    <link rel="stylesheet" href="../css/layouts/reports.css">
     
-    <!-- Chart.js для графиков -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
-    <!-- Дополнительные стили для страницы отчетов -->
     <style>
-        /* Стили специфичные только для страницы отчетов */
+        /* Стили только для этой страницы (переопределения) */
         .reports-page {
             display: flex;
             flex-direction: column;
@@ -22,280 +19,10 @@
             background: var(--color-bg);
         }
         
-        .reports-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: var(--spacing-5);
-            flex-shrink: 0;
-            flex-wrap: wrap;
-            gap: var(--spacing-3);
-        }
-        
-        .reports-header h1 {
-            font-size: var(--font-size-xl);
-            font-weight: var(--font-weight-semibold);
-            color: var(--color-text);
-            margin: 0;
-        }
-        
-        .period-selector {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-2);
-        }
-        
-        .period-select {
-            min-width: 140px;
-            height: var(--input-height);
-            padding: 0 var(--spacing-3);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            background: var(--color-white);
-            font-size: var(--font-size-sm);
-        }
-        
-        .reports-tabs {
-            display: flex;
-            gap: var(--spacing-1);
-            margin-bottom: var(--spacing-5);
-            border-bottom: var(--border-width) solid var(--color-border);
-            flex-shrink: 0;
-        }
-        
-        .tab-btn {
-            padding: var(--spacing-3) var(--spacing-5);
-            background: transparent;
-            border: none;
-            border-bottom: 2px solid transparent;
-            font-size: var(--font-size-sm);
-            font-weight: var(--font-weight-medium);
-            color: var(--color-text-secondary);
-            cursor: pointer;
-            transition: all var(--transition-fast);
-        }
-        
-        .tab-btn:hover {
-            color: var(--color-text);
-        }
-        
-        .tab-btn.active {
-            color: var(--color-primary);
-            border-bottom-color: var(--color-primary);
-        }
-        
-        .reports-content {
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-        }
-        
-        /* KPI карточки */
-        .kpi-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: var(--spacing-4);
-            margin-bottom: var(--spacing-5);
-        }
-        
-        .kpi-card {
-            padding: var(--spacing-4);
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-            border-left: 3px solid var(--color-primary);
-        }
-        
-        .kpi-card:nth-child(2) { border-left-color: var(--color-success); }
-        .kpi-card:nth-child(3) { border-left-color: var(--color-warning); }
-        .kpi-card:nth-child(4) { border-left-color: var(--color-info); }
-        
-        .kpi-title {
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-            text-transform: uppercase;
-            letter-spacing: var(--letter-spacing-wide);
-            margin-bottom: var(--spacing-1);
-        }
-        
-        .kpi-value {
-            font-size: var(--font-size-2xl);
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-            font-family: var(--font-family-mono);
-        }
-        
-        .kpi-trend {
-            display: inline-flex;
-            align-items: center;
-            gap: var(--spacing-1);
-            margin-top: var(--spacing-1);
-            padding: var(--spacing-0-5) var(--spacing-2);
-            border-radius: var(--radius-full);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-medium);
-        }
-        
-        .trend-up {
-            background: var(--color-success-bg);
-            color: var(--color-success-dark);
-        }
-        
-        .trend-down {
-            background: var(--color-danger-bg);
-            color: var(--color-danger-dark);
-        }
-        
-        .trend-neutral {
-            background: var(--color-gray-100);
-            color: var(--color-text-muted);
-        }
-        
-        /* Графики */
-        .charts-row {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: var(--spacing-4);
-            margin-bottom: var(--spacing-5);
-        }
-        
-        .chart-card {
-            padding: var(--spacing-4);
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-        }
-        
-        .chart-card h3 {
-            font-size: var(--font-size-base);
-            font-weight: var(--font-weight-semibold);
-            margin-bottom: var(--spacing-3);
-        }
-        
-        .chart-container {
-            position: relative;
-            height: 250px;
-        }
-        
-        /* Таблицы */
-        .table-container {
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-            overflow: hidden;
-            margin-bottom: var(--spacing-5);
-        }
-        
-        .data-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .data-table th {
-            padding: var(--spacing-3) var(--spacing-4);
-            background: var(--color-gray-50);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-semibold);
-            color: var(--color-text-secondary);
-            text-transform: uppercase;
-            letter-spacing: var(--letter-spacing-wide);
-            text-align: left;
-            border-bottom: 2px solid var(--color-border);
-        }
-        
-        .data-table td {
-            padding: var(--spacing-3) var(--spacing-4);
-            border-bottom: var(--border-width) solid var(--color-border-light);
-            font-size: var(--font-size-sm);
-        }
-        
-        .data-table tbody tr:hover {
-            background: var(--color-gray-50);
-        }
-        
-        .data-table .money {
-            text-align: right;
-            font-family: var(--font-family-mono);
-        }
-        
-        /* Топ товаров */
-        .top-products-list {
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .top-product-item {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) 0;
-            border-bottom: var(--border-width) solid var(--color-border-light);
-        }
-        
-        .top-product-item:last-child {
-            border-bottom: none;
-        }
-        
-        .top-product-rank {
-            width: 28px;
-            height: 28px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--color-gray-100);
-            border-radius: var(--radius-full);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text-secondary);
-        }
-        
-        .top-product-info {
-            flex: 1;
-        }
-        
-        .top-product-name {
-            font-weight: var(--font-weight-medium);
-            color: var(--color-text);
-            margin-bottom: var(--spacing-0-5);
-        }
-        
-        .top-product-stats {
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-        }
-        
-        .top-product-revenue {
-            font-weight: var(--font-weight-bold);
-            color: var(--color-text);
-            font-family: var(--font-family-mono);
-        }
-        
-        /* Залежавшиеся товары */
-        .slow-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: var(--spacing-3) 0;
-            border-bottom: var(--border-width) solid var(--color-border-light);
-        }
-        
-        .slow-item:last-child {
-            border-bottom: none;
-        }
-        
-        .slow-days {
-            padding: var(--spacing-0-5) var(--spacing-2);
-            background: var(--color-warning-bg);
-            color: var(--color-warning-dark);
-            border-radius: var(--radius-full);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-medium);
-        }
-        
         /* Скелетон-лоадер */
         .skeleton-kpi {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: var(--spacing-4);
             margin-bottom: var(--spacing-5);
         }
@@ -309,6 +36,13 @@
         
         .skeleton-chart {
             height: 250px;
+            background: var(--color-gray-200);
+            border-radius: var(--radius-lg);
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+        }
+        
+        .skeleton-table {
+            height: 400px;
             background: var(--color-gray-200);
             border-radius: var(--radius-lg);
             animation: skeleton-pulse 1.5s ease-in-out infinite;
@@ -328,6 +62,9 @@
             padding: var(--spacing-16);
             text-align: center;
             color: var(--color-text-muted);
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) dashed var(--color-border);
         }
         
         .empty-state-icon {
@@ -336,64 +73,61 @@
             opacity: 0.5;
         }
         
-        /* Адаптивность */
-        @media (max-width: 1024px) {
-            .charts-row {
-                grid-template-columns: 1fr;
-            }
+        /* Ошибка загрузки */
+        .load-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-16);
+            text-align: center;
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) solid var(--color-border);
         }
         
+        .load-error-icon {
+            font-size: 48px;
+            margin-bottom: var(--spacing-4);
+            opacity: 0.5;
+        }
+        
+        /* Лоадер внутри контента */
+        .reports-loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            gap: var(--spacing-4);
+            color: var(--color-text-muted);
+        }
+        
+        .loading-spinner.large {
+            width: 48px;
+            height: 48px;
+            border-width: 3px;
+        }
+        
+        /* Адаптивность */
         @media (max-width: 768px) {
-            .reports-header {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            
-            .period-selector {
-                justify-content: space-between;
-            }
-            
-            .reports-tabs {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            
-            .tab-btn {
-                padding: var(--spacing-2) var(--spacing-3);
-                white-space: nowrap;
-            }
-            
-            .kpi-grid {
+            .skeleton-kpi {
                 grid-template-columns: repeat(2, 1fr);
+                gap: var(--spacing-3);
             }
             
-            .chart-container {
+            .skeleton-card {
+                height: 80px;
+            }
+            
+            .skeleton-chart {
                 height: 200px;
             }
         }
         
         @media (max-width: 480px) {
-            .kpi-grid {
+            .skeleton-kpi {
                 grid-template-columns: 1fr;
-            }
-        }
-        
-        /* Печать */
-        @media print {
-            .app-header,
-            .app-nav,
-            .reports-header button,
-            .reports-tabs,
-            .period-selector,
-            #logoutBtn {
-                display: none !important;
-            }
-            
-            .chart-card,
-            .kpi-card,
-            .table-container {
-                break-inside: avoid;
-                border: 1px solid #ccc;
             }
         }
     </style>
@@ -419,7 +153,7 @@
         <!-- Основной контент -->
         <main class="app-main">
             <div class="reports-page">
-                <!-- Заголовок -->
+                <!-- Заголовок с переключателем периода -->
                 <div class="reports-header">
                     <h1>Аналитика и отчеты</h1>
                     
@@ -461,7 +195,7 @@
                 
                 <!-- Контент -->
                 <div class="reports-content" id="reportsContent">
-                    <!-- Скелетон-лоадер -->
+                    <!-- Скелетон-лоадер (показывается при загрузке) -->
                     <div id="skeletonLoader">
                         <div class="skeleton-kpi">
                             <div class="skeleton-card"></div>
@@ -470,6 +204,15 @@
                             <div class="skeleton-card"></div>
                         </div>
                         <div class="skeleton-chart"></div>
+                        <div class="skeleton-chart" style="margin-top: var(--spacing-4);"></div>
+                    </div>
+                    
+                    <!-- Сообщение об ошибке (скрыто по умолчанию) -->
+                    <div class="load-error" id="errorMessage" style="display: none;">
+                        <div class="load-error-icon">⚠️</div>
+                        <h3>Ошибка загрузки</h3>
+                        <p id="errorText">Не удалось загрузить данные отчетов</p>
+                        <button class="btn-primary" id="retryBtn">Повторить</button>
                     </div>
                 </div>
             </div>
@@ -484,5 +227,44 @@
     
     <!-- Основной скрипт страницы -->
     <script type="module" src="../js/reports.js"></script>
+    
+    <!-- Fallback на случай ошибки загрузки модуля -->
+    <script>
+        (function() {
+            const skeletonLoader = document.getElementById('skeletonLoader');
+            const errorBlock = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+            const retryBtn = document.getElementById('retryBtn');
+            
+            const timeoutId = setTimeout(function() {
+                if (skeletonLoader && skeletonLoader.style.display !== 'none') {
+                    console.warn('[Reports] Module load timeout');
+                    if (skeletonLoader) skeletonLoader.style.display = 'none';
+                    if (errorBlock) {
+                        errorText.textContent = 'Превышено время ожидания. Проверьте подключение к интернету.';
+                        errorBlock.style.display = 'flex';
+                    }
+                }
+            }, 10000);
+            
+            if (retryBtn) {
+                retryBtn.addEventListener('click', function() {
+                    location.reload();
+                });
+            }
+            
+            window.addEventListener('error', function(e) {
+                if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('reports.js')) {
+                    console.error('[Reports] Script load error:', e);
+                    clearTimeout(timeoutId);
+                    if (skeletonLoader) skeletonLoader.style.display = 'none';
+                    if (errorBlock) {
+                        errorText.textContent = 'Не удалось загрузить модуль страницы. Обновите страницу.';
+                        errorBlock.style.display = 'flex';
+                    }
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
