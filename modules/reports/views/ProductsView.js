@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./modules/reports/views/ProductsView.js
+// ========================================
+
 /**
  * Products View Component
  * 
@@ -5,7 +9,10 @@
  * Включает сводку, топ продаваемых, высокомаржинальных и залежавшихся товаров.
  * 
  * @module ProductsView
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Исправлены пути импорта на относительные (../../../ вместо корневых).
+ * - Добавлен именованный экспорт для совместимости.
  */
 
 import { BaseComponent } from '../../../core/BaseComponent.js';
@@ -110,3 +117,6 @@ export class ProductsView extends BaseComponent {
         `;
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default ProductsView;
