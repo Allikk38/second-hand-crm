@@ -1,148 +1,264 @@
+<!-- ======================================== -->
+<!-- FILE: ./index.html                       -->
+<!-- ======================================== -->
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
     
-    <!-- PWA мета-теги -->
-    <meta name="theme-color" content="#0070f3">
+    <!-- PWA / Мобильные мета-теги -->
+    <meta name="theme-color" content="#0f172a">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="SH CRM">
+    <meta name="apple-mobile-web-app-title" content="SH CRM 2.0">
+    <meta name="format-detection" content="telephone=no">
     
     <!-- SEO -->
-    <meta name="description" content="Second Hand CRM - Профессиональная система управления магазином секонд-хенд">
+    <meta name="description" content="Second Hand CRM 2.0 — Профессиональная система управления магазином. Новая модульная архитектура.">
     <meta name="robots" content="noindex, nofollow">
     
-    <title>Second Hand CRM</title>
+    <title>SH CRM 2.0 — Склад, Касса, Отчеты</title>
     
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230070f3'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3ESH%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230f172a'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3ESH%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230f172a'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3ESH%3C/text%3E%3C/svg%3E">
     
-    <!-- Apple touch icon -->
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230070f3'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3ESH%3C/text%3E%3C/svg%3E">
-    
-    <!-- Основные стили -->
-    <link rel="stylesheet" href="css/styles.css">
-    
-    <!-- Предзагрузка -->
+    <!-- Предзагрузка внешних ресурсов -->
     <link rel="preconnect" href="https://bhdwniiyrrujeoubrvle.supabase.co">
     <link rel="preconnect" href="https://esm.sh">
     <link rel="dns-prefetch" href="https://bhdwniiyrrujeoubrvle.supabase.co">
     
-    <!-- Базовые стили на случай если CSS не загрузится -->
+    <!-- Базовые стили приложения (старые, но пока оставляем для совместимости) -->
+    <!-- В будущем будут заменены на модульные стили виджетов -->
+    <link rel="stylesheet" href="css/styles.css">
+    
+    <!-- Критические стили для мгновенной отрисовки лоадера -->
     <style>
-        /* Критические стили */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { height: 100%; }
-        body {
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f7fa;
-            -webkit-font-smoothing: antialiased;
+        /* Критический CSS — встроен для скорости */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
+        
+        html, body {
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
+            background: #f1f5f9;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
         #app-root {
             height: 100%;
-            display: flex;
-            flex-direction: column;
+            width: 100%;
         }
-        .loading-overlay {
+        
+        /* Начальный лоадер (исчезает после инициализации AppShell) */
+        .app-initial-loader {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             height: 100%;
-            gap: 16px;
-            color: #6b7280;
+            gap: 20px;
+            color: #64748b;
+            background: #f1f5f9;
+            transition: opacity 0.3s ease-out;
         }
-        .loading-spinner {
+        
+        .loader-logo {
+            font-size: 32px;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+        }
+        
+        .loader-spinner-large {
             width: 48px;
             height: 48px;
-            border: 3px solid #e0e0e0;
-            border-top-color: #0070f3;
+            border: 3px solid #e2e8f0;
+            border-top-color: #0f172a;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
         }
-        .loading-text {
-            font-size: 16px;
-            font-weight: 500;
-        }
-        .loading-subtext {
-            font-size: 13px;
-            opacity: 0.6;
-            margin-top: 8px;
-        }
+        
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .error-fallback {
-            display: none;
-            text-align: center;
-            padding: 40px;
-            color: #c62828;
+        
+        .loader-text {
+            font-size: 15px;
+            font-weight: 500;
         }
-        .error-fallback button {
-            margin-top: 16px;
-            padding: 10px 24px;
-            background: #0070f3;
-            color: white;
+        
+        .loader-subtext {
+            font-size: 13px;
+            opacity: 0.6;
+        }
+        
+        /* Стили для оболочки приложения (будут дополнены после загрузки CSS) */
+        .app-shell {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            background: #f1f5f9;
+        }
+        
+        .app-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            height: 56px;
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            flex-shrink: 0;
+        }
+        
+        .app-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        
+        .app-nav {
+            display: flex;
+            gap: 4px;
+        }
+        
+        .app-nav button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: transparent;
             border: none;
-            border-radius: 8px;
-            cursor: pointer;
+            border-radius: 6px;
             font-size: 14px;
             font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        
+        .app-nav button:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+        
+        .app-nav button.active {
+            background: #0f172a;
+            color: white;
+        }
+        
+        .app-main {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            padding: 20px;
+        }
+        
+        /* Адаптивность */
+        @media (max-width: 640px) {
+            .app-header {
+                padding: 0 16px;
+            }
+            
+            .app-nav button {
+                padding: 8px 12px;
+            }
+            
+            .app-main {
+                padding: 12px;
+            }
         }
     </style>
 </head>
 <body>
+    <!-- Корневой элемент приложения -->
     <div id="app-root">
-        <!-- Начальный лоадер -->
-        <div class="loading-overlay" id="initial-loader">
-            <div class="loading-spinner large"></div>
-            <span class="loading-text">Second Hand CRM</span>
-            <span class="loading-subtext">Загрузка системы...</span>
+        <!-- Начальный лоадер (будет скрыт после инициализации) -->
+        <div class="app-initial-loader" id="initial-loader">
+            <div class="loader-logo">SH CRM 2.0</div>
+            <div class="loader-spinner-large"></div>
+            <span class="loader-text">Загрузка системы...</span>
+            <span class="loader-subtext">Готовим рабочее пространство</span>
         </div>
     </div>
     
-    <!-- Резервное сообщение при ошибке -->
-    <div id="error-fallback" class="error-fallback">
-        <h2>Не удалось загрузить приложение</h2>
-        <p>Проверьте подключение к интернету и обновите страницу</p>
-        <button onclick="location.reload()">Обновить</button>
+    <!-- Резервное сообщение при ошибке загрузки JS -->
+    <div id="error-fallback" style="display: none; text-align: center; padding: 40px; font-family: system-ui, sans-serif;">
+        <h2 style="color: #0f172a; margin-bottom: 16px;">Не удалось загрузить приложение</h2>
+        <p style="color: #64748b; margin-bottom: 24px;">Проверьте подключение к интернету и обновите страницу</p>
+        <button onclick="location.reload()" style="padding: 12px 32px; background: #0f172a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">
+            Обновить
+        </button>
     </div>
     
-    <!-- Основной модуль приложения -->
-    <script type="module" src="main.js"></script>
+    <!-- Точка входа в приложение -->
+    <!-- Используем ?v=2.0 для сброса кэша при деплое новой версии -->
+    <script type="module" src="core-new/main.js?v=2.0.0"></script>
     
-    <!-- Обработка ошибок загрузки -->
+    <!-- Обработка ошибок загрузки модуля -->
     <script>
-        // Показываем ошибку если приложение не загрузилось за 10 секунд
-        setTimeout(function() {
-            var loader = document.getElementById('initial-loader');
-            var fallback = document.getElementById('error-fallback');
-            if (loader && loader.style.display !== 'none') {
+        // Таймаут для показа ошибки, если приложение не загрузилось за 10 секунд
+        const loadTimeout = setTimeout(() => {
+            const loader = document.getElementById('initial-loader');
+            const fallback = document.getElementById('error-fallback');
+            const root = document.getElementById('app-root');
+            
+            if (loader && root && root.children.length <= 1) {
                 loader.style.display = 'none';
                 fallback.style.display = 'block';
             }
         }, 10000);
         
-        // Глобальный обработчик ошибок
-        window.addEventListener('error', function(e) {
-            console.warn('Global error:', e.message);
+        // Слушаем событие готовности приложения
+        window.addEventListener('app:ready', () => {
+            clearTimeout(loadTimeout);
+            const loader = document.getElementById('initial-loader');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => {
+                    loader.style.display = 'none';
+                }, 300);
+            }
         });
         
-        // Обработчик для Promise rejection
-        window.addEventListener('unhandledrejection', function(e) {
-            console.warn('Unhandled promise rejection:', e.reason);
+        // Глобальный перехват ошибок
+        window.addEventListener('error', (e) => {
+            console.warn('[Global] Error:', e.message);
         });
+        
+        window.addEventListener('unhandledrejection', (e) => {
+            console.warn('[Global] Unhandled rejection:', e.reason);
+        });
+        
+        // Регистрируем Service Worker для PWA (опционально)
+        if ('serviceWorker' in navigator && window.location.hostname !== 'localhost') {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(err => {
+                    console.log('ServiceWorker registration failed:', err);
+                });
+            });
+        }
     </script>
     
     <!-- Noscript сообщение -->
     <noscript>
-        <div style="text-align: center; padding: 50px; font-family: system-ui, sans-serif; background: #f5f7fa; height: 100vh; display: flex; flex-direction: column; justify-content: center;">
-            <h1 style="color: #1a1a1a; margin-bottom: 16px;">Требуется JavaScript</h1>
-            <p style="color: #6b7280; margin-bottom: 24px;">Для работы Second Hand CRM необходимо включить JavaScript в настройках браузера.</p>
-            <div style="color: #9e9e9e; font-size: 14px;">Second Hand CRM — профессиональная система управления</div>
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; padding: 20px; text-align: center; font-family: system-ui, sans-serif; background: #f1f5f9;">
+            <h1 style="margin-bottom: 16px; color: #0f172a;">Требуется JavaScript</h1>
+            <p style="color: #64748b;">Для работы SH CRM 2.0 необходимо включить JavaScript в настройках браузера.</p>
         </div>
     </noscript>
 </body>
