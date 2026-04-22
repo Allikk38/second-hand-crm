@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./modules/reports/views/SellersView.js
+// ========================================
+
 /**
  * Sellers View Component
  * 
@@ -5,7 +9,10 @@
  * Включает сводку, график и рейтинг продавцов.
  * 
  * @module SellersView
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Исправлены пути импорта на относительные (../../../ вместо корневых).
+ * - Добавлен именованный экспорт для совместимости.
  */
 
 import { BaseComponent } from '../../../core/BaseComponent.js';
@@ -172,3 +179,6 @@ export class SellersView extends BaseComponent {
         }
     }
 }
+
+// Экспортируем и как default, и как именованный для совместимости
+export default SellersView;
