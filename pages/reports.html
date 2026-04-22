@@ -2,95 +2,188 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Отчеты | SH CRM</title>
+    
+    <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
+    
+    <!-- Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Дополнительные стили для страницы отчетов -->
     <style>
+        /* Стили специфичные только для страницы отчетов */
         .reports-page {
-            height: 100%;
             display: flex;
             flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            background: var(--color-bg);
         }
         
         .reports-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 24px;
+            margin-bottom: var(--spacing-5);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            gap: var(--spacing-3);
+        }
+        
+        .reports-header h1 {
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+            margin: 0;
         }
         
         .period-selector {
             display: flex;
-            gap: 12px;
+            align-items: center;
+            gap: var(--spacing-2);
+        }
+        
+        .period-select {
+            min-width: 140px;
+            height: var(--input-height);
+            padding: 0 var(--spacing-3);
+            border: var(--border-width) solid var(--color-border);
+            border-radius: var(--radius-md);
+            background: var(--color-white);
+            font-size: var(--font-size-sm);
         }
         
         .reports-tabs {
             display: flex;
-            gap: 4px;
-            margin-bottom: 24px;
-            border-bottom: 1px solid #e2e8f0;
+            gap: var(--spacing-1);
+            margin-bottom: var(--spacing-5);
+            border-bottom: var(--border-width) solid var(--color-border);
+            flex-shrink: 0;
         }
         
         .tab-btn {
-            padding: 10px 20px;
-            background: none;
+            padding: var(--spacing-3) var(--spacing-5);
+            background: transparent;
             border: none;
-            font-size: 14px;
-            font-weight: 500;
-            color: #64748b;
-            cursor: pointer;
             border-bottom: 2px solid transparent;
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+        
+        .tab-btn:hover {
+            color: var(--color-text);
         }
         
         .tab-btn.active {
-            color: #0f172a;
-            border-bottom-color: #0f172a;
+            color: var(--color-primary);
+            border-bottom-color: var(--color-primary);
         }
         
+        .reports-content {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
+        
+        /* KPI карточки */
         .kpi-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: var(--spacing-4);
+            margin-bottom: var(--spacing-5);
         }
         
         .kpi-card {
-            padding: 20px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            padding: var(--spacing-4);
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) solid var(--color-border);
+            border-left: 3px solid var(--color-primary);
         }
         
+        .kpi-card:nth-child(2) { border-left-color: var(--color-success); }
+        .kpi-card:nth-child(3) { border-left-color: var(--color-warning); }
+        .kpi-card:nth-child(4) { border-left-color: var(--color-info); }
+        
         .kpi-title {
-            font-size: 13px;
-            color: #64748b;
-            margin-bottom: 8px;
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: var(--letter-spacing-wide);
+            margin-bottom: var(--spacing-1);
         }
         
         .kpi-value {
-            font-size: 28px;
-            font-weight: 600;
+            font-size: var(--font-size-2xl);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-text);
+            font-family: var(--font-family-mono);
         }
         
         .kpi-trend {
-            font-size: 13px;
-            margin-top: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-1);
+            margin-top: var(--spacing-1);
+            padding: var(--spacing-0-5) var(--spacing-2);
+            border-radius: var(--radius-full);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
         }
         
-        .trend-up { color: #10b981; }
-        .trend-down { color: #ef4444; }
+        .trend-up {
+            background: var(--color-success-bg);
+            color: var(--color-success-dark);
+        }
+        
+        .trend-down {
+            background: var(--color-danger-bg);
+            color: var(--color-danger-dark);
+        }
+        
+        .trend-neutral {
+            background: var(--color-gray-100);
+            color: var(--color-text-muted);
+        }
+        
+        /* Графики */
+        .charts-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: var(--spacing-4);
+            margin-bottom: var(--spacing-5);
+        }
         
         .chart-card {
-            padding: 20px;
-            background: white;
-            border-radius: 12px;
-            margin-bottom: 24px;
+            padding: var(--spacing-4);
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) solid var(--color-border);
         }
         
+        .chart-card h3 {
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-semibold);
+            margin-bottom: var(--spacing-3);
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 250px;
+        }
+        
+        /* Таблицы */
         .table-container {
-            background: white;
-            border-radius: 12px;
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) solid var(--color-border);
             overflow: hidden;
+            margin-bottom: var(--spacing-5);
         }
         
         .data-table {
@@ -99,66 +192,297 @@
         }
         
         .data-table th {
-            padding: 12px 16px;
-            background: #f8fafc;
-            font-weight: 500;
-            font-size: 13px;
-            color: #64748b;
+            padding: var(--spacing-3) var(--spacing-4);
+            background: var(--color-gray-50);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: var(--letter-spacing-wide);
             text-align: left;
+            border-bottom: 2px solid var(--color-border);
         }
         
         .data-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #f1f5f9;
+            padding: var(--spacing-3) var(--spacing-4);
+            border-bottom: var(--border-width) solid var(--color-border-light);
+            font-size: var(--font-size-sm);
         }
         
+        .data-table tbody tr:hover {
+            background: var(--color-gray-50);
+        }
+        
+        .data-table .money {
+            text-align: right;
+            font-family: var(--font-family-mono);
+        }
+        
+        /* Топ товаров */
+        .top-products-list {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .top-product-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-3) 0;
+            border-bottom: var(--border-width) solid var(--color-border-light);
+        }
+        
+        .top-product-item:last-child {
+            border-bottom: none;
+        }
+        
+        .top-product-rank {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--color-gray-100);
+            border-radius: var(--radius-full);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-bold);
+            color: var(--color-text-secondary);
+        }
+        
+        .top-product-info {
+            flex: 1;
+        }
+        
+        .top-product-name {
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text);
+            margin-bottom: var(--spacing-0-5);
+        }
+        
+        .top-product-stats {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+        }
+        
+        .top-product-revenue {
+            font-weight: var(--font-weight-bold);
+            color: var(--color-text);
+            font-family: var(--font-family-mono);
+        }
+        
+        /* Залежавшиеся товары */
+        .slow-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--spacing-3) 0;
+            border-bottom: var(--border-width) solid var(--color-border-light);
+        }
+        
+        .slow-item:last-child {
+            border-bottom: none;
+        }
+        
+        .slow-days {
+            padding: var(--spacing-0-5) var(--spacing-2);
+            background: var(--color-warning-bg);
+            color: var(--color-warning-dark);
+            border-radius: var(--radius-full);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+        }
+        
+        /* Скелетон-лоадер */
+        .skeleton-kpi {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: var(--spacing-4);
+            margin-bottom: var(--spacing-5);
+        }
+        
+        .skeleton-card {
+            height: 100px;
+            background: var(--color-gray-200);
+            border-radius: var(--radius-lg);
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+        }
+        
+        .skeleton-chart {
+            height: 250px;
+            background: var(--color-gray-200);
+            border-radius: var(--radius-lg);
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes skeleton-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Пустое состояние */
         .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-16);
             text-align: center;
-            padding: 60px;
-            color: #94a3b8;
+            color: var(--color-text-muted);
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: var(--spacing-4);
+            opacity: 0.5;
+        }
+        
+        /* Адаптивность */
+        @media (max-width: 1024px) {
+            .charts-row {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .reports-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .period-selector {
+                justify-content: space-between;
+            }
+            
+            .reports-tabs {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            
+            .tab-btn {
+                padding: var(--spacing-2) var(--spacing-3);
+                white-space: nowrap;
+            }
+            
+            .kpi-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .chart-container {
+                height: 200px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Печать */
+        @media print {
+            .app-header,
+            .app-nav,
+            .reports-header button,
+            .reports-tabs,
+            .period-selector,
+            #logoutBtn {
+                display: none !important;
+            }
+            
+            .chart-card,
+            .kpi-card,
+            .table-container {
+                break-inside: avoid;
+                border: 1px solid #ccc;
+            }
         }
     </style>
 </head>
 <body>
     <div class="app">
+        <!-- Шапка приложения -->
         <header class="app-header">
-            <h1>📊 Отчеты</h1>
-            <nav class="app-nav">
+            <h1>📊 SH CRM</h1>
+            <nav class="app-nav" aria-label="Основная навигация">
                 <a href="inventory.html">Склад</a>
                 <a href="cashier.html">Касса</a>
-                <a href="reports.html" class="active">Отчеты</a>
+                <a href="reports.html" class="active" aria-current="page">Отчеты</a>
             </nav>
-            <button id="logoutBtn" class="btn-ghost">Выход</button>
+            <div class="header-actions">
+                <span class="user-email" id="userEmail"></span>
+                <button class="btn-ghost btn-sm" id="logoutBtn" aria-label="Выйти из системы">
+                    🚪 Выход
+                </button>
+            </div>
         </header>
         
+        <!-- Основной контент -->
         <main class="app-main">
             <div class="reports-page">
+                <!-- Заголовок -->
                 <div class="reports-header">
-                    <h2>Аналитика</h2>
+                    <h1>Аналитика и отчеты</h1>
+                    
                     <div class="period-selector">
-                        <select id="periodSelect" class="filter-select">
+                        <select id="periodSelect" class="period-select" aria-label="Выбор периода">
                             <option value="today">Сегодня</option>
                             <option value="yesterday">Вчера</option>
                             <option value="week" selected>Неделя</option>
                             <option value="month">Месяц</option>
+                            <option value="quarter">Квартал</option>
+                            <option value="year">Год</option>
                         </select>
-                        <button class="btn-secondary" id="refreshBtn">🔄 Обновить</button>
+                        
+                        <button class="btn-secondary btn-sm" id="refreshBtn" aria-label="Обновить">
+                            🔄
+                        </button>
+                        
+                        <button class="btn-secondary btn-sm" id="exportBtn" aria-label="Экспорт">
+                            📥 Экспорт
+                        </button>
                     </div>
                 </div>
                 
-                <div class="reports-tabs">
-                    <button class="tab-btn active" data-tab="dashboard">📊 Дашборд</button>
-                    <button class="tab-btn" data-tab="sales">💰 Продажи</button>
-                    <button class="tab-btn" data-tab="products">📦 Товары</button>
+                <!-- Вкладки -->
+                <div class="reports-tabs" role="tablist">
+                    <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">
+                        📊 Дашборд
+                    </button>
+                    <button class="tab-btn" data-tab="sales" role="tab" aria-selected="false">
+                        💰 Продажи
+                    </button>
+                    <button class="tab-btn" data-tab="products" role="tab" aria-selected="false">
+                        📦 Товары
+                    </button>
+                    <button class="tab-btn" data-tab="shifts" role="tab" aria-selected="false">
+                        🔄 Смены
+                    </button>
                 </div>
                 
-                <div id="reportsContent">
-                    <div class="loading">Загрузка данных...</div>
+                <!-- Контент -->
+                <div class="reports-content" id="reportsContent">
+                    <!-- Скелетон-лоадер -->
+                    <div id="skeletonLoader">
+                        <div class="skeleton-kpi">
+                            <div class="skeleton-card"></div>
+                            <div class="skeleton-card"></div>
+                            <div class="skeleton-card"></div>
+                            <div class="skeleton-card"></div>
+                        </div>
+                        <div class="skeleton-chart"></div>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
     
+    <!-- Контейнер для модальных окон -->
+    <div id="modalContainer"></div>
+    
+    <!-- Контейнер для уведомлений -->
+    <div id="notificationContainer"></div>
+    
+    <!-- Основной скрипт страницы -->
     <script type="module" src="../js/reports.js"></script>
 </body>
 </html>
