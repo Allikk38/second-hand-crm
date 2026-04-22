@@ -16,12 +16,12 @@
  * - Поддерживает офлайн-режим с автоматической синхронизацией.
  * 
  * @module CashierApp
- * @version 7.1.0
+ * @version 7.1.1
  * @changes
- * - Добавлен метод syncShiftState() для принудительной синхронизации с БД.
- * - Исправлена проблема: UI показывал "Смена закрыта" при наличии открытой смены в БД.
- * - Улучшена обработка ошибок при загрузке состояния смены.
- * - Добавлена кнопка "Обновить" при ошибке загрузки смены.
+ * - ИСПРАВЛЕН КРИТИЧЕСКИЙ БАГ: бесконечный цикл ререндеринга.
+ * - syncShiftState() больше не вызывает update() напрямую.
+ * - Добавлен флаг _syncInProgress для предотвращения повторных вызовов.
+ * - Улучшена логика монтирования компонентов.
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -63,7 +63,8 @@ export class CashierApp extends BaseComponent {
         this.eventUnsubscribers = [];
         this.syncAttempts = 0;
         this.syncTimer = null;
-        this.isInitialized = false;
+        this._isInitialized = false;
+        this._syncInProgress = false;  // Предотвращаем повторную синхронизацию
         
         logger.info('CashierApp constructed', { userId: this.user?.id });
     }
@@ -82,14 +83,26 @@ export class CashierApp extends BaseComponent {
             hasOpenShift,
             isLocalShift,
             shiftId: cashier.currentShift?.id,
-            cartItemsCount,
-            cartTotal,
             isLoadingShift
         });
 
+        // Если идет загрузка - показываем только лоадер, не рендерим основной макет
+        if (isLoadingShift && !hasOpenShift) {
+            return `
+                <div class="cashier-layout shift-closed-mode">
+                    <div class="shift-closed-overlay">
+                        <div class="loading-spinner"></div>
+                        <h2>Проверка смены...</h2>
+                        <p>Синхронизация с сервером</p>
+                    </div>
+                </div>
+                <div id="modal-container"></div>
+            `;
+        }
+
         return `
             <div class="cashier-layout ${!hasOpenShift ? 'shift-closed-mode' : ''}">
-                ${hasOpenShift ? this.renderMainLayout(cartTotal, cartItemsCount, isLocalShift) : this.renderShiftClosed(isLoadingShift)}
+                ${hasOpenShift ? this.renderMainLayout(cartTotal, cartItemsCount, isLocalShift) : this.renderShiftClosed()}
             </div>
             <div id="modal-container"></div>
         `;
@@ -101,7 +114,7 @@ export class CashierApp extends BaseComponent {
                 <div data-ref="shiftPanelContainer"></div>
                 ${isLocalShift ? `
                     <div class="offline-banner">
-                        <span>📡 Работа в офлайн-режиме. Данные будут синхронизированы при подключении к сети.</span>
+                        <span>📡 Работа в офлайн-режиме</span>
                     </div>
                 ` : ''}
                 <div data-ref="categoryNavContainer"></div>
@@ -130,18 +143,8 @@ export class CashierApp extends BaseComponent {
         `;
     }
 
-    renderShiftClosed(isLoadingShift = false) {
+    renderShiftClosed() {
         const isShiftActionPending = Store.state.cashier.isShiftActionPending || false;
-        
-        if (isLoadingShift) {
-            return `
-                <div class="shift-closed-overlay">
-                    <div class="loading-spinner"></div>
-                    <h2>Проверка состояния смены...</h2>
-                    <p>Синхронизация с сервером</p>
-                </div>
-            `;
-        }
         
         return `
             <div class="shift-closed-overlay">
@@ -159,7 +162,6 @@ export class CashierApp extends BaseComponent {
                     class="btn-secondary" 
                     data-ref="refreshShiftStateBtn" 
                     style="margin-top: 8px;"
-                    title="Проверить состояние смены на сервере"
                 >
                     🔄 Проверить смену
                 </button>
@@ -167,131 +169,149 @@ export class CashierApp extends BaseComponent {
         `;
     }
 
-    // ========== МОНТИРОВАНИЕ КОМПОНЕНТОВ ==========
+    // ========== МОНТИРОВАНИЕ ==========
     
-    async afterRender() {
-        logger.debug('afterRender started');
-        
-        await this.loadComponents();
-        
-        // Подписываемся на события смены
-        this.subscribeToShiftEvents();
-        
-        // Подписываемся на изменения Store
-        this.subscribeToStore();
-        
-        // Синхронизируем состояние смены с БД
-        await this.syncShiftState();
-        
-        this.isInitialized = true;
-    }
-
-    /**
-     * Синхронизирует состояние смены с сервером
-     * Принудительно проверяет наличие открытой смены в БД
-     */
-    async syncShiftState() {
-        logger.group('syncShiftState', async () => {
-            logger.debug('Starting shift state synchronization');
+    async mount() {
+        // Переопределяем mount, чтобы избежать циклического вызова afterRender
+        this._logger.group(`Mounting ${this._componentName}`, async () => {
+            this._logger.debug('mount() started');
             
-            // Устанавливаем флаг загрузки
-            Store.state.cashier.isLoadingShift = true;
-            await this.update();
+            if (this._isDestroyed) {
+                this._logger.warn('Attempted to mount destroyed component');
+                return;
+            }
+            
+            this.container.innerHTML = '';
             
             try {
-                // Принудительно запрашиваем смену с сервера (игнорируем кэш)
-                logger.debug('Fetching current shift from server (force refresh)');
-                const serverShift = await ShiftService.getCurrentShift(this.user.id, true);
+                this._logger.debug('Calling render()');
+                const html = await this.render();
                 
-                const currentStoreShift = Store.state.cashier.currentShift;
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = html.trim();
+                this.element = wrapper.firstChild;
                 
-                logger.debug('Shift state comparison', {
-                    serverShift: serverShift ? { id: serverShift.id, isLocal: serverShift.is_local } : null,
-                    storeShift: currentStoreShift ? { id: currentStoreShift.id, isLocal: currentStoreShift.is_local } : null
-                });
-                
-                if (serverShift) {
-                    // На сервере есть открытая смена
-                    logger.info('Found open shift on server', { shiftId: serverShift.id });
-                    
-                    if (!currentStoreShift || currentStoreShift.id !== serverShift.id) {
-                        // Обновляем Store
-                        Store.state.cashier.currentShift = serverShift;
-                        
-                        // Загружаем статистику смены
-                        try {
-                            const stats = await ShiftService.getCurrentShiftStats(serverShift.id);
-                            Store.state.cashier.shiftStats = {
-                                revenue: stats.totalRevenue || 0,
-                                salesCount: stats.salesCount || 0,
-                                averageCheck: stats.averageCheck || 0,
-                                profit: stats.totalProfit || 0
-                            };
-                            logger.debug('Shift stats loaded', Store.state.cashier.shiftStats);
-                        } catch (statsError) {
-                            logger.warn('Failed to load shift stats', { error: statsError.message });
-                        }
-                        
-                        // Монтируем компоненты смены
-                        await this.mountShiftComponents();
-                        await this.loadData();
-                        
-                        Notification.info('Найдена открытая смена');
-                    } else {
-                        logger.debug('Store already has correct shift');
-                    }
-                } else {
-                    // На сервере нет открытой смены
-                    logger.info('No open shift on server');
-                    
-                    if (currentStoreShift?.is_local) {
-                        // У нас есть локальная смена, оставляем её
-                        logger.debug('Keeping local shift');
-                    } else if (currentStoreShift) {
-                        // В Store есть смена, но на сервере её нет - очищаем
-                        logger.warn('Store has shift but server does not, clearing');
-                        Store.state.cashier.currentShift = null;
-                        Store.state.cashier.shiftStats = {
-                            revenue: 0,
-                            salesCount: 0,
-                            averageCheck: 0,
-                            profit: 0
-                        };
-                    }
+                if (!this.element) {
+                    throw new Error('Failed to create element from rendered HTML');
                 }
+                
+                this.container.appendChild(this.element);
+                this.cacheRefs();
+                
+                // Подписываемся на события
+                this.subscribeToShiftEvents();
+                this.subscribeToStore();
+                
+                // ВАЖНО: НЕ вызываем afterRender() здесь, делаем всё вручную
+                await this.initializeUI();
+                
+                this._isMounted = true;
+                this._logger.info('Component mounted successfully');
+                this.hideLoader();
                 
             } catch (error) {
-                logger.error('Failed to sync shift state', { error: error.message });
-                
-                // При ошибке сети сохраняем текущее состояние
-                if (error.code === 'SHIFT_OFFLINE' || error.message?.includes('fetch')) {
-                    logger.warn('Network error during sync, keeping current state');
-                    Notification.warning('Нет подключения к серверу. Работа в офлайн-режиме.');
-                } else {
-                    Notification.error('Ошибка при проверке состояния смены');
-                }
-                
-            } finally {
-                // Сбрасываем флаг загрузки
-                Store.state.cashier.isLoadingShift = false;
-                
-                // Перерисовываем UI
-                await this.update();
-                
-                // Если смена открыта, монтируем компоненты (если ещё не смонтированы)
-                if (Store.state.cashier.currentShift && !this.shiftPanel) {
-                    await this.mountShiftComponents();
-                    await this.loadData();
-                }
-                
-                logger.debug('Shift state synchronization completed');
+                this._logger.error('Mount failed', { error: error.message });
+                this.container.innerHTML = `
+                    <div class="error-state">
+                        <div class="error-state-icon">⚠️</div>
+                        <p>Ошибка загрузки кассы</p>
+                        <small>${this.escapeHtml(error.message)}</small>
+                        <button class="btn-primary" onclick="location.reload(true)">Обновить</button>
+                    </div>
+                `;
+                throw error;
             }
         });
     }
+    
+    /**
+     * Инициализация UI (заменяет afterRender)
+     */
+    async initializeUI() {
+        logger.debug('initializeUI started');
+        
+        await this.loadComponents();
+        
+        // Проверяем, есть ли уже смена в Store
+        const hasShift = Store.state.cashier.currentShift !== null;
+        
+        if (hasShift) {
+            logger.debug('Shift already in Store, mounting components');
+            await this.mountShiftComponents();
+            await this.loadData();
+        } else {
+            // Нет смены в Store - проверяем сервер
+            logger.debug('No shift in Store, checking server');
+            await this.checkServerForShift();
+        }
+        
+        this._isInitialized = true;
+        logger.debug('initializeUI completed');
+    }
+    
+    /**
+     * Проверяет наличие смены на сервере
+     */
+    async checkServerForShift() {
+        if (this._syncInProgress) {
+            logger.debug('Sync already in progress, skipping');
+            return;
+        }
+        
+        this._syncInProgress = true;
+        
+        try {
+            // Показываем лоадер через Store (вызовет перерисовку)
+            Store.state.cashier.isLoadingShift = true;
+            
+            logger.debug('Checking server for open shift');
+            const serverShift = await ShiftService.getCurrentShift(this.user.id, true);
+            
+            if (serverShift) {
+                logger.info('Found open shift on server', { shiftId: serverShift.id });
+                
+                // Сохраняем смену в Store
+                Store.state.cashier.currentShift = serverShift;
+                
+                // Загружаем статистику
+                try {
+                    const stats = await ShiftService.getCurrentShiftStats(serverShift.id);
+                    Store.state.cashier.shiftStats = {
+                        revenue: stats.totalRevenue || 0,
+                        salesCount: stats.salesCount || 0,
+                        averageCheck: stats.averageCheck || 0,
+                        profit: stats.totalProfit || 0
+                    };
+                } catch (statsError) {
+                    logger.warn('Failed to load shift stats', { error: statsError.message });
+                }
+                
+                // Выключаем лоадер
+                Store.state.cashier.isLoadingShift = false;
+                
+                // Монтируем компоненты
+                await this.mountShiftComponents();
+                await this.loadData();
+                
+                Notification.info('Найдена открытая смена');
+            } else {
+                logger.info('No open shift on server');
+                Store.state.cashier.isLoadingShift = false;
+            }
+            
+        } catch (error) {
+            logger.error('Failed to check server for shift', { error: error.message });
+            Store.state.cashier.isLoadingShift = false;
+            
+            if (error.code === 'SHIFT_OFFLINE' || error.message?.includes('fetch')) {
+                Notification.warning('Нет подключения к серверу');
+            }
+        } finally {
+            this._syncInProgress = false;
+        }
+    }
 
     async loadComponents() {
-        logger.debug('Loading UI components');
-        
         if (!ShiftPanel) {
             const modules = await Promise.all([
                 import('./ShiftPanel.js'),
@@ -305,22 +325,20 @@ export class CashierApp extends BaseComponent {
             ProductGrid = modules[2].ProductGrid;
             Cart = modules[3].Cart;
             PaymentModal = modules[4].PaymentModal;
-            logger.debug('UI components loaded');
         }
     }
 
     async mountShiftComponents() {
         logger.debug('Mounting shift components');
         
-        // 1. Shift Panel
+        // Shift Panel
         const shiftContainer = this.refs.get('shiftPanelContainer');
         if (shiftContainer && !this.shiftPanel) {
             this.shiftPanel = new ShiftPanel(shiftContainer);
             await this.shiftPanel.mount();
-            logger.debug('ShiftPanel mounted');
         }
 
-        // 2. Category Nav
+        // Category Nav
         const navContainer = this.refs.get('categoryNavContainer');
         if (navContainer && !this.categoryNav) {
             this.categoryNav = new CategoryNav(navContainer, {
@@ -329,148 +347,77 @@ export class CashierApp extends BaseComponent {
                 onScan: (product) => this.handleAddToCart(product)
             });
             await this.categoryNav.mount();
-            logger.debug('CategoryNav mounted');
         }
 
-        // 3. Product Grid
+        // Product Grid
         const gridContainer = this.refs.get('productGridContainer');
         if (gridContainer && !this.productGrid) {
             this.productGrid = new ProductGrid(gridContainer, {
                 onAddToCart: (product) => this.handleAddToCart(product)
             });
             await this.productGrid.mount();
-            logger.debug('ProductGrid mounted');
         }
 
-        // 4. Cart
+        // Cart
         const cartContainer = this.refs.get('cartContainer');
         if (cartContainer && !this.cart) {
             this.cart = new Cart(cartContainer);
             await this.cart.mount();
-            logger.debug('Cart mounted');
         }
 
-        // Кнопки в футере
+        // Кнопки
         this.addDomListener('checkoutBtn', 'click', () => this.handleCheckout());
         this.addDomListener('clearCartBtn', 'click', () => this.handleClearCart());
-        
-        // Кнопка проверки смены (на экране закрытой смены)
-        this.addDomListener('refreshShiftStateBtn', 'click', () => this.syncShiftState());
+        this.addDomListener('openShiftBtn', 'click', () => this.handleOpenShiftRequest());
+        this.addDomListener('refreshShiftStateBtn', 'click', () => this.manualRefreshShift());
+    }
+    
+    /**
+     * Ручное обновление состояния смены
+     */
+    async manualRefreshShift() {
+        logger.debug('Manual refresh requested');
+        await this.checkServerForShift();
     }
 
-    // ========== ПОДПИСКИ НА СОБЫТИЯ ==========
+    // ========== ПОДПИСКИ ==========
     
-    /**
-     * Подписывается на события смены от ShiftPanel
-     */
     subscribeToShiftEvents() {
-        logger.debug('Subscribing to shift events');
-        
-        // Запрос на открытие смены
-        const unsubOpen = EventBus.on('shift:open-requested', () => {
-            logger.info('Received shift:open-requested event');
-            this.handleOpenShiftRequest();
-        });
+        const unsubOpen = EventBus.on('shift:open-requested', () => this.handleOpenShiftRequest());
         this.eventUnsubscribers.push(unsubOpen);
         
-        // Запрос на закрытие смены
-        const unsubClose = EventBus.on('shift:close-requested', (data) => {
-            logger.info('Received shift:close-requested event', data);
-            this.handleCloseShiftRequest(data);
-        });
+        const unsubClose = EventBus.on('shift:close-requested', (data) => this.handleCloseShiftRequest(data));
         this.eventUnsubscribers.push(unsubClose);
-        
-        // Событие успешной синхронизации
-        const unsubSynced = EventBus.on('shift:synced', (data) => {
-            logger.info('Received shift:synced event', data);
-            this.handleShiftSynced(data);
-        });
-        this.eventUnsubscribers.push(unsubSynced);
     }
     
-    /**
-     * Подписывается на изменения Store
-     */
     subscribeToStore() {
-        logger.debug('Subscribing to Store changes');
-        
         this.unsubscribers.push(
-            Store.subscribe('cashier.filteredProducts', () => {
-                logger.debug('Store: filteredProducts changed');
-                this.productGrid?.update();
-            }),
-            
-            Store.subscribe('cashier.cartItems', () => {
-                logger.debug('Store: cartItems changed');
-                this.updateCartUI();
-            }),
-            
-            Store.subscribe('cashier.cartTotalDiscount', () => {
-                logger.debug('Store: cartTotalDiscount changed');
-                this.updateCartUI();
-            }),
-            
-            Store.subscribe('cashier.isShiftActionPending', (change) => {
-                logger.debug('Store: isShiftActionPending changed', { 
-                    oldValue: change.oldValue, 
-                    newValue: change.newValue 
-                });
-                this.update();
-            }),
-            
-            Store.subscribe('cashier.isLoadingShift', (change) => {
-                logger.debug('Store: isLoadingShift changed', { 
-                    oldValue: change.oldValue, 
-                    newValue: change.newValue 
-                });
-                this.update();
-            })
+            Store.subscribe('cashier.filteredProducts', () => this.productGrid?.update()),
+            Store.subscribe('cashier.cartItems', () => this.updateCartUI()),
+            Store.subscribe('cashier.cartTotalDiscount', () => this.updateCartUI()),
+            Store.subscribe('cashier.isShiftActionPending', () => this.update()),
+            Store.subscribe('cashier.isLoadingShift', () => this.update())
         );
     }
 
     // ========== ОБРАБОТЧИКИ СМЕНЫ ==========
     
-    /**
-     * Обработчик запроса на открытие смены
-     */
     async handleOpenShiftRequest() {
-        logger.group('handleOpenShiftRequest', () => {
-            logger.debug('Starting shift open process');
-        });
-        
-        // Проверяем, не открыта ли уже смена
         if (Store.state.cashier.currentShift) {
-            logger.warn('Shift already open, ignoring request', { 
-                shiftId: Store.state.cashier.currentShift.id 
-            });
             Notification.warning('Смена уже открыта');
             return;
         }
         
-        // Проверяем, не выполняется ли уже операция
-        if (Store.state.cashier.isShiftActionPending) {
-            logger.warn('Shift action already pending, ignoring request');
-            return;
-        }
+        if (Store.state.cashier.isShiftActionPending) return;
         
-        // Устанавливаем флаг загрузки
         Store.state.cashier.isShiftActionPending = true;
         
         try {
-            logger.info('Calling ShiftService.openShift', { userId: this.user.id });
-            
-            // Пытаемся открыть смену
             const shift = await ShiftService.openShift(this.user.id, {
                 initialCash: 0,
-                allowLocal: true // Разрешаем офлайн
+                allowLocal: true
             });
             
-            logger.info('Shift opened successfully', { 
-                shiftId: shift.id, 
-                isLocal: shift.is_local || false 
-            });
-            
-            // Сохраняем смену в Store
             Store.state.cashier.currentShift = shift;
             Store.state.cashier.shiftStats = {
                 revenue: 0,
@@ -479,241 +426,70 @@ export class CashierApp extends BaseComponent {
                 profit: 0
             };
             
-            // Показываем уведомление
             if (shift.is_local) {
-                Notification.warning('Смена открыта в офлайн-режиме. Данные будут синхронизированы при подключении к сети.');
+                Notification.warning('Смена открыта в офлайн-режиме');
             } else {
                 Notification.success('Смена успешно открыта');
             }
             
-            // Перерисовываем UI и монтируем компоненты
             await this.update();
             await this.mountShiftComponents();
             await this.loadData();
             
-            EventBus.emit('shift:opened', { shift });
-            
         } catch (error) {
-            logger.error('Failed to open shift', { error: error.message, code: error.code });
-            
-            let errorMessage = 'Ошибка при открытии смены';
+            logger.error('Failed to open shift', { error: error.message });
             
             if (error.code === 'SHIFT_ALREADY_OPEN') {
-                errorMessage = 'У вас уже есть открытая смена. Обновите страницу.';
-                // Пробуем синхронизировать состояние
-                await this.syncShiftState();
-            } else if (error.code === 'PROFILE_NOT_FOUND') {
-                errorMessage = 'Профиль пользователя не найден. Обратитесь к администратору.';
-            } else if (error.code === 'SHIFT_TIMEOUT') {
-                errorMessage = 'Превышено время ожидания ответа от сервера';
-            } else if (error.code === 'SHIFT_OFFLINE') {
-                errorMessage = 'Нет подключения к серверу';
-            } else if (error.message) {
-                errorMessage = error.message;
+                Notification.warning('У вас уже есть открытая смена. Проверяем...');
+                await this.checkServerForShift();
+            } else {
+                Notification.error('Ошибка при открытии смены: ' + error.message);
             }
-            
-            Notification.error(errorMessage);
-            
         } finally {
-            // Сбрасываем флаг загрузки
             Store.state.cashier.isShiftActionPending = false;
-            logger.debug('Shift action completed, pending flag cleared');
         }
     }
     
-    /**
-     * Обработчик запроса на закрытие смены
-     */
     async handleCloseShiftRequest(data) {
         const { shiftId, isLocal, currentStats } = data;
         
-        logger.group('handleCloseShiftRequest', () => {
-            logger.debug('Starting shift close process', { shiftId, isLocal, currentStats });
-        });
-        
-        // Проверяем, не выполняется ли уже операция
-        if (Store.state.cashier.isShiftActionPending) {
-            logger.warn('Shift action already pending, ignoring request');
-            return;
-        }
-        
-        // Подтверждение
-        const confirmMessage = isLocal 
-            ? 'Вы работаете в офлайн-режиме. Смена будет закрыта локально. Продолжить?'
-            : `Закрыть смену? Выручка: ${formatMoney(currentStats.revenue)}, продаж: ${currentStats.salesCount}`;
+        if (Store.state.cashier.isShiftActionPending) return;
         
         const confirmed = await ConfirmDialog.show({
             title: 'Закрытие смены',
-            message: confirmMessage,
-            confirmText: 'Закрыть смену',
-            cancelText: 'Отмена',
+            message: `Закрыть смену? Выручка: ${formatMoney(currentStats.revenue)}`,
+            confirmText: 'Закрыть',
             type: 'warning'
         });
         
-        if (!confirmed) {
-            logger.debug('Shift close cancelled by user');
-            return;
-        }
+        if (!confirmed) return;
         
-        // Устанавливаем флаг загрузки
         Store.state.cashier.isShiftActionPending = true;
         
         try {
-            logger.info('Calling ShiftService.closeShift', { shiftId });
-            
             const result = await ShiftService.closeShift(shiftId);
             
-            logger.info('Shift closed successfully', { 
-                shiftId, 
-                revenue: result.total_revenue,
-                isLocal: result.is_local || false
-            });
-            
-            // Очищаем состояние
             Store.state.cashier.currentShift = null;
-            Store.state.cashier.shiftStats = {
-                revenue: 0,
-                salesCount: 0,
-                averageCheck: 0,
-                profit: 0
-            };
+            Store.state.cashier.shiftStats = { revenue: 0, salesCount: 0, averageCheck: 0, profit: 0 };
             Store.state.cashier.cartItems = [];
             Store.state.cashier.cartTotalDiscount = 0;
             
-            // Уведомление
-            if (result.is_local) {
-                Notification.warning(`Смена закрыта локально. Выручка: ${formatMoney(result.total_revenue || 0)}`);
-            } else {
-                Notification.success(`Смена закрыта. Выручка: ${formatMoney(result.total_revenue || 0)}`);
-            }
+            Notification.success(`Смена закрыта. Выручка: ${formatMoney(result.total_revenue || 0)}`);
             
-            // Перерисовываем UI
             await this.update();
             
-            EventBus.emit('shift:closed', { shift: result });
-            
         } catch (error) {
-            logger.error('Failed to close shift', { shiftId, error: error.message });
-            
-            let errorMessage = 'Ошибка при закрытии смены';
-            if (error.message) {
-                errorMessage = error.message;
-            }
-            
-            Notification.error(errorMessage);
-            
+            logger.error('Failed to close shift', { error: error.message });
+            Notification.error('Ошибка при закрытии смены: ' + error.message);
         } finally {
-            // Сбрасываем флаг загрузки
             Store.state.cashier.isShiftActionPending = false;
-            logger.debug('Shift action completed, pending flag cleared');
-        }
-    }
-    
-    /**
-     * Обработчик успешной синхронизации смены
-     */
-    handleShiftSynced(data) {
-        logger.info('Shift synced with server', data);
-        
-        const { localId, serverId } = data;
-        
-        // Обновляем смену в Store
-        const currentShift = Store.state.cashier.currentShift;
-        if (currentShift && currentShift.id === localId) {
-            Store.state.cashier.currentShift = {
-                ...currentShift,
-                ...data.shift,
-                is_local: false,
-                synced_at: new Date().toISOString()
-            };
-            
-            Notification.success('Смена синхронизирована с сервером');
-            this.update();
-        }
-        
-        // Обновляем статистику
-        this.updateShiftStats();
-    }
-    
-    /**
-     * Пытается синхронизировать локальную смену
-     */
-    async attemptSyncLocalShift() {
-        const currentShift = Store.state.cashier.currentShift;
-        
-        if (!currentShift?.is_local) {
-            logger.debug('No local shift to sync');
-            return;
-        }
-        
-        logger.info('Attempting to sync local shift', { 
-            shiftId: currentShift.id, 
-            attempt: this.syncAttempts + 1 
-        });
-        
-        try {
-            EventBus.emit('shift:sync:started', { shiftId: currentShift.id });
-            
-            // Пытаемся синхронизировать
-            const syncedShifts = await ShiftService.syncLocalShifts();
-            
-            if (syncedShifts > 0) {
-                logger.info('Local shift synced successfully');
-                this.syncAttempts = 0;
-                
-                // Обновляем смену в Store
-                const serverShift = await ShiftService.getCurrentShift(this.user.id, true);
-                if (serverShift) {
-                    Store.state.cashier.currentShift = serverShift;
-                    Notification.success('Смена синхронизирована с сервером');
-                    await this.update();
-                }
-                
-                EventBus.emit('shift:sync:completed', { syncedCount: syncedShifts });
-            } else {
-                // Пробуем ещё раз
-                this.scheduleRetrySync();
-            }
-            
-        } catch (error) {
-            logger.error('Failed to sync local shift', { error: error.message });
-            EventBus.emit('shift:sync:failed', { error });
-            
-            this.scheduleRetrySync();
-        }
-    }
-    
-    /**
-     * Планирует повторную попытку синхронизации
-     */
-    scheduleRetrySync() {
-        this.syncAttempts++;
-        
-        if (this.syncAttempts < AUTO_SYNC_ATTEMPTS) {
-            logger.debug('Scheduling retry sync', { 
-                attempt: this.syncAttempts, 
-                maxAttempts: AUTO_SYNC_ATTEMPTS,
-                delay: AUTO_SYNC_DELAY
-            });
-            
-            this.syncTimer = setTimeout(() => {
-                this.attemptSyncLocalShift();
-            }, AUTO_SYNC_DELAY * this.syncAttempts);
-        } else {
-            logger.warn('Max sync attempts reached, giving up');
-            Notification.warning('Не удалось синхронизировать смену. Попробуйте позже.');
         }
     }
 
     // ========== ДАННЫЕ ==========
     
     async loadData() {
-        logger.debug('Loading cashier data');
-        
-        if (!Store.state.cashier.currentShift) {
-            logger.debug('No shift open, skipping data load');
-            return;
-        }
+        if (!Store.state.cashier.currentShift) return;
         
         try {
             const products = await ProductService.getInStock();
@@ -722,16 +498,8 @@ export class CashierApp extends BaseComponent {
             const categories = this.buildCategories(products);
             Store.state.cashier.categories = categories;
             
-            // Применяем фильтры
             this.applyFilters();
-            
-            // Статистика смены
             await this.updateShiftStats();
-            
-            logger.info('Cashier data loaded', { 
-                productsCount: products.length,
-                categoriesCount: categories.length
-            });
             
         } catch (error) {
             logger.error('Data loading error', { error: error.message });
@@ -765,13 +533,6 @@ export class CashierApp extends BaseComponent {
         }
         
         cashier.filteredProducts = filtered;
-        
-        logger.debug('Filters applied', { 
-            total: cashier.products.length,
-            filtered: filtered.length,
-            searchQuery: cashier.searchQuery,
-            category: cashier.selectedCategory
-        });
     }
 
     async updateShiftStats() {
@@ -786,11 +547,8 @@ export class CashierApp extends BaseComponent {
                 averageCheck: stats.averageCheck || 0,
                 profit: stats.totalProfit || 0
             };
-            
-            logger.debug('Shift stats updated', Store.state.cashier.shiftStats);
-            
         } catch (error) {
-            logger.error('Stats update error', { shiftId, error: error.message });
+            logger.error('Stats update error', { error: error.message });
         }
     }
 
@@ -809,28 +567,23 @@ export class CashierApp extends BaseComponent {
         this.cart?.update();
     }
 
-    // ========== ОБРАБОТЧИКИ UI ==========
+    // ========== UI HANDLERS ==========
     
     handleCategorySelect(category) {
-        logger.debug('Category selected', { category });
         Store.state.cashier.selectedCategory = category === 'all' ? null : category;
         this.applyFilters();
     }
 
     handleSearch(query) {
-        logger.debug('Search query changed', { query });
         Store.state.cashier.searchQuery = query;
         this.applyFilters();
     }
 
     handleAddToCart(product) {
         if (product.status !== 'in_stock') {
-            logger.warn('Attempted to add unavailable product', { productId: product.id });
             Notification.warning('Товар недоступен');
             return;
         }
-        
-        logger.debug('Adding to cart', { productId: product.id, name: product.name });
         
         const items = Store.state.cashier.cartItems;
         const existing = items.find(i => i.id === product.id);
@@ -841,15 +594,12 @@ export class CashierApp extends BaseComponent {
             items.push({ ...product, quantity: 1 });
         }
         
-        // Триггерим обновление
         Store.state.cashier.cartItems = [...items];
         Notification.info(`Добавлено: ${product.name}`);
     }
 
     async handleClearCart() {
         if (Store.state.cashier.cartItems.length === 0) return;
-        
-        logger.debug('Clear cart requested');
         
         const confirmed = await ConfirmDialog.show({
             title: 'Очистка корзины',
@@ -858,7 +608,6 @@ export class CashierApp extends BaseComponent {
         });
         
         if (confirmed) {
-            logger.info('Cart cleared');
             Store.state.cashier.cartItems = [];
             Store.state.cashier.cartTotalDiscount = 0;
             Notification.info('Корзина очищена');
@@ -869,24 +618,17 @@ export class CashierApp extends BaseComponent {
         const items = Store.state.cashier.cartItems;
         if (items.length === 0) return;
         
-        logger.debug('Checkout requested', { itemsCount: items.length });
-        
-        // Создаем модалку для выбора оплаты
         const modalContainer = document.getElementById('modal-container');
         this.paymentModal = new PaymentModal(modalContainer, {
             total: Store.getCartTotal(),
-            onConfirm: async (method, received) => {
-                await this.processCheckout(method, received);
+            onConfirm: async (method) => {
+                await this.processCheckout(method);
             }
         });
         await this.paymentModal.mount();
     }
 
-    async processCheckout(paymentMethod, receivedAmount) {
-        logger.group('processCheckout', () => {
-            logger.debug('Processing checkout', { paymentMethod, receivedAmount });
-        });
-        
+    async processCheckout(paymentMethod) {
         try {
             const shiftId = Store.getShiftId();
             const items = Store.state.cashier.cartItems.map(i => ({
@@ -900,8 +642,6 @@ export class CashierApp extends BaseComponent {
             const total = Store.getCartTotal();
             const discount = Store.state.cashier.cartTotalDiscount;
             
-            logger.debug('Creating sale', { shiftId, itemsCount: items.length, total, discount });
-            
             const sale = await SaleService.create({
                 shiftId,
                 items,
@@ -910,66 +650,36 @@ export class CashierApp extends BaseComponent {
                 paymentMethod
             });
             
-            logger.info('Sale created successfully', { saleId: sale.id });
-            
-            // Очищаем корзину
             Store.state.cashier.cartItems = [];
             Store.state.cashier.cartTotalDiscount = 0;
             
-            // Обновляем статистику и товары
             await this.updateShiftStats();
             await this.loadData();
             
             Notification.success(`Продажа на ${formatMoney(total)}`);
             this.paymentModal?.destroy();
             
-            EventBus.emit('sale:completed', { sale });
-            
         } catch (error) {
             logger.error('Checkout error', { error: error.message });
-            Notification.error('Ошибка при создании продажи: ' + (error.message || 'Неизвестная ошибка'));
+            Notification.error('Ошибка при создании продажи');
         }
     }
 
     // ========== ОЧИСТКА ==========
     
     beforeDestroy() {
-        logger.debug('Destroying CashierApp');
-        
-        // Очищаем таймеры
         if (this.syncTimer) {
             clearTimeout(this.syncTimer);
-            this.syncTimer = null;
         }
         
-        // Отписываемся от Store
-        this.unsubscribers.forEach(unsub => {
-            try {
-                unsub();
-            } catch (error) {
-                logger.warn('Error during Store unsubscribe', { error });
-            }
-        });
-        this.unsubscribers = [];
+        this.unsubscribers.forEach(unsub => unsub());
+        this.eventUnsubscribers.forEach(unsub => unsub());
         
-        // Отписываемся от EventBus
-        this.eventUnsubscribers.forEach(unsub => {
-            try {
-                unsub();
-            } catch (error) {
-                logger.warn('Error during EventBus unsubscribe', { error });
-            }
-        });
-        this.eventUnsubscribers = [];
-        
-        // Уничтожаем дочерние компоненты
         this.shiftPanel?.destroy();
         this.categoryNav?.destroy();
         this.productGrid?.destroy();
         this.cart?.destroy();
         this.paymentModal?.destroy();
-        
-        logger.info('CashierApp destroyed');
     }
 }
 
