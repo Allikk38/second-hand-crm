@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Склад | SH CRM</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <style>
+        .inventory-page {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .page-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        
+        .filters-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .search-wrapper {
+            flex: 1;
+            min-width: 250px;
+            position: relative;
+        }
+        
+        .search-wrapper input {
+            width: 100%;
+            padding: 10px 16px 10px 40px;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+        }
+        
+        .filter-select {
+            padding: 10px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .products-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .products-table th {
+            padding: 12px 16px;
+            background: #f8fafc;
+            font-weight: 500;
+            font-size: 13px;
+            color: #64748b;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .products-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        
+        .products-table tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-in_stock {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status-sold {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .status-reserved {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .row-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <h1>📦 Склад</h1>
+            <nav class="app-nav">
+                <a href="inventory.html" class="active">Склад</a>
+                <a href="cashier.html">Касса</a>
+                <a href="reports.html">Отчеты</a>
+            </nav>
+            <button id="logoutBtn" class="btn-ghost">Выход</button>
+        </header>
+        
+        <main class="app-main">
+            <div class="inventory-page">
+                <div class="page-header">
+                    <h2>Товары</h2>
+                    <button class="btn-primary" id="addProductBtn">+ Добавить товар</button>
+                </div>
+                
+                <div class="filters-bar">
+                    <div class="search-wrapper">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" placeholder="Поиск по названию или ID...">
+                    </div>
+                    <select id="categoryFilter" class="filter-select">
+                        <option value="">Все категории</option>
+                    </select>
+                    <select id="statusFilter" class="filter-select">
+                        <option value="">Все статусы</option>
+                        <option value="in_stock">В наличии</option>
+                        <option value="sold">Проданные</option>
+                        <option value="reserved">Забронированные</option>
+                    </select>
+                    <button class="btn-secondary" id="clearFiltersBtn">Сбросить</button>
+                </div>
+                
+                <div id="statsBar" class="stats-bar"></div>
+                
+                <div id="content">
+                    <div class="loading">Загрузка товаров...</div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script type="module" src="../js/inventory.js"></script>
+</body>
+</html>
