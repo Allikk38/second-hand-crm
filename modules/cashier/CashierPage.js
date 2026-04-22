@@ -14,11 +14,11 @@
  * - Соответствует паттерну MPA (точка входа).
  * 
  * @module CashierPage
- * @version 6.0.2
+ * @version 6.0.3
  * @changes
+ * - Исправлен экспорт: добавлен именованный экспорт для совместимости с Router.
  * - Добавлено детальное логирование для диагностики проблем монтирования.
  * - Добавлена обработка ошибок с выводом в консоль и UI.
- * - Исправлен вызов super.mount().
  */
 
 import { BaseComponent } from '../../core/BaseComponent.js';
@@ -161,4 +161,5 @@ export class CashierPage extends BaseComponent {
     }
 }
 
+// Экспортируем и как default, и как именованный для совместимости
 export default CashierPage;
