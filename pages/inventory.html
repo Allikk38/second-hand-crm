@@ -2,164 +2,528 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Склад | SH CRM</title>
+    
+    <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
+    
+    <!-- Дополнительные стили для страницы склада -->
     <style>
+        /* Стили специфичные только для страницы склада */
         .inventory-page {
-            height: 100vh;
             display: flex;
             flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            background: var(--color-bg);
         }
         
         .page-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 20px;
+            margin-bottom: var(--spacing-5);
+            flex-shrink: 0;
+        }
+        
+        .page-header h1 {
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+            margin: 0;
+        }
+        
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+        }
+        
+        .stats-bar {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-6);
+            padding: var(--spacing-4);
+            margin-bottom: var(--spacing-5);
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) solid var(--color-border);
+            flex-shrink: 0;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: baseline;
+            gap: var(--spacing-2);
+        }
+        
+        .stat-label {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+        }
+        
+        .stat-value {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+        }
+        
+        .stat-value.success {
+            color: var(--color-success-dark);
+        }
+        
+        .stat-value.danger {
+            color: var(--color-danger-dark);
         }
         
         .filters-bar {
             display: flex;
-            gap: 12px;
-            margin-bottom: 20px;
+            align-items: center;
+            gap: var(--spacing-3);
+            margin-bottom: var(--spacing-5);
             flex-wrap: wrap;
+            flex-shrink: 0;
         }
         
         .search-wrapper {
             flex: 1;
-            min-width: 250px;
+            min-width: 280px;
             position: relative;
         }
         
         .search-wrapper input {
             width: 100%;
-            padding: 10px 16px 10px 40px;
+            height: var(--input-height-lg);
+            padding: 0 var(--spacing-4) 0 var(--spacing-10);
+            font-size: var(--font-size-base);
+            border: var(--border-width) solid var(--color-border);
+            border-radius: var(--radius-md);
+            background: var(--color-white);
         }
         
-        .search-icon {
+        .search-wrapper .search-icon {
             position: absolute;
-            left: 12px;
+            left: var(--spacing-3);
             top: 50%;
             transform: translateY(-50%);
-            color: #94a3b8;
+            color: var(--color-text-muted);
+            font-size: 18px;
+            pointer-events: none;
         }
         
         .filter-select {
-            padding: 10px 16px;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            background: white;
+            min-width: 180px;
+            height: var(--input-height-lg);
+            padding: 0 var(--spacing-4);
+            font-size: var(--font-size-sm);
+            border: var(--border-width) solid var(--color-border);
+            border-radius: var(--radius-md);
+            background: var(--color-white);
+            cursor: pointer;
+        }
+        
+        .content-container {
+            flex: 1;
+            min-height: 0;
+            background: var(--color-white);
+            border-radius: var(--radius-lg);
+            border: var(--border-width) solid var(--color-border);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .table-wrapper {
+            flex: 1;
+            overflow: auto;
         }
         
         .products-table {
             width: 100%;
             border-collapse: collapse;
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            min-width: 900px;
+        }
+        
+        .products-table thead {
+            position: sticky;
+            top: 0;
+            background: var(--color-gray-50);
+            z-index: 10;
+            border-bottom: 2px solid var(--color-border);
         }
         
         .products-table th {
-            padding: 12px 16px;
-            background: #f8fafc;
-            font-weight: 500;
-            font-size: 13px;
-            color: #64748b;
+            padding: var(--spacing-3) var(--spacing-4);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: var(--letter-spacing-wide);
             text-align: left;
-            border-bottom: 1px solid #e2e8f0;
+            white-space: nowrap;
         }
         
         .products-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #f1f5f9;
+            padding: var(--spacing-3) var(--spacing-4);
+            border-bottom: var(--border-width) solid var(--color-border-light);
+            vertical-align: middle;
         }
         
-        .products-table tr:last-child td {
-            border-bottom: none;
+        .products-table tbody tr {
+            cursor: pointer;
+            transition: background var(--transition-fast);
+        }
+        
+        .products-table tbody tr:hover {
+            background: var(--color-gray-50);
+        }
+        
+        .products-table tbody tr.selected {
+            background: var(--color-primary-bg);
+        }
+        
+        .product-thumb {
+            width: 48px;
+            height: 48px;
+            background: var(--color-gray-100);
+            border-radius: var(--radius-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: var(--border-width) solid var(--color-border-light);
+        }
+        
+        .product-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .product-thumb .placeholder {
+            font-size: 24px;
+            color: var(--color-text-muted);
+        }
+        
+        .product-name {
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text);
+        }
+        
+        .product-id {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            font-family: var(--font-family-mono);
+            margin-top: var(--spacing-0-5);
+        }
+        
+        .product-price {
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+            font-family: var(--font-family-mono);
+        }
+        
+        .product-cost {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
         }
         
         .status-badge {
             display: inline-block;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
+            padding: var(--spacing-1) var(--spacing-3);
+            border-radius: var(--radius-full);
+            font-size: var(--font-size-xs);
+            font-weight: var(--font-weight-medium);
+            text-transform: uppercase;
         }
         
-        .status-in_stock {
-            background: #d1fae5;
-            color: #065f46;
+        .status-badge.in_stock {
+            background: var(--color-success-bg);
+            color: var(--color-success-dark);
         }
         
-        .status-sold {
-            background: #fee2e2;
-            color: #991b1b;
+        .status-badge.sold {
+            background: var(--color-danger-bg);
+            color: var(--color-danger-dark);
         }
         
-        .status-reserved {
-            background: #fef3c7;
-            color: #92400e;
+        .status-badge.reserved {
+            background: var(--color-warning-bg);
+            color: var(--color-warning-dark);
         }
         
         .row-actions {
             display: flex;
-            gap: 8px;
+            gap: var(--spacing-1);
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+        
+        .products-table tbody tr:hover .row-actions {
+            opacity: 1;
         }
         
         .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: var(--spacing-16);
             text-align: center;
-            padding: 60px;
-            color: #94a3b8;
+            color: var(--color-text-muted);
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: var(--spacing-4);
+            opacity: 0.5;
+        }
+        
+        .empty-state p {
+            margin-bottom: var(--spacing-4);
+            font-size: var(--font-size-base);
+        }
+        
+        .skeleton-loader {
+            padding: var(--spacing-4);
+        }
+        
+        .skeleton-row {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-3);
+            padding: var(--spacing-3) 0;
+            border-bottom: var(--border-width) solid var(--color-border-light);
+        }
+        
+        .skeleton {
+            background: var(--color-gray-200);
+            border-radius: var(--radius-sm);
+            animation: skeleton-pulse 1.5s ease-in-out infinite;
+        }
+        
+        .skeleton-image {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-md);
+        }
+        
+        .skeleton-text {
+            flex: 1;
+            height: 16px;
+        }
+        
+        .skeleton-badge {
+            width: 80px;
+            height: 24px;
+            border-radius: var(--radius-full);
+        }
+        
+        @keyframes skeleton-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        @media (max-width: 768px) {
+            .stats-bar {
+                flex-wrap: wrap;
+                gap: var(--spacing-3);
+            }
+            
+            .filters-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-wrapper {
+                min-width: auto;
+            }
+            
+            .filter-select {
+                min-width: auto;
+            }
+            
+            .row-actions {
+                opacity: 1;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .page-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: var(--spacing-3);
+            }
+            
+            .header-actions {
+                justify-content: flex-end;
+            }
         }
     </style>
 </head>
 <body>
     <div class="app">
+        <!-- Шапка приложения -->
         <header class="app-header">
-            <h1>📦 Склад</h1>
-            <nav class="app-nav">
-                <a href="inventory.html" class="active">Склад</a>
+            <h1>📦 SH CRM</h1>
+            <nav class="app-nav" aria-label="Основная навигация">
+                <a href="inventory.html" class="active" aria-current="page">Склад</a>
                 <a href="cashier.html">Касса</a>
                 <a href="reports.html">Отчеты</a>
             </nav>
-            <button id="logoutBtn" class="btn-ghost">Выход</button>
+            <div class="header-actions">
+                <span class="user-email" id="userEmail"></span>
+                <button class="btn-ghost btn-sm" id="logoutBtn" aria-label="Выйти из системы">
+                    🚪 Выход
+                </button>
+            </div>
         </header>
         
+        <!-- Основной контент -->
         <main class="app-main">
             <div class="inventory-page">
+                <!-- Заголовок страницы -->
                 <div class="page-header">
-                    <h2>Товары</h2>
-                    <button class="btn-primary" id="addProductBtn">+ Добавить товар</button>
+                    <h1>Управление складом</h1>
+                    <div class="header-actions">
+                        <button class="btn-secondary btn-sm" id="exportBtn" aria-label="Экспорт товаров">
+                            📥 Экспорт
+                        </button>
+                        <button class="btn-primary" id="addProductBtn" aria-label="Добавить новый товар">
+                            + Добавить товар
+                        </button>
+                    </div>
                 </div>
                 
+                <!-- Статистика -->
+                <div class="stats-bar" id="statsBar" aria-label="Статистика склада">
+                    <!-- Заполняется динамически -->
+                </div>
+                
+                <!-- Фильтры -->
                 <div class="filters-bar">
                     <div class="search-wrapper">
-                        <span class="search-icon">🔍</span>
-                        <input type="text" id="searchInput" placeholder="Поиск по названию или ID...">
+                        <span class="search-icon" aria-hidden="true">🔍</span>
+                        <input 
+                            type="text" 
+                            id="searchInput" 
+                            placeholder="Поиск по названию или ID..."
+                            aria-label="Поиск товаров"
+                        >
                     </div>
-                    <select id="categoryFilter" class="filter-select">
+                    
+                    <select id="categoryFilter" class="filter-select" aria-label="Фильтр по категории">
                         <option value="">Все категории</option>
+                        <!-- Заполняется динамически -->
                     </select>
-                    <select id="statusFilter" class="filter-select">
+                    
+                    <select id="statusFilter" class="filter-select" aria-label="Фильтр по статусу">
                         <option value="">Все статусы</option>
                         <option value="in_stock">В наличии</option>
                         <option value="sold">Проданные</option>
                         <option value="reserved">Забронированные</option>
                     </select>
-                    <button class="btn-secondary" id="clearFiltersBtn">Сбросить</button>
+                    
+                    <select id="sortSelect" class="filter-select" aria-label="Сортировка">
+                        <option value="created_at-desc">Новые сначала</option>
+                        <option value="created_at-asc">Старые сначала</option>
+                        <option value="price-desc">Цена: по убыванию</option>
+                        <option value="price-asc">Цена: по возрастанию</option>
+                        <option value="name-asc">Название: А-Я</option>
+                    </select>
+                    
+                    <button class="btn-secondary btn-sm" id="clearFiltersBtn" aria-label="Сбросить фильтры">
+                        Сбросить
+                    </button>
+                    
+                    <button class="btn-secondary btn-sm" id="refreshBtn" aria-label="Обновить список">
+                        🔄
+                    </button>
                 </div>
                 
-                <div id="statsBar" class="stats-bar"></div>
-                
-                <div id="content">
-                    <div class="loading">Загрузка товаров...</div>
+                <!-- Контейнер с таблицей -->
+                <div class="content-container">
+                    <div class="table-wrapper" id="tableWrapper">
+                        <table class="products-table" id="productsTable" aria-label="Список товаров">
+                            <thead>
+                                <tr>
+                                    <th width="40">
+                                        <input type="checkbox" id="selectAllCheckbox" aria-label="Выбрать все товары">
+                                    </th>
+                                    <th width="80">Фото</th>
+                                    <th>Название</th>
+                                    <th width="150">Категория</th>
+                                    <th width="130">Цена</th>
+                                    <th width="130">Себестоимость</th>
+                                    <th width="120">Статус</th>
+                                    <th width="100">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody">
+                                <!-- Заполняется динамически -->
+                            </tbody>
+                        </table>
+                        
+                        <!-- Пустое состояние (скрыто по умолчанию) -->
+                        <div class="empty-state" id="emptyState" style="display: none;">
+                            <div class="empty-state-icon">📭</div>
+                            <p id="emptyStateMessage">Товары не найдены</p>
+                            <button class="btn-primary" id="emptyStateAddBtn">Добавить товар</button>
+                        </div>
+                        
+                        <!-- Скелетон-лоадер -->
+                        <div class="skeleton-loader" id="skeletonLoader">
+                            <div class="skeleton-row">
+                                <div class="skeleton" style="width: 20px; height: 20px;"></div>
+                                <div class="skeleton skeleton-image"></div>
+                                <div class="skeleton skeleton-text"></div>
+                                <div class="skeleton" style="width: 100px; height: 16px;"></div>
+                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
+                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
+                                <div class="skeleton skeleton-badge"></div>
+                                <div class="skeleton" style="width: 60px; height: 32px;"></div>
+                            </div>
+                            <div class="skeleton-row">
+                                <div class="skeleton" style="width: 20px; height: 20px;"></div>
+                                <div class="skeleton skeleton-image"></div>
+                                <div class="skeleton skeleton-text"></div>
+                                <div class="skeleton" style="width: 100px; height: 16px;"></div>
+                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
+                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
+                                <div class="skeleton skeleton-badge"></div>
+                                <div class="skeleton" style="width: 60px; height: 32px;"></div>
+                            </div>
+                            <div class="skeleton-row">
+                                <div class="skeleton" style="width: 20px; height: 20px;"></div>
+                                <div class="skeleton skeleton-image"></div>
+                                <div class="skeleton skeleton-text"></div>
+                                <div class="skeleton" style="width: 100px; height: 16px;"></div>
+                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
+                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
+                                <div class="skeleton skeleton-badge"></div>
+                                <div class="skeleton" style="width: 60px; height: 32px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Пагинация -->
+                    <div class="table-footer" id="paginationContainer" style="display: none;">
+                        <div class="table-info" id="paginationInfo"></div>
+                        <div class="pagination" id="pagination"></div>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
     
+    <!-- Контейнер для модальных окон -->
+    <div id="modalContainer"></div>
+    
+    <!-- Контейнер для уведомлений -->
+    <div id="notificationContainer"></div>
+    
+    <!-- Основной скрипт страницы -->
     <script type="module" src="../js/inventory.js"></script>
 </body>
 </html>
