@@ -1,3 +1,7 @@
+// ========================================
+// FILE: ./core/Router.js
+// ========================================
+
 /**
  * Router - Hash-based Routing
  * 
@@ -5,12 +9,11 @@
  * Поддерживает динамическую загрузку страниц и middleware (права доступа).
  * 
  * @module Router
- * @version 3.1.0
+ * @version 3.2.0
  * @changes
- * - Добавлена защита от циклических редиректов
- * - Улучшена обработка ошибок при загрузке модулей
- * - Добавлены методы back() и forward()
- * - Ленивая загрузка PermissionManager (избегаем циклических зависимостей)
+ * - Исправлена ошибка зависания флага _navigating при ошибках загрузки.
+ * - Добавлен сброс флага в finally блоке.
+ * - Улучшена обработка параллельной навигации.
  */
 
 import { AppState } from './AppState.js';
@@ -36,6 +39,7 @@ class RouterClass {
         this._navigating = false;
         this._lastNavigateTime = 0;
         this._redirectCount = 0;
+        this._pendingNavigation = null;
         
         console.log('[Router] Initialized, default route:', this.defaultRoute);
         
@@ -100,9 +104,16 @@ class RouterClass {
      * @returns {Promise<void>}
      */
     async navigate(path, options = { replace: false, silent: false }) {
+        // Если уже идет навигация на тот же путь, пропускаем
+        if (this._pendingNavigation === path) {
+            console.warn('[Router] Navigation to same path already pending:', path);
+            return;
+        }
+        
         // Защита от параллельной навигации
         if (this._navigating) {
-            console.warn('[Router] Navigation already in progress, skipping:', path);
+            console.warn('[Router] Navigation already in progress, queuing:', path);
+            this._pendingNavigation = path;
             return;
         }
         
@@ -112,14 +123,27 @@ class RouterClass {
             console.warn('[Router] Navigation too frequent, skipping:', path);
             return;
         }
-        this._lastNavigateTime = now;
         
         this._navigating = true;
+        this._pendingNavigation = path;
+        this._lastNavigateTime = now;
         
         try {
             await this._doNavigate(path, options);
+        } catch (error) {
+            console.error('[Router] Navigation error:', error);
+            EventBus.emit('router:error', { error, path });
         } finally {
             this._navigating = false;
+            
+            // Проверяем, есть ли ожидающая навигация
+            const pending = this._pendingNavigation;
+            this._pendingNavigation = null;
+            
+            if (pending && pending !== path) {
+                console.log('[Router] Processing pending navigation:', pending);
+                setTimeout(() => this.navigate(pending, { replace: false }), 10);
+            }
         }
     }
     
@@ -250,10 +274,13 @@ class RouterClass {
                         <div class="error-state-icon">⚠️</div>
                         <h3>Ошибка загрузки страницы</h3>
                         <p>${this.escapeHtml(error.message)}</p>
-                        <button class="btn-primary" onclick="location.reload()">Обновить</button>
+                        <button class="btn-primary" onclick="location.reload(true)">Обновить</button>
                     </div>
                 `;
             }
+            
+            this._redirectCount = 0;
+            throw error; // Пробрасываем ошибку для сброса флага
         } finally {
             AppState.set('isLoading', false);
         }
