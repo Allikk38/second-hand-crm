@@ -14,14 +14,14 @@
  * - Динамический импорт модулей виджетов.
  * - Оборачивание каждого виджета в Error Boundary (try/catch).
  * - Интеграция с AuthWidget для защиты маршрутов.
+ * - Предотвращение повторной загрузки уже загруженных виджетов.
  * 
  * @module AppShell
- * @version 1.2.0
+ * @version 1.2.1
  * @changes
- * - Добавлена интеграция с AuthWidget.
- * - Реализована защита виджетов (требуется авторизация).
- * - Условная загрузка виджетов после входа.
- * - Метод getCurrentUserId() для передачи в виджеты.
+ * - Исправлен бесконечный цикл загрузки виджетов.
+ * - Добавлена проверка на уже загруженные виджеты.
+ * - Исправлено дублирование NotificationsWidget.
  */
 
 import { EventBus, EventTypes, EventSource } from './EventBus.js';
@@ -52,6 +52,9 @@ export class AppShell {
         
         /** @type {Object|null} Текущий пользователь */
         this.currentUser = null;
+        
+        /** @type {Set<string>} Виджеты, которые сейчас загружаются */
+        this.loadingWidgets = new Set();
         
         // Привязка методов
         this.handleAuthSuccess = this.handleAuthSuccess.bind(this);
@@ -167,8 +170,10 @@ export class AppShell {
         // 5. Загружаем виджет аутентификации ПЕРВЫМ
         await this.loadWidget('auth');
         
-        // 6. Загружаем виджет уведомлений
-        await this.loadWidget('notifications');
+        // 6. Загружаем виджет уведомлений (только если еще не загружен)
+        if (!this.widgets.has('notifications')) {
+            await this.loadWidget('notifications');
+        }
         
         // 7. Привязываем события навигации (если есть кнопки)
         if (this.isAuthenticated) {
@@ -208,15 +213,44 @@ export class AppShell {
         this.isAuthenticated = true;
         this.currentUser = data.user;
         
+        // Сохраняем существующие виджеты, которые нужно сохранить
+        const existingNotifications = this.widgets.get('notifications');
+        const existingAuth = this.widgets.get('auth');
+        
+        // Очищаем контейнеры (но не уничтожаем виджеты)
+        this.containers.clear();
+        
         // Перерендериваем весь UI
         this.root.innerHTML = this.renderBaseLayout();
         this.scanWidgetContainers();
         
-        // Загружаем уведомления
-        await this.loadWidget('notifications');
+        // Восстанавливаем сохраненные виджеты
+        if (existingNotifications) {
+            this.widgets.set('notifications', existingNotifications);
+            const container = this.containers.get('notifications');
+            if (container && existingNotifications.element) {
+                container.appendChild(existingNotifications.element);
+            }
+        }
         
-        // Загружаем виджет активной вкладки
-        await this.loadWidget(this.activeTab);
+        if (existingAuth) {
+            this.widgets.set('auth', existingAuth);
+            const container = this.containers.get('auth');
+            if (container && existingAuth.element) {
+                container.appendChild(existingAuth.element);
+            }
+        }
+        
+        // Загружаем виджет активной вкладки (если еще не загружен)
+        if (!this.widgets.has(this.activeTab)) {
+            await this.loadWidget(this.activeTab);
+        } else {
+            // Просто показываем контейнер
+            const container = this.containers.get(this.activeTab);
+            if (container) {
+                container.style.display = 'block';
+            }
+        }
         
         // Привязываем навигацию
         this.attachNavigationEvents();
@@ -239,12 +273,30 @@ export class AppShell {
             await this.unloadWidget(widgetName);
         }
         
+        // Очищаем контейнеры
+        this.containers.clear();
+        
         // Перерендериваем UI
         this.root.innerHTML = this.renderBaseLayout();
         this.scanWidgetContainers();
         
-        // Загружаем уведомления
-        await this.loadWidget('notifications');
+        // Восстанавливаем auth и notifications
+        const existingAuth = this.widgets.get('auth');
+        const existingNotifications = this.widgets.get('notifications');
+        
+        if (existingAuth) {
+            const container = this.containers.get('auth');
+            if (container && existingAuth.element) {
+                container.appendChild(existingAuth.element);
+            }
+        }
+        
+        if (existingNotifications) {
+            const container = this.containers.get('notifications');
+            if (container && existingNotifications.element) {
+                container.appendChild(existingNotifications.element);
+            }
+        }
         
         console.log('[AppShell] UI cleared after logout');
     }
@@ -253,8 +305,6 @@ export class AppShell {
      * Сканирует DOM и сохраняет ссылки на контейнеры виджетов.
      */
     scanWidgetContainers() {
-        this.containers.clear();
-        
         const elements = this.root.querySelectorAll('[data-widget]');
         
         elements.forEach(el => {
@@ -304,8 +354,8 @@ export class AppShell {
                 if (targetContainer) {
                     targetContainer.style.display = 'block';
                     
-                    // Если виджет еще не загружен - загружаем его
-                    if (!this.widgets.has(targetWidget)) {
+                    // Если виджет еще не загружен и не в процессе загрузки - загружаем его
+                    if (!this.widgets.has(targetWidget) && !this.loadingWidgets.has(targetWidget)) {
                         await this.loadWidget(targetWidget);
                     }
                 }
@@ -337,6 +387,18 @@ export class AppShell {
      * @param {string} widgetName - Имя виджета
      */
     async loadWidget(widgetName) {
+        // Предотвращаем повторную загрузку
+        if (this.widgets.has(widgetName)) {
+            console.log(`[AppShell] Widget ${widgetName} already loaded, skipping`);
+            return;
+        }
+        
+        // Предотвращаем параллельную загрузку одного виджета
+        if (this.loadingWidgets.has(widgetName)) {
+            console.log(`[AppShell] Widget ${widgetName} is already loading, skipping`);
+            return;
+        }
+        
         const registry = this.getWidgetRegistry();
         const modulePath = registry[widgetName];
         
@@ -363,8 +425,10 @@ export class AppShell {
             return;
         }
         
+        this.loadingWidgets.add(widgetName);
+        
         // Особый случай для виджета уведомлений — не показываем лоадер
-        if (widgetName !== 'notifications') {
+        if (widgetName !== 'notifications' && widgetName !== 'auth') {
             container.innerHTML = `
                 <div class="widget-loader">
                     <div class="loader-spinner"></div>
@@ -405,6 +469,7 @@ export class AppShell {
             
             if (widgetName === 'notifications') {
                 console.warn('[AppShell] Notifications widget failed, continuing without notifications');
+                this.loadingWidgets.delete(widgetName);
                 return;
             }
             
@@ -420,6 +485,7 @@ export class AppShell {
             const retryBtn = container.querySelector('.retry-btn');
             if (retryBtn) {
                 retryBtn.addEventListener('click', () => {
+                    this.loadingWidgets.delete(widgetName);
                     this.loadWidget(widgetName);
                 });
             }
@@ -430,6 +496,8 @@ export class AppShell {
                 error: error.message,
                 stack: error.stack
             }, EventSource.KERNEL);
+        } finally {
+            this.loadingWidgets.delete(widgetName);
         }
     }
 
@@ -467,6 +535,7 @@ export class AppShell {
         
         this.widgets.clear();
         this.containers.clear();
+        this.loadingWidgets.clear();
         this.root.innerHTML = '';
         this.initialized = false;
         
