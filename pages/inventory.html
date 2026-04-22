@@ -3,527 +3,213 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Склад | SH CRM</title>
     
-    <!-- Основные стили -->
-    <link rel="stylesheet" href="../css/styles.css">
+    <!-- Базовый URL для GitHub Pages -->
+    <base href="/second-hand-crm/">
     
-    <!-- Дополнительные стили для страницы склада -->
+    <title>SH CRM</title>
+    <link rel="stylesheet" href="css/styles.css">
     <style>
-        /* Стили специфичные только для страницы склада */
-        .inventory-page {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            min-height: 0;
-            background: var(--color-bg);
-        }
-        
-        .page-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: var(--spacing-5);
-            flex-shrink: 0;
-        }
-        
-        .page-header h1 {
-            font-size: var(--font-size-xl);
-            font-weight: var(--font-weight-semibold);
-            color: var(--color-text);
-            margin: 0;
-        }
-        
-        .header-actions {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-3);
-        }
-        
-        .stats-bar {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-6);
-            padding: var(--spacing-4);
-            margin-bottom: var(--spacing-5);
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-            flex-shrink: 0;
-        }
-        
-        .stat-item {
-            display: flex;
-            align-items: baseline;
-            gap: var(--spacing-2);
-        }
-        
-        .stat-label {
-            font-size: var(--font-size-sm);
-            color: var(--color-text-secondary);
-        }
-        
-        .stat-value {
-            font-size: var(--font-size-lg);
-            font-weight: var(--font-weight-semibold);
-            color: var(--color-text);
-        }
-        
-        .stat-value.success {
-            color: var(--color-success-dark);
-        }
-        
-        .stat-value.danger {
-            color: var(--color-danger-dark);
-        }
-        
-        .filters-bar {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-3);
-            margin-bottom: var(--spacing-5);
-            flex-wrap: wrap;
-            flex-shrink: 0;
-        }
-        
-        .search-wrapper {
-            flex: 1;
-            min-width: 280px;
-            position: relative;
-        }
-        
-        .search-wrapper input {
-            width: 100%;
-            height: var(--input-height-lg);
-            padding: 0 var(--spacing-4) 0 var(--spacing-10);
-            font-size: var(--font-size-base);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            background: var(--color-white);
-        }
-        
-        .search-wrapper .search-icon {
-            position: absolute;
-            left: var(--spacing-3);
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--color-text-muted);
-            font-size: 18px;
-            pointer-events: none;
-        }
-        
-        .filter-select {
-            min-width: 180px;
-            height: var(--input-height-lg);
-            padding: 0 var(--spacing-4);
-            font-size: var(--font-size-sm);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            background: var(--color-white);
-            cursor: pointer;
-        }
-        
-        .content-container {
-            flex: 1;
-            min-height: 0;
-            background: var(--color-white);
-            border-radius: var(--radius-lg);
-            border: var(--border-width) solid var(--color-border);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .table-wrapper {
-            flex: 1;
-            overflow: auto;
-        }
-        
-        .products-table {
-            width: 100%;
-            border-collapse: collapse;
-            min-width: 900px;
-        }
-        
-        .products-table thead {
-            position: sticky;
-            top: 0;
-            background: var(--color-gray-50);
-            z-index: 10;
-            border-bottom: 2px solid var(--color-border);
-        }
-        
-        .products-table th {
-            padding: var(--spacing-3) var(--spacing-4);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-semibold);
-            color: var(--color-text-secondary);
-            text-transform: uppercase;
-            letter-spacing: var(--letter-spacing-wide);
-            text-align: left;
-            white-space: nowrap;
-        }
-        
-        .products-table td {
-            padding: var(--spacing-3) var(--spacing-4);
-            border-bottom: var(--border-width) solid var(--color-border-light);
-            vertical-align: middle;
-        }
-        
-        .products-table tbody tr {
-            cursor: pointer;
-            transition: background var(--transition-fast);
-        }
-        
-        .products-table tbody tr:hover {
-            background: var(--color-gray-50);
-        }
-        
-        .products-table tbody tr.selected {
-            background: var(--color-primary-bg);
-        }
-        
-        .product-thumb {
-            width: 48px;
-            height: 48px;
-            background: var(--color-gray-100);
-            border-radius: var(--radius-md);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-            border: var(--border-width) solid var(--color-border-light);
-        }
-        
-        .product-thumb img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .product-thumb .placeholder {
-            font-size: 24px;
-            color: var(--color-text-muted);
-        }
-        
-        .product-name {
-            font-weight: var(--font-weight-medium);
-            color: var(--color-text);
-        }
-        
-        .product-id {
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-            font-family: var(--font-family-mono);
-            margin-top: var(--spacing-0-5);
-        }
-        
-        .product-price {
-            font-weight: var(--font-weight-semibold);
-            color: var(--color-text);
-            font-family: var(--font-family-mono);
-        }
-        
-        .product-cost {
-            font-size: var(--font-size-xs);
-            color: var(--color-text-muted);
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: var(--spacing-1) var(--spacing-3);
-            border-radius: var(--radius-full);
-            font-size: var(--font-size-xs);
-            font-weight: var(--font-weight-medium);
-            text-transform: uppercase;
-        }
-        
-        .status-badge.in_stock {
-            background: var(--color-success-bg);
-            color: var(--color-success-dark);
-        }
-        
-        .status-badge.sold {
-            background: var(--color-danger-bg);
-            color: var(--color-danger-dark);
-        }
-        
-        .status-badge.reserved {
-            background: var(--color-warning-bg);
-            color: var(--color-warning-dark);
-        }
-        
-        .row-actions {
-            display: flex;
-            gap: var(--spacing-1);
-            opacity: 0;
-            transition: opacity var(--transition-fast);
-        }
-        
-        .products-table tbody tr:hover .row-actions {
-            opacity: 1;
-        }
-        
-        .empty-state {
+        /* Сплэш-экран */
+        .splash-screen {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: var(--spacing-16);
+            min-height: 100vh;
+            background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .splash-content {
             text-align: center;
-            color: var(--color-text-muted);
+            padding: 2rem;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08);
         }
         
-        .empty-state-icon {
-            font-size: 64px;
-            margin-bottom: var(--spacing-4);
-            opacity: 0.5;
+        .splash-logo {
+            font-size: 48px;
+            margin-bottom: 1rem;
         }
         
-        .empty-state p {
-            margin-bottom: var(--spacing-4);
-            font-size: var(--font-size-base);
+        .splash-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 0.5rem;
         }
         
-        .skeleton-loader {
-            padding: var(--spacing-4);
+        .splash-subtitle {
+            font-size: 1rem;
+            color: #64748b;
+            margin-bottom: 1.5rem;
         }
         
-        .skeleton-row {
+        .splash-loader {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: var(--spacing-3);
-            padding: var(--spacing-3) 0;
-            border-bottom: var(--border-width) solid var(--color-border-light);
+            gap: 1rem;
         }
         
-        .skeleton {
-            background: var(--color-gray-200);
-            border-radius: var(--radius-sm);
-            animation: skeleton-pulse 1.5s ease-in-out infinite;
-        }
-        
-        .skeleton-image {
+        .loading-spinner {
             width: 48px;
             height: 48px;
-            border-radius: var(--radius-md);
+            border: 3px solid #e2e8f0;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
         }
         
-        .skeleton-text {
-            flex: 1;
-            height: 16px;
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
-        .skeleton-badge {
-            width: 80px;
-            height: 24px;
-            border-radius: var(--radius-full);
+        .splash-error {
+            color: #dc2626;
+            margin-top: 1rem;
+            display: none;
         }
         
-        @keyframes skeleton-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        .splash-error.show {
+            display: block;
         }
         
-        @media (max-width: 768px) {
-            .stats-bar {
-                flex-wrap: wrap;
-                gap: var(--spacing-3);
-            }
-            
-            .filters-bar {
-                flex-direction: column;
-                align-items: stretch;
-            }
-            
-            .search-wrapper {
-                min-width: auto;
-            }
-            
-            .filter-select {
-                min-width: auto;
-            }
-            
-            .row-actions {
-                opacity: 1;
-            }
+        .btn {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            margin-top: 1rem;
         }
         
-        @media (max-width: 480px) {
-            .page-header {
-                flex-direction: column;
-                align-items: stretch;
-                gap: var(--spacing-3);
-            }
-            
-            .header-actions {
-                justify-content: flex-end;
-            }
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #0f172a;
+            border: 1px solid #e2e8f0;
+            margin-left: 0.5rem;
         }
     </style>
 </head>
 <body>
-    <div class="app">
-        <!-- Шапка приложения -->
-        <header class="app-header">
-            <h1>📦 SH CRM</h1>
-            <nav class="app-nav" aria-label="Основная навигация">
-                <a href="inventory.html" class="active" aria-current="page">Склад</a>
-                <a href="cashier.html">Касса</a>
-                <a href="reports.html">Отчеты</a>
-            </nav>
-            <div class="header-actions">
-                <span class="user-email" id="userEmail"></span>
-                <button class="btn-ghost btn-sm" id="logoutBtn" aria-label="Выйти из системы">
-                    🚪 Выход
-                </button>
+    <div class="splash-screen" id="splashScreen">
+        <div class="splash-content">
+            <div class="splash-logo">🛍️</div>
+            <h1 class="splash-title">SH CRM</h1>
+            <p class="splash-subtitle">Управление комиссионным магазином</p>
+            
+            <div class="splash-loader" id="splashLoader">
+                <div class="loading-spinner"></div>
+                <p id="splashMessage">Проверка сессии...</p>
             </div>
-        </header>
-        
-        <!-- Основной контент -->
-        <main class="app-main">
-            <div class="inventory-page">
-                <!-- Заголовок страницы -->
-                <div class="page-header">
-                    <h1>Управление складом</h1>
-                    <div class="header-actions">
-                        <button class="btn-secondary btn-sm" id="exportBtn" aria-label="Экспорт товаров">
-                            📥 Экспорт
-                        </button>
-                        <button class="btn-primary" id="addProductBtn" aria-label="Добавить новый товар">
-                            + Добавить товар
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Статистика -->
-                <div class="stats-bar" id="statsBar" aria-label="Статистика склада">
-                    <!-- Заполняется динамически -->
-                </div>
-                
-                <!-- Фильтры -->
-                <div class="filters-bar">
-                    <div class="search-wrapper">
-                        <span class="search-icon" aria-hidden="true">🔍</span>
-                        <input 
-                            type="text" 
-                            id="searchInput" 
-                            placeholder="Поиск по названию или ID..."
-                            aria-label="Поиск товаров"
-                        >
-                    </div>
-                    
-                    <select id="categoryFilter" class="filter-select" aria-label="Фильтр по категории">
-                        <option value="">Все категории</option>
-                        <!-- Заполняется динамически -->
-                    </select>
-                    
-                    <select id="statusFilter" class="filter-select" aria-label="Фильтр по статусу">
-                        <option value="">Все статусы</option>
-                        <option value="in_stock">В наличии</option>
-                        <option value="sold">Проданные</option>
-                        <option value="reserved">Забронированные</option>
-                    </select>
-                    
-                    <select id="sortSelect" class="filter-select" aria-label="Сортировка">
-                        <option value="created_at-desc">Новые сначала</option>
-                        <option value="created_at-asc">Старые сначала</option>
-                        <option value="price-desc">Цена: по убыванию</option>
-                        <option value="price-asc">Цена: по возрастанию</option>
-                        <option value="name-asc">Название: А-Я</option>
-                    </select>
-                    
-                    <button class="btn-secondary btn-sm" id="clearFiltersBtn" aria-label="Сбросить фильтры">
-                        Сбросить
-                    </button>
-                    
-                    <button class="btn-secondary btn-sm" id="refreshBtn" aria-label="Обновить список">
-                        🔄
-                    </button>
-                </div>
-                
-                <!-- Контейнер с таблицей -->
-                <div class="content-container">
-                    <div class="table-wrapper" id="tableWrapper">
-                        <table class="products-table" id="productsTable" aria-label="Список товаров">
-                            <thead>
-                                <tr>
-                                    <th width="40">
-                                        <input type="checkbox" id="selectAllCheckbox" aria-label="Выбрать все товары">
-                                    </th>
-                                    <th width="80">Фото</th>
-                                    <th>Название</th>
-                                    <th width="150">Категория</th>
-                                    <th width="130">Цена</th>
-                                    <th width="130">Себестоимость</th>
-                                    <th width="120">Статус</th>
-                                    <th width="100">Действия</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tableBody">
-                                <!-- Заполняется динамически -->
-                            </tbody>
-                        </table>
-                        
-                        <!-- Пустое состояние (скрыто по умолчанию) -->
-                        <div class="empty-state" id="emptyState" style="display: none;">
-                            <div class="empty-state-icon">📭</div>
-                            <p id="emptyStateMessage">Товары не найдены</p>
-                            <button class="btn-primary" id="emptyStateAddBtn">Добавить товар</button>
-                        </div>
-                        
-                        <!-- Скелетон-лоадер -->
-                        <div class="skeleton-loader" id="skeletonLoader">
-                            <div class="skeleton-row">
-                                <div class="skeleton" style="width: 20px; height: 20px;"></div>
-                                <div class="skeleton skeleton-image"></div>
-                                <div class="skeleton skeleton-text"></div>
-                                <div class="skeleton" style="width: 100px; height: 16px;"></div>
-                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
-                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
-                                <div class="skeleton skeleton-badge"></div>
-                                <div class="skeleton" style="width: 60px; height: 32px;"></div>
-                            </div>
-                            <div class="skeleton-row">
-                                <div class="skeleton" style="width: 20px; height: 20px;"></div>
-                                <div class="skeleton skeleton-image"></div>
-                                <div class="skeleton skeleton-text"></div>
-                                <div class="skeleton" style="width: 100px; height: 16px;"></div>
-                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
-                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
-                                <div class="skeleton skeleton-badge"></div>
-                                <div class="skeleton" style="width: 60px; height: 32px;"></div>
-                            </div>
-                            <div class="skeleton-row">
-                                <div class="skeleton" style="width: 20px; height: 20px;"></div>
-                                <div class="skeleton skeleton-image"></div>
-                                <div class="skeleton skeleton-text"></div>
-                                <div class="skeleton" style="width: 100px; height: 16px;"></div>
-                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
-                                <div class="skeleton" style="width: 80px; height: 16px;"></div>
-                                <div class="skeleton skeleton-badge"></div>
-                                <div class="skeleton" style="width: 60px; height: 32px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Пагинация -->
-                    <div class="table-footer" id="paginationContainer" style="display: none;">
-                        <div class="table-info" id="paginationInfo"></div>
-                        <div class="pagination" id="pagination"></div>
-                    </div>
-                </div>
+            
+            <div class="splash-error" id="splashError">
+                <p id="errorMessage">Не удалось подключиться к серверу</p>
+                <button class="btn" id="retryBtn">Попробовать снова</button>
             </div>
-        </main>
+        </div>
     </div>
-    
-    <!-- Контейнер для модальных окон -->
-    <div id="modalContainer"></div>
-    
-    <!-- Контейнер для уведомлений -->
-    <div id="notificationContainer"></div>
-    
-    <!-- Основной скрипт страницы -->
-    <script type="module" src="../js/inventory.js"></script>
+
+    <script type="module">
+        import { supabase } from './core/supabase.js';
+        
+        const DOM = {
+            splashLoader: document.getElementById('splashLoader'),
+            splashMessage: document.getElementById('splashMessage'),
+            splashError: document.getElementById('splashError'),
+            errorMessage: document.getElementById('errorMessage'),
+            retryBtn: document.getElementById('retryBtn')
+        };
+        
+        async function checkSessionAndRedirect() {
+            try {
+                DOM.splashMessage.textContent = 'Проверка сессии...';
+                
+                const { data: { session }, error } = await supabase.auth.getSession();
+                
+                if (error) throw error;
+                
+                if (session?.user) {
+                    DOM.splashMessage.textContent = 'Вход выполнен, загружаем приложение...';
+                    
+                    // Проверяем сохраненный URL возврата
+                    const returnUrl = sessionStorage.getItem('sh_auth_return_url');
+                    
+                    if (returnUrl) {
+                        sessionStorage.removeItem('sh_auth_return_url');
+                        window.location.href = returnUrl;
+                    } else {
+                        // ВАЖНО: Используем относительный путь
+                        window.location.href = 'pages/inventory.html';
+                    }
+                } else {
+                    DOM.splashMessage.textContent = 'Перенаправление на страницу входа...';
+                    
+                    setTimeout(() => {
+                        // ВАЖНО: Используем относительный путь
+                        window.location.href = 'pages/login.html';
+                    }, 500);
+                }
+                
+            } catch (error) {
+                console.error('[Index] Session check error:', error);
+                
+                DOM.splashLoader.style.display = 'none';
+                DOM.splashError.classList.add('show');
+                
+                let errorText = 'Не удалось подключиться к серверу';
+                if (error.message.includes('fetch')) {
+                    errorText = 'Проблемы с подключением к интернету';
+                }
+                DOM.errorMessage.textContent = errorText;
+            }
+        }
+        
+        function retry() {
+            DOM.splashError.classList.remove('show');
+            DOM.splashLoader.style.display = 'flex';
+            checkSessionAndRedirect();
+        }
+        
+        if (DOM.retryBtn) {
+            DOM.retryBtn.addEventListener('click', retry);
+        }
+        
+        checkSessionAndRedirect();
+        
+        // Таймаут для ручного входа
+        setTimeout(() => {
+            if (DOM.splashLoader.style.display !== 'none') {
+                const message = DOM.splashMessage.textContent;
+                if (message.includes('Проверка') || message.includes('Перенаправление')) {
+                    DOM.splashLoader.style.display = 'none';
+                    
+                    const manualEntry = document.createElement('div');
+                    manualEntry.style.marginTop = '1rem';
+                    manualEntry.innerHTML = `
+                        <button class="btn" id="goToLoginBtn">Войти</button>
+                        <button class="btn btn-secondary" id="goToInventoryBtn">Продолжить</button>
+                    `;
+                    
+                    DOM.splashLoader.parentNode.appendChild(manualEntry);
+                    
+                    document.getElementById('goToLoginBtn')?.addEventListener('click', () => {
+                        window.location.href = 'pages/login.html';
+                    });
+                    
+                    document.getElementById('goToInventoryBtn')?.addEventListener('click', () => {
+                        window.location.href = 'pages/inventory.html';
+                    });
+                }
+            }
+        }, 10000);
+    </script>
 </body>
 </html>
