@@ -15,14 +15,15 @@
  * - Использование централизованных UI-утилит из utils/ui.js.
  * - Поддержка офлайн-режима при отсутствии сети.
  * - Чёткое разделение на state, actions, rendering.
+ * - Использование универсального модуля product-form.js для быстрого добавления товаров.
  * 
  * @module cashier
- * @version 3.5.0
+ * @version 3.6.0
  * @changes
- * - Проведён рефакторинг: разделение на логические секции, декомпозиция render().
- * - Добавлена кнопка быстрого добавления товара.
- * - Вынесены хелперы корзины в отдельные чистые функции.
- * - Улучшена читаемость и поддерживаемость кода.
+ * - Заменена заглушка openQuickAddProductForm на реальный вызов openProductFormModal.
+ * - После создания товара он автоматически добавляется в корзину.
+ * - Обновляется список товаров и категории.
+ * - Улучшена обработка ошибок при добавлении.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
@@ -34,6 +35,7 @@ import {
     debounce 
 } from '../utils/formatters.js';
 import { showNotification, showConfirmDialog, showPaymentModal } from '../utils/ui.js';
+import { openProductFormModal } from '../utils/product-form.js';
 
 // ========== КОНСТАНТЫ ==========
 
@@ -493,18 +495,40 @@ async function openQuickAddProductForm() {
         return;
     }
     
-    // TODO: Импортировать и использовать openProductFormModal из utils/product-form.js
-    // Пока показываем заглушку
-    showNotification('Форма добавления товара будет доступна после рефакторинга', 'info');
+    if (!state.currentShift) {
+        showNotification('Откройте смену для добавления товаров', 'warning');
+        return;
+    }
     
-    // В следующей версии:
-    // const newProduct = await openProductFormModal({ mode: 'create' });
-    // if (newProduct) {
-    //     state.products.unshift(newProduct);
-    //     applyFilters();
-    //     addToCart(newProduct);
-    //     render();
-    // }
+    const newProduct = await openProductFormModal({
+        mode: 'create',
+        userId: state.user?.id,
+        onSuccess: (product) => {
+            // Добавляем товар в список
+            state.products.unshift(product);
+            
+            // Обновляем категории и фильтры
+            buildCategories();
+            
+            // Если выбран фильтр категории, который не совпадает с новым товаром,
+            // сбрасываем фильтр чтобы товар был виден
+            if (state.selectedCategory && state.selectedCategory !== product.category) {
+                state.selectedCategory = null;
+            }
+            
+            applyFilters();
+            
+            // Автоматически добавляем товар в корзину
+            addToCart(product);
+            
+            // Перерендериваем страницу
+            render();
+            
+            showNotification(`Товар "${product.name}" добавлен в корзину`, 'success');
+        }
+    });
+    
+    // Если товар не был создан (отмена), ничего не делаем
 }
 
 // ========== ОФОРМЛЕНИЕ ПРОДАЖИ ==========
