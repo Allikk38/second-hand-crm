@@ -825,35 +825,44 @@ export async function initSyncEngine() {
 
 // ========== ЭКСПОРТ ==========
 
-export default {
-    // Состояние
+// Именованные экспорты (для импорта вида import { ENTITIES } from '...')
+export { 
+    ENTITIES, 
+    OP_TYPES,
     syncState,
-    
-    // Инициализация
     initSyncEngine,
     subscribeToSync,
-    
-    // Работа с данными (Cache First)
     loadData,
     saveChange,
-    
-    // Кэш
     cacheGet,
     cacheSet,
     cacheDelete,
     cacheClear,
-    
-    // Очередь операций
     enqueueOperation,
     getPendingOperations,
     removeOperation,
-    
-    // Синхронизация
+    syncNow,
+    startBackgroundSync,
+    stopBackgroundSync
+};
+
+// Экспорт по умолчанию
+export default {
+    syncState,
+    initSyncEngine,
+    subscribeToSync,
+    loadData,
+    saveChange,
+    cacheGet,
+    cacheSet,
+    cacheDelete,
+    cacheClear,
+    enqueueOperation,
+    getPendingOperations,
+    removeOperation,
     syncNow,
     startBackgroundSync,
     stopBackgroundSync,
-    
-    // Константы
     ENTITIES,
     OP_TYPES
 };
