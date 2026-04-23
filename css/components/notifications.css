@@ -5,12 +5,11 @@
  * Без анимаций, без прогресс-баров.
  * 
  * @stylesheet notifications
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны все анимации (slideIn, slideOut, bounce)
- * - Убран прогресс-бар с анимацией
- * - Упрощены фоны (без градиентов)
- * - Статичные, читаемые уведомления
+ * - Объединены дублирующиеся стили.
+ * - Добавлен pointer-events для контейнера.
+ * - Упрощены селекторы.
  */
 
 /* ========== NOTIFICATION CONTAINER ========== */
@@ -43,7 +42,6 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
     
-    border-left: 3px solid var(--color-info);
     border: var(--border-width) solid var(--color-border);
     border-left-width: 3px;
 }
@@ -92,7 +90,6 @@
 /* ========== NOTIFICATION TYPES ========== */
 .notification-success {
     border-left-color: var(--color-success);
-    background: var(--color-white);
 }
 
 .notification-success .notification-title {
@@ -101,7 +98,6 @@
 
 .notification-error {
     border-left-color: var(--color-danger);
-    background: var(--color-white);
 }
 
 .notification-error .notification-title {
@@ -110,7 +106,6 @@
 
 .notification-warning {
     border-left-color: var(--color-warning);
-    background: var(--color-white);
 }
 
 .notification-warning .notification-title {
@@ -119,7 +114,6 @@
 
 .notification-info {
     border-left-color: var(--color-info);
-    background: var(--color-white);
 }
 
 .notification-info .notification-title {
@@ -188,7 +182,6 @@
     background: var(--color-gray-50);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-    border-left: 3px solid var(--color-info);
     border: var(--border-width) solid var(--color-border);
     border-left-width: 3px;
 }
@@ -329,6 +322,7 @@
     background: rgba(0, 0, 0, 0.05);
 }
 
+/* Alert types */
 .alert-success {
     border-color: var(--color-success-light);
     background: var(--color-success-bg);
@@ -427,6 +421,7 @@
     
     .alert {
         flex-wrap: wrap;
+        position: relative;
     }
     
     .alert-close {
