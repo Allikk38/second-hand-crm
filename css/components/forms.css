@@ -5,12 +5,11 @@
  * Минимум стилей, максимум читаемости.
  * 
  * @stylesheet forms
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны анимированные фокусы
- * - Убраны градиенты и декоративные элементы
- * - Упрощены поля ввода
- * - Статичные состояния валидации
+ * - Удалены дублирующиеся стили (quantity-control).
+ * - Добавлены стили для fieldset и legend.
+ * - Упрощены селекторы.
  */
 
 /* ========== FORM GROUP ========== */
@@ -44,6 +43,22 @@ label {
     margin-left: var(--spacing-0-5);
 }
 
+/* ========== FIELDSET & LEGEND ========== */
+fieldset {
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-4);
+    margin-bottom: var(--spacing-4);
+}
+
+legend {
+    padding: 0 var(--spacing-2);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    width: auto;
+}
+
 /* ========== INPUTS ========== */
 input,
 select,
@@ -62,8 +77,6 @@ textarea {
     border-radius: var(--radius-md);
     
     height: var(--input-height);
-    
-    transition: none;
 }
 
 input:hover,
@@ -112,6 +125,7 @@ textarea {
     min-height: 80px;
     padding: var(--spacing-3);
     line-height: var(--line-height-normal);
+    resize: vertical;
 }
 
 /* ========== CHECKBOX AND RADIO ========== */
