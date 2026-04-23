@@ -1,3 +1,7 @@
+// ========================================
+// FILE: js/inventory.js
+// ========================================
+
 /**
  * Inventory Page Module - MPA Edition
  * 
@@ -5,29 +9,28 @@
  * в виде таблицы с возможностью поиска, фильтрации и CRUD-операций.
  * 
  * Архитектурные решения:
- * - Прямое использование глобального клиента window.supabase.
+ * - Прямое использование глобального клиента window.supabase через getSupabase из core/auth.js.
  * - Полная независимость от других страниц (MPA).
  * - Кэширование данных в sessionStorage.
- * - Кастомные модальные окна для подтверждения действий.
+ * - Использование централизованных UI-утилит из utils/ui.js.
  * 
  * @module inventory
- * @version 3.2.0
+ * @version 3.3.0
  * @changes
- * - Убрана зависимость от core/supabase.js (используется window.supabase).
- * - Добавлено кэширование в sessionStorage.
- * - Заменен confirm() на кастомное модальное окно.
- * - Улучшена обработка офлайн-режима.
+ * - Удалена локальная реализация getSupabase (импортируется из core/auth.js).
+ * - Удалены локальные реализации showNotification, showConfirmDialog.
+ * - showError переписана с использованием showNotification.
+ * - Добавлены импорты из utils/ui.js.
  */
 
-import { requireAuth, logout, getCurrentUser, isOnline } from '../core/auth.js';
+import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
 import { formatMoney, escapeHtml, getStatusText, getCategoryName, debounce } from '../utils/formatters.js';
+import { showNotification, showConfirmDialog } from '../utils/ui.js';
 
 // ========== КОНСТАНТЫ ==========
 
 const PRODUCTS_CACHE_KEY = 'sh_inventory_products';
 const CACHE_TTL = 5 * 60 * 1000; // 5 минут
-const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
 // ========== СОСТОЯНИЕ ==========
 
@@ -64,82 +67,11 @@ const DOM = {
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-function getSupabase() {
-    if (!window.supabase) {
-        throw new Error('Supabase client not loaded');
-    }
-    
-    if (!window.__supabaseClient) {
-        window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
-    
-    return window.__supabaseClient;
-}
-
-function showNotification(message, type = 'info') {
-    const container = document.getElementById('notificationContainer');
-    if (!container) return;
-    
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <div class="notification-icon"></div>
-        <div class="notification-content">
-            <div class="notification-message">${escapeHtml(message)}</div>
-        </div>
-        <button class="notification-close">×</button>
-    `;
-    
-    notification.querySelector('.notification-close').addEventListener('click', () => {
-        notification.remove();
-    });
-    
-    container.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 4000);
-}
-
-function showConfirmDialog({ title, message, confirmText = 'Да', cancelText = 'Нет' }) {
-    return new Promise((resolve) => {
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal confirm-dialog">
-                <div class="modal-header">
-                    <h3>${escapeHtml(title)}</h3>
-                    <button class="btn-close">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="confirm-message">${escapeHtml(message)}</div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-secondary" data-action="cancel">${escapeHtml(cancelText)}</button>
-                    <button class="btn-primary" data-action="confirm">${escapeHtml(confirmText)}</button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        const close = () => {
-            modal.remove();
-            resolve(false);
-        };
-        
-        modal.querySelector('.btn-close').addEventListener('click', close);
-        modal.querySelector('[data-action="cancel"]').addEventListener('click', close);
-        modal.querySelector('[data-action="confirm"]').addEventListener('click', () => {
-            modal.remove();
-            resolve(true);
-        });
-    });
-}
-
+/**
+ * Показывает ошибку в баннере или через уведомление
+ * @param {string} message - Сообщение об ошибке
+ * @param {string} type - Тип ошибки (error, success, warning, info)
+ */
 function showError(message, type = 'error') {
     if (DOM.errorBanner && DOM.errorMessage) {
         DOM.errorMessage.textContent = message;
@@ -156,6 +88,9 @@ function showError(message, type = 'error') {
     }
 }
 
+/**
+ * Скрывает баннер ошибки
+ */
 function hideError() {
     if (DOM.errorBanner) {
         DOM.errorBanner.style.display = 'none';
@@ -164,6 +99,10 @@ function hideError() {
 
 // ========== КЭШИРОВАНИЕ ==========
 
+/**
+ * Сохраняет товары в кэш
+ * @param {Array} products - Массив товаров
+ */
 function saveProductsToCache(products) {
     try {
         sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
@@ -175,6 +114,10 @@ function saveProductsToCache(products) {
     }
 }
 
+/**
+ * Загружает товары из кэша
+ * @returns {Array|null}
+ */
 function loadProductsFromCache() {
     try {
         const cached = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
@@ -193,6 +136,10 @@ function loadProductsFromCache() {
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
+/**
+ * Загружает список товаров
+ * @param {boolean} forceRefresh - Принудительно обновить без кэша
+ */
 async function loadProducts(forceRefresh = false) {
     if (state.isLoading) return;
     
@@ -218,7 +165,7 @@ async function loadProducts(forceRefresh = false) {
     renderLoadingState();
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data, error } = await supabase
             .from('products')
             .select('*')
@@ -251,6 +198,9 @@ async function loadProducts(forceRefresh = false) {
     }
 }
 
+/**
+ * Обновляет список категорий в фильтре
+ */
 function updateCategoryFilter() {
     const categories = new Set();
     state.products.forEach(p => {
@@ -279,6 +229,9 @@ function updateCategoryFilter() {
     }
 }
 
+/**
+ * Применяет фильтры к списку товаров
+ */
 function applyFilters() {
     let filtered = [...state.products];
     
@@ -303,6 +256,12 @@ function applyFilters() {
     render();
 }
 
+/**
+ * Сортирует товары
+ * @param {Array} products - Массив товаров
+ * @param {string} sortBy - Критерий сортировки
+ * @returns {Array}
+ */
 function sortProducts(products, sortBy) {
     const sorted = [...products];
     
@@ -323,6 +282,9 @@ function sortProducts(products, sortBy) {
     }
 }
 
+/**
+ * Обновляет панель статистики
+ */
 function updateStats() {
     if (!DOM.statsBar) return;
     
@@ -335,31 +297,50 @@ function updateStats() {
         .reduce((sum, p) => sum + (p.price || 0), 0);
     
     DOM.statsBar.innerHTML = `
-        <div class="stat-item">
-            <span class="stat-label">Всего товаров</span>
-            <span class="stat-value">${total}</span>
+        <div class="stat-card-inline">
+            <span class="stat-icon">📦</span>
+            <div class="stat-content">
+                <span class="stat-label">Всего товаров</span>
+                <span class="stat-value">${total}</span>
+            </div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">В наличии</span>
-            <span class="stat-value text-success">${inStock}</span>
+        <div class="stat-card-inline">
+            <span class="stat-icon">✅</span>
+            <div class="stat-content">
+                <span class="stat-label">В наличии</span>
+                <span class="stat-value" style="color: var(--color-success)">${inStock}</span>
+            </div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Продано</span>
-            <span class="stat-value text-danger">${sold}</span>
+        <div class="stat-card-inline">
+            <span class="stat-icon">💰</span>
+            <div class="stat-content">
+                <span class="stat-label">Продано</span>
+                <span class="stat-value" style="color: var(--color-danger)">${sold}</span>
+            </div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Забронировано</span>
-            <span class="stat-value text-warning">${reserved}</span>
+        <div class="stat-card-inline">
+            <span class="stat-icon">🔖</span>
+            <div class="stat-content">
+                <span class="stat-label">Забронировано</span>
+                <span class="stat-value" style="color: var(--color-warning)">${reserved}</span>
+            </div>
         </div>
-        <div class="stat-item">
-            <span class="stat-label">Стоимость склада</span>
-            <span class="stat-value">${formatMoney(totalValue)}</span>
+        <div class="stat-card-inline">
+            <span class="stat-icon">💵</span>
+            <div class="stat-content">
+                <span class="stat-label">Стоимость склада</span>
+                <span class="stat-value">${formatMoney(totalValue)}</span>
+            </div>
         </div>
     `;
 }
 
 // ========== CRUD ОПЕРАЦИИ ==========
 
+/**
+ * Удаляет товар
+ * @param {string} id - ID товара
+ */
 async function deleteProduct(id) {
     const product = state.products.find(p => p.id === id);
     if (!product) return;
@@ -378,7 +359,7 @@ async function deleteProduct(id) {
     }
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { error } = await supabase
             .from('products')
             .delete()
@@ -400,22 +381,32 @@ async function deleteProduct(id) {
     }
 }
 
+/**
+ * Открывает форму добавления товара
+ */
 function openAddProductForm() {
     showNotification('Функция добавления товара в разработке', 'info');
 }
 
+/**
+ * Открывает форму редактирования товара
+ * @param {string} id - ID товара
+ */
 function openEditProductForm(id) {
     showNotification(`Редактирование товара ${id} в разработке`, 'info');
 }
 
 // ========== РЕНДЕРИНГ ==========
 
+/**
+ * Отрисовывает состояние загрузки
+ */
 function renderLoadingState() {
     if (!DOM.tableBody) return;
     
     DOM.tableBody.innerHTML = `
-        <tr class="skeleton-row">
-            <td colspan="6">
+        <tr>
+            <td colspan="7" style="text-align: center; padding: 40px;">
                 <div class="loading-spinner"></div>
                 <span style="margin-left: 12px;">Загрузка товаров...</span>
             </td>
@@ -423,6 +414,9 @@ function renderLoadingState() {
     `;
 }
 
+/**
+ * Отрисовывает пустое состояние
+ */
 function renderEmptyState() {
     if (!DOM.tableBody) return;
     
@@ -432,15 +426,20 @@ function renderEmptyState() {
     }
     
     DOM.tableBody.innerHTML = `
-        <tr class="empty-row">
-            <td colspan="6">
+        <tr>
+            <td colspan="7" style="text-align: center; padding: 60px;">
                 <div class="empty-state-icon">📦</div>
-                <p>${escapeHtml(message)}</p>
+                <p style="margin-top: 16px; color: var(--color-text-muted);">${escapeHtml(message)}</p>
             </td>
         </tr>
     `;
 }
 
+/**
+ * Получает CSS-класс для статуса
+ * @param {string} status - Ключ статуса
+ * @returns {string}
+ */
 function getStatusClass(status) {
     const classes = {
         'in_stock': 'status-in_stock',
@@ -451,6 +450,9 @@ function getStatusClass(status) {
     return classes[status] || 'status-unknown';
 }
 
+/**
+ * Главная функция рендеринга
+ */
 function render() {
     if (!DOM.tableBody) return;
     
@@ -464,6 +466,11 @@ function render() {
         return;
     }
     
+    const productsTable = document.getElementById('productsTable');
+    if (productsTable) {
+        productsTable.style.display = 'table';
+    }
+    
     DOM.tableBody.innerHTML = state.filteredProducts.map(product => {
         const statusText = getStatusText(product.status);
         const statusClass = getStatusClass(product.status);
@@ -473,6 +480,9 @@ function render() {
         
         return `
             <tr class="product-row" data-id="${product.id}">
+                <td class="checkbox-cell">
+                    <input type="checkbox" class="table-checkbox" data-id="${product.id}">
+                </td>
                 <td class="photo-cell">
                     <div class="product-thumb">
                         ${safePhotoUrl 
@@ -486,7 +496,10 @@ function render() {
                     <div class="product-id">ID: ${safeId}</div>
                 </td>
                 <td class="category-cell">${getCategoryName(product.category)}</td>
-                <td class="price-cell">${formatMoney(product.price)}</td>
+                <td class="price-cell">
+                    <div class="price-main">${formatMoney(product.price)}</div>
+                    ${product.cost_price ? `<div class="price-cost">Себ.: ${formatMoney(product.cost_price)}</div>` : ''}
+                </td>
                 <td class="status-cell">
                     <span class="status-badge ${statusClass}">${statusText}</span>
                 </td>
@@ -507,6 +520,9 @@ function render() {
     attachRowEvents();
 }
 
+/**
+ * Привязывает обработчики к кнопкам в строках таблицы
+ */
 function attachRowEvents() {
     if (!DOM.tableBody) return;
     
@@ -527,6 +543,9 @@ function attachRowEvents() {
 
 // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
+/**
+ * Кэширует DOM элементы
+ */
 function cacheElements() {
     DOM.tableBody = document.getElementById('tableBody');
     DOM.statsBar = document.getElementById('statsBar');
@@ -544,12 +563,19 @@ function cacheElements() {
     DOM.modalContainer = document.getElementById('modalContainer');
 }
 
+/**
+ * Отображает email пользователя в шапке
+ */
 function displayUserInfo() {
     if (DOM.userEmail && state.user) {
-        DOM.userEmail.textContent = state.user.email || 'Пользователь';
+        const name = state.user.email?.split('@')[0] || 'Пользователь';
+        DOM.userEmail.textContent = name;
     }
 }
 
+/**
+ * Привязывает обработчики событий
+ */
 function attachEvents() {
     if (DOM.logoutBtn) {
         DOM.logoutBtn.addEventListener('click', () => logout());
@@ -594,8 +620,26 @@ function attachEvents() {
             applyFilters();
         });
     }
+    
+    // Закрытие баннера ошибки
+    const closeErrorBtn = document.getElementById('closeErrorBtn');
+    if (closeErrorBtn) {
+        closeErrorBtn.addEventListener('click', hideError);
+    }
+    
+    // Выделение всех чекбоксов
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', (e) => {
+            const checkboxes = document.querySelectorAll('.table-checkbox');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+        });
+    }
 }
 
+/**
+ * Инициализация страницы
+ */
 async function init() {
     console.log('[Inventory] Initializing MPA page...');
     
@@ -611,6 +655,8 @@ async function init() {
     
     console.log('[Inventory] Page initialized');
 }
+
+// ========== ЗАПУСК ==========
 
 document.addEventListener('DOMContentLoaded', init);
 
