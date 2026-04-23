@@ -774,6 +774,10 @@ async function init() {
     displayUserInfo();
     attachEvents();
     
+    // ВАЖНО: Отмечаем модуль как загруженный ДО загрузки данных
+    markModuleLoaded();
+    
+    // Загружаем данные (может занять время, но модуль уже считается загруженным)
     await loadProducts();
     
     console.log('[Inventory] Page initialized');
