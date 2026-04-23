@@ -1,7 +1,3 @@
-// ========================================
-// FILE: ./utils/formatters.js
-// ========================================
-
 /**
  * Formatters Utility
  * 
@@ -15,30 +11,24 @@
  * - Отсутствие побочных эффектов — все функции чистые.
  * 
  * @module formatters
- * @version 2.0.0
+ * @version 2.1.0
  * @changes
- * - Добавлена JSDoc-документация для всех функций.
- * - Устранено дублирование с categorySchema.js.
- * - Добавлены новые функции: formatDateTime, formatPercent, truncateText.
- * - Оптимизирована escapeHtml через замыкание с кэшированным элементом.
- * - Исправлен баг в formatMoney при showSymbol = false.
+ * - Устранено дублирование getCategoryName (используется из categorySchema.js).
+ * - Добавлена formatDateTimeWithSeconds.
+ * - Улучшен debounce с корректным this.
+ * - Перегруппированы функции для читаемости.
  */
 
-import { CATEGORY_SCHEMA } from './categorySchema.js';
+import { getCategoryName as getCategoryNameFromSchema } from './categorySchema.js';
 
 // ========== ПРИВАТНЫЕ УТИЛИТЫ ==========
 
 /**
  * Кэшированный DOM-элемент для экранирования HTML.
- * Создается один раз при первом вызове escapeHtml.
  * @type {HTMLDivElement|null}
  */
 let escapeDiv = null;
 
-/**
- * Ленивая инициализация элемента для экранирования.
- * @returns {HTMLDivElement}
- */
 function getEscapeDiv() {
     if (!escapeDiv) {
         escapeDiv = document.createElement('div');
@@ -50,24 +40,16 @@ function getEscapeDiv() {
 
 /**
  * Форматирует число как денежную сумму в рублях.
- * Использует Intl.NumberFormat для корректного отображения разрядов.
  * 
  * @param {number|null|undefined} amount - Сумма для форматирования
  * @param {Object} options - Опции форматирования
  * @param {boolean} [options.showSymbol=true] - Показывать символ валюты (₽)
  * @param {boolean} [options.showKopecks=false] - Показывать копейки
- * @returns {string} Отформатированная строка (например "1 500 ₽" или "1 500")
- * 
- * @example
- * formatMoney(1500)                    // "1 500 ₽"
- * formatMoney(1500, { showSymbol: false }) // "1 500"
- * formatMoney(1500.50, { showKopecks: true }) // "1 500,50 ₽"
- * formatMoney(null)                    // "0 ₽"
+ * @returns {string} Отформатированная строка (например "1 500 ₽")
  */
 export function formatMoney(amount, options = {}) {
     const { showSymbol = true, showKopecks = false } = options;
     
-    // Обработка некорректных значений
     if (amount === null || amount === undefined || isNaN(amount)) {
         amount = 0;
     }
@@ -81,7 +63,6 @@ export function formatMoney(amount, options = {}) {
     
     let result = formatter.format(amount);
     
-    // Intl возвращает "RUB" вместо "₽", заменяем на символ
     if (showSymbol) {
         result = result.replace('RUB', '₽').trim();
     }
@@ -96,12 +77,7 @@ export function formatMoney(amount, options = {}) {
  * 
  * @param {number|null|undefined} num - Число для форматирования
  * @param {number} [decimals=0] - Количество знаков после запятой
- * @returns {string} Отформатированное число (например "1 234 567")
- * 
- * @example
- * formatNumber(1234567)     // "1 234 567"
- * formatNumber(1234.56, 2)  // "1 234,56"
- * formatNumber(null)        // "0"
+ * @returns {string} Отформатированное число
  */
 export function formatNumber(num, decimals = 0) {
     if (num === null || num === undefined || isNaN(num)) {
@@ -119,14 +95,9 @@ export function formatNumber(num, decimals = 0) {
  * 
  * @param {number|null|undefined} value - Значение (0-100 или доля 0-1)
  * @param {Object} options - Опции форматирования
- * @param {boolean} [options.isFraction=false] - true если значение в долях (0.15 = 15%)
+ * @param {boolean} [options.isFraction=false] - true если значение в долях
  * @param {number} [options.decimals=1] - Количество знаков после запятой
- * @returns {string} Отформатированный процент (например "15,5%")
- * 
- * @example
- * formatPercent(15.5)                   // "15,5%"
- * formatPercent(0.155, { isFraction: true }) // "15,5%"
- * formatPercent(33.333, { decimals: 2 })     // "33,33%"
+ * @returns {string} Отформатированный процент
  */
 export function formatPercent(value, options = {}) {
     const { isFraction = false, decimals = 1 } = options;
@@ -140,7 +111,7 @@ export function formatPercent(value, options = {}) {
     return `${percentValue.toFixed(decimals).replace('.', ',')}%`;
 }
 
-// ========== ФОРМАТИРОВАНИЕ ДАТ И ВРЕМЕНИ ==========
+// ========== ФОРМАТИРОВАНИЕ ДАТ ==========
 
 /**
  * Форматирует дату в читаемый вид.
@@ -150,11 +121,6 @@ export function formatPercent(value, options = {}) {
  * @param {boolean} [options.withTime=false] - Включать время
  * @param {boolean} [options.short=false] - Краткий формат (ДД.ММ)
  * @returns {string} Отформатированная дата
- * 
- * @example
- * formatDate('2024-01-15')                          // "15.01.2024"
- * formatDate('2024-01-15T14:30:00', { withTime: true }) // "15.01.2024 14:30"
- * formatDate('2024-01-15', { short: true })          // "15.01"
  */
 export function formatDate(date, options = {}) {
     const { withTime = false, short = false } = options;
@@ -162,8 +128,6 @@ export function formatDate(date, options = {}) {
     if (!date) return '';
     
     const d = new Date(date);
-    
-    // Проверка валидности даты
     if (isNaN(d.getTime())) return '';
     
     if (short) {
@@ -191,21 +155,12 @@ export function formatDate(date, options = {}) {
  * Форматирует дату и время для отображения в отчетах.
  * 
  * @param {string|Date|null} datetime - Дата и время
- * @param {Object} options - Опции форматирования
- * @param {boolean} [options.includeSeconds=false] - Включать секунды
- * @returns {string} Отформатированная дата и время (например "15.01.2024 14:30")
- * 
- * @example
- * formatDateTime('2024-01-15T14:30:25')                    // "15.01.2024 14:30"
- * formatDateTime('2024-01-15T14:30:25', { includeSeconds: true }) // "15.01.2024 14:30:25"
+ * @returns {string} Отформатированная дата и время
  */
-export function formatDateTime(datetime, options = {}) {
-    const { includeSeconds = false } = options;
-    
+export function formatDateTime(datetime) {
     if (!datetime) return '';
     
     const d = new Date(datetime);
-    
     if (isNaN(d.getTime())) return '';
     
     const dateStr = d.toLocaleDateString('ru-RU', {
@@ -214,16 +169,37 @@ export function formatDateTime(datetime, options = {}) {
         year: 'numeric'
     });
     
-    const timeOptions = {
+    const timeStr = d.toLocaleTimeString('ru-RU', {
         hour: '2-digit',
         minute: '2-digit'
-    };
+    });
     
-    if (includeSeconds) {
-        timeOptions.second = '2-digit';
-    }
+    return `${dateStr} ${timeStr}`;
+}
+
+/**
+ * Форматирует дату и время с секундами.
+ * 
+ * @param {string|Date|null} datetime - Дата и время
+ * @returns {string} Отформатированная дата и время с секундами
+ */
+export function formatDateTimeWithSeconds(datetime) {
+    if (!datetime) return '';
     
-    const timeStr = d.toLocaleTimeString('ru-RU', timeOptions);
+    const d = new Date(datetime);
+    if (isNaN(d.getTime())) return '';
+    
+    const dateStr = d.toLocaleDateString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    });
+    
+    const timeStr = d.toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
     
     return `${dateStr} ${timeStr}`;
 }
@@ -232,10 +208,7 @@ export function formatDateTime(datetime, options = {}) {
  * Возвращает относительное время (например "5 минут назад").
  * 
  * @param {string|Date} date - Дата для сравнения
- * @returns {string} Относительное время на русском
- * 
- * @example
- * formatRelativeTime('2024-01-15T14:00:00') // "2 часа назад"
+ * @returns {string} Относительное время
  */
 export function formatRelativeTime(date) {
     if (!date) return '';
@@ -259,15 +232,10 @@ export function formatRelativeTime(date) {
 // ========== ФОРМАТИРОВАНИЕ ТЕКСТА ==========
 
 /**
- * Экранирует HTML-спецсимволы для безопасного вывода пользовательских данных.
- * Оптимизировано через кэширование DOM-элемента.
+ * Экранирует HTML-спецсимволы для безопасного вывода.
  * 
  * @param {string} str - Строка для экранирования
  * @returns {string} Экранированная строка
- * 
- * @example
- * escapeHtml('<script>alert("xss")</script>') 
- * // "&lt;script&gt;alert("xss")&lt;/script&gt;"
  */
 export function escapeHtml(str) {
     if (!str && str !== 0) return '';
@@ -284,9 +252,6 @@ export function escapeHtml(str) {
  * @param {number} maxLength - Максимальная длина
  * @param {string} [ellipsis='...'] - Символ(ы) обрезания
  * @returns {string} Обрезанный текст
- * 
- * @example
- * truncateText('Очень длинное название товара', 15) // "Очень длинное..."
  */
 export function truncateText(text, maxLength, ellipsis = '...') {
     if (!text || text.length <= maxLength) return text || '';
@@ -298,9 +263,6 @@ export function truncateText(text, maxLength, ellipsis = '...') {
  * 
  * @param {string} phone - Номер телефона
  * @returns {string} Отформатированный номер
- * 
- * @example
- * formatPhone('+79161234567') // "+7 (916) 123-45-67"
  */
 export function formatPhone(phone) {
     if (!phone) return '';
@@ -314,21 +276,16 @@ export function formatPhone(phone) {
     return phone;
 }
 
-// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+// ========== СКЛОНЕНИЕ ==========
 
 /**
  * Склоняет существительное в зависимости от числа.
  * 
  * @param {number} count - Количество
- * @param {string} one - Форма для 1 (например "товар")
- * @param {string} two - Форма для 2-4 (например "товара")
- * @param {string} five - Форма для 5+ (например "товаров")
+ * @param {string} one - Форма для 1
+ * @param {string} two - Форма для 2-4
+ * @param {string} five - Форма для 5+
  * @returns {string} Правильная форма
- * 
- * @example
- * pluralize(1, 'товар', 'товара', 'товаров')  // "товар"
- * pluralize(3, 'товар', 'товара', 'товаров')  // "товара"
- * pluralize(5, 'товар', 'товара', 'товаров')  // "товаров"
  */
 export function pluralize(count, one, two, five) {
     const n = Math.abs(count) % 100;
@@ -346,12 +303,8 @@ export function pluralize(count, one, two, five) {
 /**
  * Возвращает читаемое название статуса товара.
  * 
- * @param {string} status - Ключ статуса (in_stock, sold, reserved)
+ * @param {string} status - Ключ статуса
  * @returns {string} Человекочитаемое название
- * 
- * @example
- * getStatusText('in_stock') // "В наличии"
- * getStatusText('unknown')  // "unknown"
  */
 export function getStatusText(status) {
     const statusMap = {
@@ -370,9 +323,6 @@ export function getStatusText(status) {
  * 
  * @param {string} status - Ключ статуса
  * @returns {string} CSS-класс
- * 
- * @example
- * getStatusClass('in_stock') // "status-in_stock"
  */
 export function getStatusClass(status) {
     return `status-${status || 'unknown'}`;
@@ -384,13 +334,9 @@ export function getStatusClass(status) {
  * 
  * @param {string} category - Ключ категории
  * @returns {string} Человекочитаемое название
- * 
- * @example
- * getCategoryName('clothes') // "Одежда"
- * getCategoryName('unknown') // "unknown"
  */
 export function getCategoryName(category) {
-    return CATEGORY_SCHEMA[category]?.name || category || 'Другое';
+    return getCategoryNameFromSchema(category);
 }
 
 /**
@@ -398,9 +344,6 @@ export function getCategoryName(category) {
  * 
  * @param {string} method - Ключ способа оплаты
  * @returns {string} Человекочитаемое название
- * 
- * @example
- * getPaymentMethodName('cash') // "Наличные"
  */
 export function getPaymentMethodName(method) {
     const methodMap = {
@@ -421,10 +364,6 @@ export function getPaymentMethodName(method) {
  * 
  * @param {string} email - Email для проверки
  * @returns {boolean} true если email корректен
- * 
- * @example
- * isValidEmail('user@example.com') // true
- * isValidEmail('invalid-email')    // false
  */
 export function isValidEmail(email) {
     if (!email) return false;
@@ -443,29 +382,26 @@ export function isNotEmpty(str) {
     return str && str.trim().length > 0;
 }
 
-// ========== ДЕБАУНС И ТРОТТЛИНГ ==========
+// ========== ДЕБАУНС ==========
 
 /**
  * Создает дебаунсированную версию функции.
  * 
  * @param {Function} fn - Исходная функция
  * @param {number} delay - Задержка в мс
- * @returns {Function} Дебаунсированная функция
- * 
- * @example
- * const debouncedSearch = debounce(searchProducts, 300);
- * searchInput.addEventListener('input', debouncedSearch);
+ * @returns {Function} Дебаунсированная функция с правильным this
  */
 export function debounce(fn, delay = 300) {
     let timer = null;
     
     return function debounced(...args) {
+        const context = this;
         clearTimeout(timer);
-        timer = setTimeout(() => fn.apply(this, args), delay);
+        timer = setTimeout(() => fn.apply(context, args), delay);
     };
 }
 
-// ========== ЭКСПОРТ ВСЕХ ФУНКЦИЙ ДЛЯ УДОБСТВА ==========
+// ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
 
 export default {
     formatMoney,
@@ -473,6 +409,7 @@ export default {
     formatPercent,
     formatDate,
     formatDateTime,
+    formatDateTimeWithSeconds,
     formatRelativeTime,
     formatPhone,
     escapeHtml,
