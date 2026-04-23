@@ -154,8 +154,9 @@
         const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
         
-        // Инициализация клиента
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Используем существующий глобальный supabase или создаём клиент
+        // НЕ объявляем const supabase повторно — используем window.supabase
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         const DOM = {
             splashLoader: document.getElementById('splashLoader'),
@@ -173,7 +174,7 @@
             try {
                 DOM.splashMessage.textContent = 'Проверка сессии...';
                 
-                const { data: { session }, error } = await supabase.auth.getSession();
+                const { data: { session }, error } = await supabaseClient.auth.getSession();
                 
                 if (error) throw error;
                 
