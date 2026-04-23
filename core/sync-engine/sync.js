@@ -15,8 +15,7 @@
 
 import { getSupabase } from '../auth.js';
 import { cacheGet, cacheSet } from './db.js';
-import { logSyncOperation, logError } from './logger.js';
-
+import { logSyncEvent, error as logError, info as logInfo } from './logger.js';
 // ========== КОНСТАНТЫ ==========
 
 export const ENTITIES = {
