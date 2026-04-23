@@ -5,39 +5,80 @@
  * Каждая страница самостоятельно импортирует и использует этот модуль.
  * 
  * Архитектурные решения:
+ * - Сам загружает Supabase SDK при необходимости.
  * - Прямое использование глобального клиента Supabase.
  * - Отсутствие роутинга — редиректы только через window.location.
- * - Минималистичный API для простоты использования на любой странице.
- * - Полная обработка офлайн-режима и сетевых ошибок.
  * 
  * @module auth
- * @version 3.2.0
+ * @version 3.3.0
  * @changes
- * - Убраны депрекейтед методы (checkAuth, getUserProfile).
- * - Убрана функция signUp (не используется в MPA).
- * - Упрощена инициализация Supabase клиента.
- * - Добавлен экспорт getReturnUrl для обратной совместимости.
+ * - Добавлена автоматическая загрузка Supabase SDK.
+ * - Убраны депрекейтед методы.
+ * - Упрощена инициализация клиента.
  */
 
 // ========== КОНСТАНТЫ ==========
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
+const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
-// ========== ПОЛУЧЕНИЕ КЛИЕНТА SUPABASE ==========
+// Состояние загрузки
+let loadingPromise = null;
+let isLoaded = false;
+
+// ========== ЗАГРУЗКА SUPABASE SDK ==========
 
 /**
- * Получает глобальный клиент Supabase.
- * Создаёт клиент один раз и кэширует.
- * 
- * @returns {Object} Клиент Supabase
- * @throws {Error} Если Supabase не загружен
+ * Загружает Supabase SDK динамически
+ * @returns {Promise<void>}
  */
-function getSupabase() {
-    if (!window.supabase) {
-        throw new Error('Supabase client not loaded. Ensure CDN script is included in HTML.');
+function loadSupabaseSDK() {
+    // Если уже загружен
+    if (window.supabase) {
+        return Promise.resolve();
     }
     
+    // Если уже идёт загрузка
+    if (loadingPromise) {
+        return loadingPromise;
+    }
+    
+    // Загружаем
+    loadingPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = SUPABASE_CDN;
+        script.onload = () => {
+            isLoaded = true;
+            loadingPromise = null;
+            resolve();
+        };
+        script.onerror = () => {
+            loadingPromise = null;
+            reject(new Error('Failed to load Supabase SDK. Check your internet connection.'));
+        };
+        document.head.appendChild(script);
+    });
+    
+    return loadingPromise;
+}
+
+/**
+ * Получает клиент Supabase.
+ * Создаёт клиент один раз после загрузки SDK.
+ * 
+ * @returns {Promise<Object>} Клиент Supabase
+ * @throws {Error} Если не удалось загрузить SDK
+ */
+async function getSupabase() {
+    // Загружаем SDK если нужно
+    await loadSupabaseSDK();
+    
+    if (!window.supabase) {
+        throw new Error('Supabase client not available after loading');
+    }
+    
+    // Создаём клиент один раз и кэшируем
     if (!window.__supabaseClient) {
         window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     }
@@ -49,8 +90,7 @@ function getSupabase() {
 
 /**
  * Проверяет наличие интернет-соединения.
- * 
- * @returns {boolean} true если есть соединение
+ * @returns {boolean}
  */
 export function isOnline() {
     return navigator.onLine;
@@ -60,62 +100,40 @@ export function isOnline() {
 
 /**
  * Получает текущего авторизованного пользователя.
- * В отличие от requireAuth(), не выполняет редирект.
- * 
- * @returns {Promise<Object>} Результат проверки
- * @returns {Object|null} .user - Объект пользователя или null
- * @returns {string|null} .error - Сообщение об ошибке или null
- * 
- * @example
- * const { user, error } = await getCurrentUser();
- * if (error) {
- *     console.error('Ошибка получения пользователя:', error);
- * } else if (user) {
- *     console.log('Пользователь авторизован:', user.email);
- * }
+ * @returns {Promise<{user: Object|null, error: string|null}>}
  */
 export async function getCurrentUser() {
     if (!isOnline()) {
         console.warn('[Auth] Offline mode - cannot get user');
-        return { 
-            user: null, 
-            error: 'Отсутствует подключение к интернету' 
-        };
+        return { user: null, error: 'Отсутствует подключение к интернету' };
     }
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data: { user }, error } = await supabase.auth.getUser();
         
         if (error) {
             console.error('[Auth] Get user error:', error);
-            return { 
-                user: null, 
-                error: error.message || 'Ошибка получения пользователя' 
-            };
+            return { user: null, error: error.message || 'Ошибка получения пользователя' };
         }
         
         return { user, error: null };
         
     } catch (error) {
-        console.error('[Auth] Unexpected error getting user:', error);
-        return { 
-            user: null, 
-            error: error.message || 'Неизвестная ошибка' 
-        };
+        console.error('[Auth] Unexpected error:', error);
+        return { user: null, error: error.message || 'Неизвестная ошибка' };
     }
 }
 
 /**
- * Быстрая проверка авторизации (без получения полного объекта пользователя).
- * 
- * @returns {Promise<boolean>} true если пользователь авторизован
+ * Быстрая проверка авторизации.
+ * @returns {Promise<boolean>}
  */
 export async function isAuthenticated() {
     if (!isOnline()) return false;
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data: { session } } = await supabase.auth.getSession();
         return !!session?.user;
     } catch {
@@ -126,17 +144,10 @@ export async function isAuthenticated() {
 // ========== ЗАЩИТА СТРАНИЦ ==========
 
 /**
- * Проверяет авторизацию и редиректит на страницу входа, если её нет.
- * Это ОСНОВНАЯ функция для защиты MPA-страниц.
- * 
- * @param {Object} options - Опции проверки
- * @param {string} [options.redirectTo='/pages/login.html'] - URL страницы входа
- * @returns {Promise<Object|null>} Объект пользователя или null (если произошел редирект)
- * 
- * @example
- * const user = await requireAuth();
- * if (!user) return;
- * console.log('Страница защищена, пользователь:', user.email);
+ * Проверяет авторизацию и редиректит на страницу входа.
+ * @param {Object} options
+ * @param {string} [options.redirectTo='/pages/login.html']
+ * @returns {Promise<Object|null>}
  */
 export async function requireAuth(options = {}) {
     const { redirectTo = '/pages/login.html' } = options;
@@ -168,14 +179,10 @@ export async function requireAuth(options = {}) {
 // ========== ВХОД В СИСТЕМУ ==========
 
 /**
- * Выполняет вход пользователя по email и паролю.
- * 
- * @param {string} email - Email пользователя
- * @param {string} password - Пароль
- * @returns {Promise<Object>} Результат входа
- * @returns {boolean} .success - Успешно ли выполнен вход
- * @returns {Object|null} .user - Объект пользователя
- * @returns {string|null} .error - Сообщение об ошибке
+ * Выполняет вход пользователя.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<{success: boolean, user: Object|null, error: string|null}>}
  */
 export async function signIn(email, password) {
     if (!isOnline()) {
@@ -187,17 +194,13 @@ export async function signIn(email, password) {
     }
     
     try {
-        const supabase = getSupabase();
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password
-        });
+        const supabase = await getSupabase();
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         
         if (error) {
             console.error('[Auth] Sign in error:', error);
             
             let errorMessage = 'Ошибка входа';
-            
             if (error.message.includes('Invalid login credentials')) {
                 errorMessage = 'Неверный email или пароль';
             } else if (error.message.includes('Email not confirmed')) {
@@ -208,24 +211,14 @@ export async function signIn(email, password) {
                 errorMessage = error.message;
             }
             
-            return {
-                success: false,
-                user: null,
-                error: errorMessage
-            };
+            return { success: false, user: null, error: errorMessage };
         }
         
         console.log('[Auth] Sign in successful:', data.user.email);
-        
-        return {
-            success: true,
-            user: data.user,
-            error: null
-        };
+        return { success: true, user: data.user, error: null };
         
     } catch (error) {
-        console.error('[Auth] Unexpected sign in error:', error);
-        
+        console.error('[Auth] Unexpected error:', error);
         return {
             success: false,
             user: null,
@@ -237,10 +230,9 @@ export async function signIn(email, password) {
 // ========== ВЫХОД ИЗ СИСТЕМЫ ==========
 
 /**
- * Выполняет выход из системы и редиректит на страницу входа.
- * 
- * @param {Object} options - Опции выхода
- * @param {string} [options.redirectTo='/pages/login.html'] - URL для редиректа после выхода
+ * Выполняет выход из системы.
+ * @param {Object} options
+ * @param {string} [options.redirectTo='/pages/login.html']
  * @returns {Promise<void>}
  */
 export async function logout(options = {}) {
@@ -259,7 +251,7 @@ export async function logout(options = {}) {
         }
         
         if (isOnline()) {
-            const supabase = getSupabase();
+            const supabase = await getSupabase();
             await supabase.auth.signOut();
             console.log('[Auth] Logout successful (online)');
         } else {
@@ -277,10 +269,8 @@ export async function logout(options = {}) {
 
 /**
  * Получает URL для возврата после входа.
- * Сохраняет текущий URL в sessionStorage перед редиректом на логин.
- * 
- * @param {string} defaultUrl - URL по умолчанию
- * @returns {string} URL для возврата
+ * @param {string} defaultUrl
+ * @returns {string}
  */
 export function getReturnUrl(defaultUrl = '/pages/inventory.html') {
     const returnUrl = sessionStorage.getItem('sh_auth_return_url');
@@ -292,9 +282,8 @@ export function getReturnUrl(defaultUrl = '/pages/inventory.html') {
 }
 
 /**
- * Сохраняет URL для возврата после входа.
- * 
- * @param {string} url - URL для сохранения
+ * Сохраняет URL для возврата.
+ * @param {string} url
  */
 export function setReturnUrl(url) {
     if (url && url !== '/pages/login.html') {
