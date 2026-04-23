@@ -17,11 +17,11 @@
  * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module reports
- * @version 3.4.0
+ * @version 3.4.1
  * @changes
- * - Добавлена поддержка офлайн-режима через requireAuth.
- * - Добавлен офлайн-баннер и функции управления им.
- * - Использование кэшированных данных в офлайн-режиме.
+ * - Исправлен формат даты в запросах к Supabase (убраны миллисекунды).
+ * - Исправлен динамический импорт renderDashboard.
+ * - Добавлена поддержка офлайн-режима.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
@@ -68,18 +68,12 @@ const DOM = {
 
 // ========== ОФЛАЙН-БАННЕР ==========
 
-/**
- * Показывает офлайн-баннер
- */
 function showOfflineBanner() {
     if (DOM.offlineBanner) {
         DOM.offlineBanner.style.display = 'flex';
     }
 }
 
-/**
- * Скрывает офлайн-баннер
- */
 function hideOfflineBanner() {
     if (DOM.offlineBanner) {
         DOM.offlineBanner.style.display = 'none';
@@ -88,9 +82,6 @@ function hideOfflineBanner() {
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-/**
- * Показывает или скрывает лоадер
- */
 function showLoader() {
     if (DOM.skeletonLoader) {
         DOM.skeletonLoader.style.display = 'block';
@@ -100,9 +91,6 @@ function showLoader() {
     }
 }
 
-/**
- * Скрывает лоадер
- */
 function hideLoader() {
     if (DOM.skeletonLoader) {
         DOM.skeletonLoader.style.display = 'none';
@@ -114,21 +102,10 @@ function hideLoader() {
 
 // ========== КЭШИРОВАНИЕ ==========
 
-/**
- * Формирует ключ кэша
- * @param {string} tab - Вкладка
- * @param {string} period - Период
- * @returns {string}
- */
 function getCacheKey(tab, period) {
     return `${CACHE_KEY_PREFIX}${tab}_${period}`;
 }
 
-/**
- * Получает данные из кэша
- * @param {string} key - Ключ кэша
- * @returns {Object|null}
- */
 function getFromCache(key) {
     try {
         const cached = sessionStorage.getItem(key);
@@ -146,11 +123,6 @@ function getFromCache(key) {
     }
 }
 
-/**
- * Сохраняет данные в кэш
- * @param {string} key - Ключ кэша
- * @param {Object} data - Данные
- */
 function setToCache(key, data) {
     try {
         sessionStorage.setItem(key, JSON.stringify({
@@ -162,9 +134,6 @@ function setToCache(key, data) {
     }
 }
 
-/**
- * Очищает весь кэш отчетов
- */
 function clearCache() {
     Object.keys(sessionStorage).forEach(key => {
         if (key.startsWith(CACHE_KEY_PREFIX)) {
@@ -175,11 +144,10 @@ function clearCache() {
 
 // ========== ДИАПАЗОНЫ ДАТ ==========
 
-/**
- * Вычисляет диапазоны дат для выбранного периода
- * @param {string} period - Период
- * @returns {Object} Диапазоны дат
- */
+function formatISODate(date) {
+    return date.toISOString().split('.')[0] + 'Z';
+}
+
 function getDateRange(period) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -224,19 +192,15 @@ function getDateRange(period) {
     }
     
     return {
-        start: start.toISOString(),
-        end: now.toISOString(),
-        previousStart: previousStart.toISOString(),
-        previousEnd: previousEnd.toISOString()
+        start: formatISODate(start),
+        end: formatISODate(now),
+        previousStart: formatISODate(previousStart),
+        previousEnd: formatISODate(previousEnd)
     };
 }
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
-/**
- * Загружает все данные для отчетов
- * @returns {Promise<Object>}
- */
 async function fetchSalesData(dateRange) {
     const supabase = await getSupabase();
     
@@ -249,26 +213,22 @@ async function fetchSalesData(dateRange) {
     
     if (error) throw error;
     
-    // Предыдущий период для трендов
     const { data: previousSales } = await supabase
         .from('sales')
         .select('total, profit')
         .gte('created_at', dateRange.previousStart)
         .lte('created_at', dateRange.previousEnd);
     
-    // Товары в наличии
     const { count: inStock } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'in_stock');
     
-    // Стоимость склада
     const { data: stockValue } = await supabase
         .from('products')
         .select('price, cost_price')
         .eq('status', 'in_stock');
     
-    // Продавцы
     const { data: shifts } = await supabase
         .from('shifts')
         .select('user_id')
@@ -286,7 +246,6 @@ async function fetchSalesData(dateRange) {
     const salesData = sales || [];
     const prevSalesData = previousSales || [];
     
-    // Статистика
     const totalRevenue = salesData.reduce((sum, s) => sum + (s.total || 0), 0);
     const totalProfit = salesData.reduce((sum, s) => sum + (s.profit || 0), 0);
     const prevRevenue = prevSalesData.reduce((sum, s) => sum + (s.total || 0), 0);
@@ -295,7 +254,6 @@ async function fetchSalesData(dateRange) {
     const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
     const prevMargin = prevRevenue > 0 ? (prevProfit / prevRevenue) * 100 : 0;
     
-    // Группировка по дням
     const dailyMap = new Map();
     salesData.forEach(s => {
         const day = s.created_at.split('T')[0];
@@ -309,7 +267,6 @@ async function fetchSalesData(dateRange) {
     });
     const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     
-    // Топ товаров
     const productStats = new Map();
     salesData.forEach(s => {
         if (!s.items) return;
@@ -330,7 +287,6 @@ async function fetchSalesData(dateRange) {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 10);
     
-    // Топ категорий
     const categoryStats = new Map();
     salesData.forEach(s => {
         if (!s.items) return;
@@ -346,7 +302,6 @@ async function fetchSalesData(dateRange) {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5);
     
-    // Способы оплаты
     const paymentStats = new Map();
     salesData.forEach(s => {
         const method = s.payment_method || 'unknown';
@@ -357,7 +312,6 @@ async function fetchSalesData(dateRange) {
     });
     const paymentMethods = Array.from(paymentStats.values());
     
-    // Залежавшиеся товары (>30 дней)
     const { data: allProducts } = await supabase
         .from('products')
         .select('*')
@@ -373,7 +327,6 @@ async function fetchSalesData(dateRange) {
         .sort((a, b) => b.daysInStock - a.daysInStock)
         .slice(0, 20);
     
-    // Смены
     const { data: shiftsData } = await supabase
         .from('shifts')
         .select('*')
@@ -392,7 +345,6 @@ async function fetchSalesData(dateRange) {
     const totalStockValue = (stockValue || []).reduce((sum, p) => sum + (p.price || 0), 0);
     const totalCostValue = (stockValue || []).reduce((sum, p) => sum + (p.cost_price || 0), 0);
     
-    // Статистика по продавцам
     const bySeller = {};
     enrichedShifts.forEach(shift => {
         const seller = shift.seller_name;
@@ -460,12 +412,6 @@ async function fetchSalesData(dateRange) {
     };
 }
 
-/**
- * Вычисляет тренд (изменение в процентах)
- * @param {number} current - Текущее значение
- * @param {number} previous - Предыдущее значение
- * @returns {Object}
- */
 function calculateTrend(current, previous) {
     if (!previous || previous === 0) {
         return { direction: 'neutral', value: 0 };
@@ -477,11 +423,6 @@ function calculateTrend(current, previous) {
     };
 }
 
-/**
- * Форматирует длительность в читаемый вид
- * @param {number} ms - Миллисекунды
- * @returns {string}
- */
 function formatDuration(ms) {
     const hours = Math.floor(ms / (1000 * 60 * 60));
     const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
@@ -489,9 +430,6 @@ function formatDuration(ms) {
     return `${minutes} мин`;
 }
 
-/**
- * Основная функция загрузки данных
- */
 async function loadData() {
     if (state.isLoading) return;
     
@@ -544,9 +482,6 @@ async function loadData() {
 
 // ========== ДИНАМИЧЕСКИЙ РЕНДЕРИНГ ==========
 
-/**
- * Главная функция рендеринга
- */
 async function render() {
     if (!DOM.content) return;
     
@@ -584,7 +519,6 @@ async function render() {
                 DOM.content.innerHTML = '<div class="empty-state">Выберите отчет</div>';
         }
         
-        // Привязываем события экспорта
         if (module.exportData && DOM.exportBtn) {
             const exportHandler = () => {
                 const csv = module.exportData(data, state.activeTab);
@@ -612,9 +546,6 @@ async function render() {
 
 // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
-/**
- * Кэширует DOM элементы
- */
 function cacheElements() {
     DOM.content = document.getElementById('reportsContent');
     DOM.skeletonLoader = document.getElementById('skeletonLoader');
@@ -629,9 +560,6 @@ function cacheElements() {
     DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
 }
 
-/**
- * Отображает email пользователя в шапке
- */
 function displayUserInfo() {
     if (DOM.userEmail) {
         if (state.user) {
@@ -643,9 +571,6 @@ function displayUserInfo() {
     }
 }
 
-/**
- * Привязывает обработчики событий
- */
 function attachEvents() {
     if (DOM.logoutBtn) {
         DOM.logoutBtn.addEventListener('click', () => logout());
@@ -691,7 +616,6 @@ function attachEvents() {
         });
     });
     
-    // Обработчик ошибки загрузки
     const retryBtn = document.getElementById('retryBtn');
     if (retryBtn) {
         retryBtn.addEventListener('click', () => {
@@ -711,9 +635,6 @@ function attachEvents() {
     });
 }
 
-/**
- * Инициализация страницы
- */
 async function init() {
     console.log('[Reports] Initializing MPA page...');
     
@@ -741,8 +662,6 @@ async function init() {
     
     console.log('[Reports] Page initialized');
 }
-
-// ========== ЗАПУСК ==========
 
 document.addEventListener('DOMContentLoaded', init);
 
