@@ -1,3 +1,7 @@
+// ========================================
+// FILE: js/reports-dashboard.js
+// ========================================
+
 /**
  * Reports Dashboard Module
  * 
@@ -7,12 +11,16 @@
  * - Чистые функции, отсутствие глобального состояния.
  * - Ленивая загрузка Chart.js.
  * - Все данные приходят извне (через параметры).
+ * - Использование централизованных форматтеров.
  * 
  * @module reports-dashboard
- * @version 1.0.0
+ * @version 1.1.0
+ * @changes
+ * - Удалены локальные реализации getPaymentMethodName и getCategoryDisplayName.
+ * - Добавлены импорты из formatters.js.
  */
 
-import { formatMoney, formatNumber, formatPercent, formatDate, escapeHtml } from '../utils/formatters.js';
+import { formatMoney, formatNumber, formatPercent, formatDate, escapeHtml, getPaymentMethodName, getCategoryName } from '../utils/formatters.js';
 
 // ========== КОНСТАНТЫ ==========
 
@@ -119,7 +127,7 @@ function renderTopCategories(topCategories) {
                 <div class="top-product-item">
                     <span class="rank">#${i + 1}</span>
                     <div class="product-info">
-                        <div class="product-name">${escapeHtml(getCategoryDisplayName(c.category))}</div>
+                        <div class="product-name">${escapeHtml(getCategoryName(c.category))}</div>
                         <div class="product-stats">${c.quantity} шт.</div>
                     </div>
                     <span class="product-revenue">${formatMoney(c.revenue)}</span>
@@ -127,24 +135,6 @@ function renderTopCategories(topCategories) {
             `).join('')}
         </div>
     `;
-}
-
-/**
- * Возвращает отображаемое имя категории
- * @param {string} category - Ключ категории
- * @returns {string}
- */
-function getCategoryDisplayName(category) {
-    const names = {
-        clothes: 'Одежда',
-        toys: 'Игрушки',
-        dishes: 'Посуда',
-        other: 'Другое',
-        electronics: 'Электроника',
-        books: 'Книги',
-        furniture: 'Мебель'
-    };
-    return names[category] || category || '—';
 }
 
 // ========== ГРАФИКИ ==========
@@ -271,22 +261,6 @@ function renderPaymentChart(paymentMethods) {
             }
         }
     });
-}
-
-/**
- * Возвращает название способа оплаты
- * @param {string} method - Ключ метода
- * @returns {string}
- */
-function getPaymentMethodName(method) {
-    const names = {
-        cash: 'Наличные',
-        card: 'Карта',
-        transfer: 'Перевод',
-        qr: 'QR-код',
-        mixed: 'Смешанная'
-    };
-    return names[method] || method || 'Не указано';
 }
 
 /**
