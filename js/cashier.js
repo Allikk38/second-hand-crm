@@ -1,3 +1,7 @@
+// ========================================
+// FILE: js/cashier.js
+// ========================================
+
 /**
  * Cashier Page Module - MPA Edition
  * 
@@ -5,21 +9,20 @@
  * отображает доступные товары, управляет корзиной и оформляет продажи.
  * 
  * Архитектурные решения:
- * - Прямое использование глобального клиента window.supabase.
+ * - Прямое использование глобального клиента window.supabase через getSupabase из core/auth.js.
  * - Полная независимость от других страниц (MPA).
  * - Локальное кэширование смены и корзины в localStorage.
- * - Кастомные модальные окна вместо prompt()/confirm().
+ * - Использование централизованных UI-утилит из utils/ui.js.
  * 
  * @module cashier
- * @version 3.2.0
+ * @version 3.3.0
  * @changes
- * - Убрана зависимость от core/supabase.js (используется window.supabase).
- * - Заменены prompt()/confirm() на кастомные модальные окна.
- * - Упрощена структура состояния.
- * - Улучшена обработка офлайн-режима.
+ * - Удалена локальная реализация getSupabase (импортируется из core/auth.js).
+ * - Удалены локальные реализации showNotification, showConfirmDialog, showPaymentModal.
+ * - Добавлены импорты из utils/ui.js.
  */
 
-import { requireAuth, logout, getCurrentUser, isOnline } from '../core/auth.js';
+import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
 import { 
     formatMoney, 
     escapeHtml, 
@@ -27,14 +30,13 @@ import {
     getPaymentMethodName,
     debounce 
 } from '../utils/formatters.js';
+import { showNotification, showConfirmDialog, showPaymentModal } from '../utils/ui.js';
 
 // ========== КОНСТАНТЫ ==========
 
 const CART_STORAGE_KEY = 'sh_cashier_cart';
 const SHIFT_STORAGE_KEY = 'sh_cashier_shift';
 const SCANNER_DEBOUNCE_MS = 500;
-const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
 // ========== СОСТОЯНИЕ СТРАНИЦЫ ==========
 
@@ -78,197 +80,6 @@ const DOM = {
     userEmail: null,
     logoutBtn: null
 };
-
-// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-
-/**
- * Получает клиент Supabase
- * @returns {Object} Клиент Supabase
- */
-function getSupabase() {
-    if (!window.supabase) {
-        throw new Error('Supabase client not loaded');
-    }
-    
-    if (!window.__supabaseClient) {
-        window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
-    
-    return window.__supabaseClient;
-}
-
-/**
- * Показывает кастомное уведомление
- * @param {string} message - Текст уведомления
- * @param {string} type - Тип (success, error, warning, info)
- */
-function showNotification(message, type = 'info') {
-    const container = document.getElementById('notificationContainer');
-    if (!container) return;
-    
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <div class="notification-icon"></div>
-        <div class="notification-content">
-            <div class="notification-message">${escapeHtml(message)}</div>
-        </div>
-        <button class="notification-close">×</button>
-    `;
-    
-    notification.querySelector('.notification-close').addEventListener('click', () => {
-        notification.remove();
-    });
-    
-    container.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 4000);
-}
-
-/**
- * Показывает модальное окно подтверждения
- * @param {Object} options - Опции модального окна
- * @returns {Promise<boolean>}
- */
-function showConfirmDialog({ title, message, confirmText = 'Да', cancelText = 'Нет' }) {
-    return new Promise((resolve) => {
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal confirm-dialog">
-                <div class="modal-header">
-                    <h3>${escapeHtml(title)}</h3>
-                    <button class="btn-close">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="confirm-message">${escapeHtml(message)}</div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn-secondary" data-action="cancel">${escapeHtml(cancelText)}</button>
-                    <button class="btn-primary" data-action="confirm">${escapeHtml(confirmText)}</button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        const close = () => {
-            modal.remove();
-            resolve(false);
-        };
-        
-        modal.querySelector('.btn-close').addEventListener('click', close);
-        modal.querySelector('[data-action="cancel"]').addEventListener('click', close);
-        modal.querySelector('[data-action="confirm"]').addEventListener('click', () => {
-            modal.remove();
-            resolve(true);
-        });
-    });
-}
-
-/**
- * Показывает модальное окно выбора оплаты
- * @param {number} total - Сумма к оплате
- * @returns {Promise<string|null>}
- */
-function showPaymentModal(total) {
-    return new Promise((resolve) => {
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal payment-modal">
-                <div class="modal-header">
-                    <h3>Оплата</h3>
-                    <button class="btn-close">×</button>
-                </div>
-                <div class="modal-body">
-                    <div class="payment-amount">
-                        <span class="label">Сумма к оплате:</span>
-                        <span class="amount">${formatMoney(total)}</span>
-                    </div>
-                    <div class="payment-methods">
-                        <button class="payment-option" data-method="cash">
-                            <span class="payment-icon">💵</span>
-                            <span>Наличные</span>
-                        </button>
-                        <button class="payment-option" data-method="card">
-                            <span class="payment-icon">💳</span>
-                            <span>Карта</span>
-                        </button>
-                        <button class="payment-option" data-method="transfer">
-                            <span class="payment-icon">📱</span>
-                            <span>Перевод</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        const close = () => {
-            modal.remove();
-            resolve(null);
-        };
-        
-        modal.querySelector('.btn-close').addEventListener('click', close);
-        
-        modal.querySelectorAll('.payment-option').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const method = btn.dataset.method;
-                modal.remove();
-                resolve(method);
-            });
-        });
-    });
-}
-
-/**
- * Показывает чек после продажи
- * @param {Array} items - Товары в чеке
- * @param {number} total - Итоговая сумма
- * @param {string} paymentMethod - Способ оплаты
- */
-function showReceipt(items, total, paymentMethod) {
-    const receiptLines = items.map(item => 
-        `${item.name} x${item.quantity} = ${formatMoney(item.price * item.quantity)}`
-    ).join('\n');
-    
-    // Создаем временное модальное окно для чека
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-        <div class="modal receipt-modal">
-            <div class="modal-header">
-                <h3>Чек</h3>
-                <button class="btn-close">×</button>
-            </div>
-            <div class="modal-body">
-                <pre class="receipt-text">${escapeHtml(receiptLines)}</pre>
-                <hr>
-                <div class="receipt-total">
-                    <strong>ИТОГО: ${formatMoney(total)}</strong>
-                </div>
-                <div class="receipt-method">
-                    Оплата: ${getPaymentMethodName(paymentMethod)}
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-primary" data-action="close">Закрыть</button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    
-    modal.querySelector('.btn-close').addEventListener('click', () => modal.remove());
-    modal.querySelector('[data-action="close"]').addEventListener('click', () => modal.remove());
-}
 
 // ========== КЭШИРОВАНИЕ ==========
 
@@ -356,7 +167,7 @@ async function checkOpenShift() {
     }
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data, error } = await supabase
             .from('shifts')
             .select('*')
@@ -389,7 +200,7 @@ async function loadShiftStats() {
     if (!state.currentShift || !isOnline()) return;
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data, error } = await supabase
             .from('sales')
             .select('total, profit, items')
@@ -425,7 +236,7 @@ async function openShift() {
     render();
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data, error } = await supabase
             .from('shifts')
             .insert({
@@ -472,7 +283,7 @@ async function closeShift() {
     render();
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { error } = await supabase
             .from('shifts')
             .update({
@@ -517,7 +328,7 @@ async function loadProducts() {
     render();
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const { data, error } = await supabase
             .from('products')
             .select('*')
@@ -667,7 +478,7 @@ async function checkStockAvailability() {
     if (!isOnline()) return true;
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         const productIds = state.cartItems.map(i => i.id);
         
         const { data, error } = await supabase
@@ -729,7 +540,7 @@ async function checkout() {
     render();
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         
         // Формируем список товаров для продажи
         const items = state.cartItems.map(item => ({
@@ -793,6 +604,48 @@ async function checkout() {
         state.isLoadingProducts = false;
         render();
     }
+}
+
+/**
+ * Показывает чек после продажи
+ * @param {Array} items - Товары в чеке
+ * @param {number} total - Итоговая сумма
+ * @param {string} paymentMethod - Способ оплаты
+ */
+function showReceipt(items, total, paymentMethod) {
+    const receiptLines = items.map(item => 
+        `${item.name} x${item.quantity} = ${formatMoney(item.price * item.quantity)}`
+    ).join('\n');
+    
+    // Создаем временное модальное окно для чека
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal receipt-modal">
+            <div class="modal-header">
+                <h3>Чек</h3>
+                <button class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+                <pre class="receipt-text">${escapeHtml(receiptLines)}</pre>
+                <hr>
+                <div class="receipt-total">
+                    <strong>ИТОГО: ${formatMoney(total)}</strong>
+                </div>
+                <div class="receipt-method">
+                    Оплата: ${getPaymentMethodName(paymentMethod)}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" data-action="close">Закрыть</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    modal.querySelector('.btn-close').addEventListener('click', () => modal.remove());
+    modal.querySelector('[data-action="close"]').addEventListener('click', () => modal.remove());
 }
 
 // ========== ОБРАБОТЧИКИ СОБЫТИЙ ==========
