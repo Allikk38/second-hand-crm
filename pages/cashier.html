@@ -1,3 +1,7 @@
+// ========================================
+// FILE: pages/cashier.html
+// ========================================
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -5,13 +9,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Касса | SH CRM</title>
     
-    <!-- Базовый путь для GitHub Pages (раскомментировать при деплое) -->
-    <base href="/second-hand-crm/"> 
+    <!-- Базовый путь для GitHub Pages -->
+    <base href="/second-hand-crm/">
     
     <!-- Основные стили -->
-    <link rel="stylesheet" href="../css/styles.css">
-    <link rel="stylesheet" href="../css/layouts/cashier.css">
-    <link rel="stylesheet" href="../css/pages/cashier.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/layouts/cashier.css">
+    <link rel="stylesheet" href="css/pages/cashier.css">
     
     <style>
         /* Стили только для этой страницы (переопределения при необходимости) */
@@ -87,9 +91,9 @@
         <header class="app-header">
             <h1>💰 SH CRM</h1>
             <nav class="app-nav" aria-label="Основная навигация">
-                <a href="inventory.html">Склад</a>
-                <a href="cashier.html" class="active" aria-current="page">Касса</a>
-                <a href="reports.html">Отчеты</a>
+                <a href="pages/inventory.html">Склад</a>
+                <a href="pages/cashier.html" class="active" aria-current="page">Касса</a>
+                <a href="pages/reports.html">Отчеты</a>
             </nav>
             <div class="header-actions">
                 <span class="user-email" id="userEmail"></span>
@@ -132,7 +136,7 @@
     <div id="notificationContainer"></div>
     
     <!-- Основной скрипт страницы -->
-    <script type="module" src="../js/cashier.js"></script>
+    <script type="module" src="js/cashier.js"></script>
     
     <!-- Fallback на случай ошибки загрузки модуля -->
     <script>
