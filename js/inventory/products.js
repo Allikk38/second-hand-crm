@@ -5,33 +5,32 @@
 /**
  * Products Module - Inventory
  * 
- * Управление товарами на складе.
- * Отвечает за загрузку, фильтрацию, сортировку, кэширование
- * и обновление статистики товаров.
+ * Сервис управления данными товаров на складе.
+ * Отвечает за загрузку, кэширование, фильтрацию, сортировку и обновление состояния.
+ * Не выполняет мутирующих операций с сервером — это зона ответственности operations.js.
  * 
  * Архитектурные решения:
- * - Кэширование товаров в sessionStorage с TTL 5 минут.
- * - Интеграция с categorySchema.js для работы с категориями.
- * - Уведомление подписчиков об изменении данных.
- * - Поддержка офлайн-режима с загрузкой из кэша.
+ * - Загрузка данных через единый движок синхронизации sync-engine.
+ * - Кэширование данных управляется внутри sync-engine (IndexedDB + Memory).
+ * - Состояние модуля — единственный источник правды о товарах для UI контроллера.
+ * - Уведомление подписчиков об изменении данных через callback.
  * 
  * @module inventory/products
- * @version 1.0.0
+ * @version 2.0.0
+ * @changes
+ * - Полный рефакторинг. Удалены прямые запросы к Supabase.
+ * - Интегрирован sync-engine для загрузки данных.
+ * - Удалена зависимость от operations.js.
+ * - Упрощено управление состоянием.
  */
 
-import { getSupabase, isOnline } from '../../core/auth.js';
-import { getCategoryName } from '../../utils/formatters.js';
-import { showNotification } from '../../utils/ui.js';
-import { 
-    hasPendingOperations, 
-    syncPendingOperations,
-    getOperationsStats 
-} from './operations.js';
+import { loadData, ENTITIES } from '../../core/sync-engine.js';
+import { getSupabase } from '../../core/auth.js';
 
 // ========== КОНСТАНТЫ ==========
 
-const PRODUCTS_CACHE_KEY = 'sh_inventory_products';
-const CACHE_TTL = 5 * 60 * 1000; // 5 минут
+const CACHE_KEY = 'all';
+const CACHE_MAX_AGE = 5 * 60 * 1000; // 5 минут
 
 // ========== СОСТОЯНИЕ ТОВАРОВ ==========
 
@@ -44,7 +43,6 @@ export const productsState = {
     filtered: [],
     categories: [],
     isLoading: false,
-    isOffline: false,
     searchQuery: '',
     selectedStatus: '',
     selectedCategory: '',
@@ -59,7 +57,7 @@ export const productsState = {
     }
 };
 
-// ========== ПОДПИСЧИКИ НА ИЗМЕНЕНИЯ ==========
+// ========== ПОДПИСКА НА ИЗМЕНЕНИЯ ==========
 
 /** @type {Function|null} */
 let onChangeCallback = null;
@@ -81,59 +79,22 @@ function notifyProductsChanged() {
     }
 }
 
-// ========== КЭШИРОВАНИЕ ==========
-
-/**
- * Сохраняет товары в кэш
- * @param {Array} products - Массив товаров
- */
-function saveProductsToCache(products) {
-    if (!products) return;
-    
-    try {
-        sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
-            data: products,
-            timestamp: Date.now()
-        }));
-        console.log('[Products] Cache saved:', products.length, 'products');
-    } catch (e) {
-        console.warn('[Products] Failed to cache products:', e);
-    }
-}
-
-/**
- * Загружает товары из кэша
- * @returns {Array|null}
- */
-function loadProductsFromCache() {
-    try {
-        const cached = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
-        if (cached) {
-            const { data, timestamp } = JSON.parse(cached);
-            if (Date.now() - timestamp < CACHE_TTL) {
-                console.log('[Products] Loaded from cache:', data.length, 'products');
-                return data;
-            }
-            sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
-        }
-    } catch (e) {
-        console.warn('[Products] Failed to load cached products:', e);
-    }
-    return null;
-}
-
 // ========== ОБРАБОТКА КАТЕГОРИЙ ==========
 
 /**
  * Обновляет список категорий на основе товаров
  */
 function updateCategoryFilter() {
-    const categories = new Set();
+    const counts = new Map();
+    
     productsState.all.forEach(p => {
-        if (p.category) categories.add(p.category);
+        const cat = p.category || 'other';
+        counts.set(cat, (counts.get(cat) || 0) + 1);
     });
     
-    productsState.categories = Array.from(categories).sort();
+    productsState.categories = Array.from(counts.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count);
 }
 
 // ========== ФИЛЬТРАЦИЯ И СОРТИРОВКА ==========
@@ -195,6 +156,25 @@ function sortProducts(products, sortBy) {
     }
 }
 
+// ========== СТАТИСТИКА ==========
+
+/**
+ * Обновляет статистику склада
+ */
+function updateStats() {
+    const all = productsState.all;
+    const inStock = all.filter(p => p.status === 'in_stock' && !p._deleted);
+    
+    productsState.stats = {
+        total: all.filter(p => !p._deleted).length,
+        inStock: inStock.length,
+        sold: all.filter(p => p.status === 'sold' && !p._deleted).length,
+        reserved: all.filter(p => p.status === 'reserved' && !p._deleted).length,
+        stockValue: inStock.reduce((sum, p) => sum + (p.price || 0), 0),
+        potentialProfit: inStock.reduce((sum, p) => sum + ((p.price || 0) - (p.cost_price || 0)), 0)
+    };
+}
+
 // ========== УСТАНОВКА ФИЛЬТРОВ ==========
 
 /**
@@ -249,132 +229,53 @@ export function resetFilters() {
     notifyProductsChanged();
 }
 
-// ========== СТАТИСТИКА ==========
-
-/**
- * Обновляет статистику склада
- */
-function updateStats() {
-    const all = productsState.all;
-    const inStock = all.filter(p => p.status === 'in_stock');
-    
-    productsState.stats = {
-        total: all.length,
-        inStock: inStock.length,
-        sold: all.filter(p => p.status === 'sold').length,
-        reserved: all.filter(p => p.status === 'reserved').length,
-        stockValue: inStock.reduce((sum, p) => sum + (p.price || 0), 0),
-        potentialProfit: inStock.reduce((sum, p) => sum + ((p.price || 0) - (p.cost_price || 0)), 0)
-    };
-}
-
 // ========== ЗАГРУЗКА ТОВАРОВ ==========
 
 /**
- * Проверяет доступность Supabase
- * @returns {Promise<boolean>}
- */
-async function isSupabaseAvailable() {
-    if (!isOnline()) return false;
-    
-    try {
-        const supabase = await getSupabase();
-        const { error } = await supabase.from('products').select('id', { count: 'exact', head: true });
-        return !error;
-    } catch {
-        return false;
-    }
-}
-
-/**
- * Загружает товары с сервера
+ * Загружает товары через Sync Engine
  * @param {boolean} [forceRefresh=false] - Игнорировать кэш
  * @returns {Promise<boolean>} true если загрузка успешна
  */
 export async function loadProducts(forceRefresh = false) {
     if (productsState.isLoading) return false;
     
-    // Проверяем кэш если не принудительное обновление
-    if (!forceRefresh) {
-        const cached = loadProductsFromCache();
-        if (cached) {
-            productsState.all = cached;
-            productsState.isOffline = false;
-            updateCategoryFilter();
-            applyFilters();
-            updateStats();
-            notifyProductsChanged();
-        }
-    }
-    
-    // Если офлайн - останавливаемся
-    if (!isOnline()) {
-        productsState.isOffline = true;
-        if (productsState.all.length === 0) {
-            showNotification('Нет подключения к интернету и нет кэшированных данных', 'warning');
-        } else {
-            showNotification('Работа в офлайн-режиме (данные из кэша)', 'warning');
-        }
-        notifyProductsChanged();
-        return false;
-    }
-    
     productsState.isLoading = true;
     notifyProductsChanged();
     
     try {
-        const supabaseAvailable = await isSupabaseAvailable();
-        
-        if (!supabaseAvailable) {
-            productsState.isOffline = true;
-            if (productsState.all.length > 0) {
-                showNotification('Сервер недоступен. Работа с кэшированными данными.', 'warning');
-            } else {
-                showNotification('Сервер недоступен и нет кэшированных данных', 'error');
+        const result = await loadData(ENTITIES.PRODUCTS, {
+            id: CACHE_KEY,
+            maxAge: forceRefresh ? 0 : CACHE_MAX_AGE,
+            fetcher: async () => {
+                const supabase = await getSupabase();
+                const { data, error } = await supabase
+                    .from('products')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                return data || [];
             }
-            productsState.isLoading = false;
-            notifyProductsChanged();
-            return false;
+        });
+        
+        productsState.all = result.data || [];
+        
+        // Логируем источник данных
+        if (result.fromCache) {
+            console.log('[Products] Loaded from cache:', productsState.all.length);
+        } else {
+            console.log('[Products] Loaded from server:', productsState.all.length);
         }
         
-        const supabase = await getSupabase();
-        
-        const { data, error } = await supabase
-            .from('products')
-            .select('*')
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        console.log('[Products] Loaded from server:', data?.length || 0, 'products');
-        
-        productsState.all = data || [];
-        productsState.isOffline = false;
-        
-        saveProductsToCache(productsState.all);
         updateCategoryFilter();
         applyFilters();
         updateStats();
-        
-        // Если есть отложенные операции, синхронизируем их
-        if (hasPendingOperations()) {
-            const result = await syncPendingOperations();
-            if (result.synced > 0) {
-                // После синхронизации перезагружаем данные
-                return await loadProducts(true);
-            }
-        }
+        notifyProductsChanged();
         
         return true;
         
     } catch (error) {
         console.error('[Products] Load products error:', error);
-        
-        if (productsState.all.length > 0) {
-            showNotification('Ошибка загрузки. Используются кэшированные данные.', 'warning');
-        } else {
-            showNotification('Ошибка загрузки товаров: ' + error.message, 'error');
-        }
         return false;
     } finally {
         productsState.isLoading = false;
@@ -382,20 +283,17 @@ export async function loadProducts(forceRefresh = false) {
     }
 }
 
-// ========== ОБНОВЛЕНИЕ ПОСЛЕ ИЗМЕНЕНИЙ ==========
+// ========== ОБНОВЛЕНИЕ СОСТОЯНИЯ (ВЫЗЫВАЕТСЯ ИЗВНЕ) ==========
 
 /**
  * Полностью обновляет UI после изменения списка товаров
  */
 export function refreshProductsList() {
-    saveProductsToCache(productsState.all);
     updateCategoryFilter();
     applyFilters();
     updateStats();
     notifyProductsChanged();
 }
-
-// ========== CRUD ОПЕРАЦИИ НАД STATE ==========
 
 /**
  * Добавляет товар в начало списка
@@ -426,10 +324,9 @@ export function updateProductInState(productId, updatedProduct) {
  * @param {string} productId - ID товара
  */
 export function removeProductFromState(productId) {
-    const initialLength = productsState.all.length;
-    productsState.all = productsState.all.filter(p => p.id !== productId);
-    
-    if (productsState.all.length !== initialLength) {
+    const index = productsState.all.findIndex(p => p.id === productId);
+    if (index !== -1) {
+        productsState.all[index]._deleted = true;
         refreshProductsList();
         return true;
     }
@@ -488,14 +385,6 @@ export function isLoading() {
 }
 
 /**
- * Проверяет, в офлайн-режиме ли страница
- * @returns {boolean}
- */
-export function isOffline() {
-    return productsState.isOffline;
-}
-
-/**
  * Получает текущий поисковый запрос
  * @returns {string}
  */
@@ -530,21 +419,22 @@ export function getSortBy() {
 // ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
 
 export default {
+    // Состояние и колбэки
     productsState,
     setProductsChangeCallback,
     
-    // Загрузка
+    // Загрузка данных
     loadProducts,
     refreshProductsList,
     
-    // Фильтры
+    // Управление фильтрами
     setSearchQuery,
     setStatusFilter,
     setCategoryFilter,
     setSortBy,
     resetFilters,
     
-    // CRUD над state
+    // Обновление состояния (для operations)
     addProductToState,
     updateProductInState,
     removeProductFromState,
@@ -556,7 +446,6 @@ export default {
     getStats,
     getProductById,
     isLoading,
-    isOffline,
     getSearchQuery,
     getSelectedStatus,
     getSelectedCategory,
