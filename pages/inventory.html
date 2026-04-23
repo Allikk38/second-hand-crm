@@ -1,3 +1,7 @@
+// ========================================
+// FILE: pages/inventory.html
+// ========================================
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -5,9 +9,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Склад | SH CRM</title>
     
+    <!-- Базовый путь для GitHub Pages -->
+    <base href="/second-hand-crm/">
+    
     <!-- Основные стили -->
-    <link rel="stylesheet" href="../css/styles.css">
-    <link rel="stylesheet" href="../css/layouts/inventory.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/layouts/inventory.css">
     
     <!-- Дополнительные стили для таблиц -->
     <style>
@@ -124,9 +131,9 @@
         <header class="app-header">
             <h1>📦 SH CRM</h1>
             <nav class="app-nav" aria-label="Основная навигация">
-                <a href="inventory.html" class="active" aria-current="page">Склад</a>
-                <a href="cashier.html">Касса</a>
-                <a href="reports.html">Отчеты</a>
+                <a href="pages/inventory.html" class="active" aria-current="page">Склад</a>
+                <a href="pages/cashier.html">Касса</a>
+                <a href="pages/reports.html">Отчеты</a>
             </nav>
             <div class="header-actions">
                 <span class="user-email" id="userEmail"></span>
@@ -245,7 +252,7 @@
     <div id="notificationContainer"></div>
     
     <!-- Основной скрипт страницы -->
-    <script type="module" src="../js/inventory.js"></script>
+    <script type="module" src="js/inventory.js"></script>
     
     <!-- Fallback на случай ошибки -->
     <script>
