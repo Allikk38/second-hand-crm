@@ -74,7 +74,7 @@ function loadSupabaseSDK() {
  * @returns {Promise<Object>} Клиент Supabase
  * @throws {Error} Если не удалось загрузить SDK
  */
-async function getSupabase() {
+export async function getSupabase() {
     // Загружаем SDK если нужно
     await loadSupabaseSDK();
     
