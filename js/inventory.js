@@ -17,12 +17,11 @@
  * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module inventory
- * @version 3.8.0
+ * @version 3.9.0
  * @changes
- * - Добавлена очередь отложенных операций (pendingOperations).
- * - Реализовано оптимистичное удаление в офлайн-режиме.
- * - Автоматическая синхронизация при восстановлении сети.
- * - Улучшена обработка ошибок синхронизации.
+ * - Добавлена функция refreshProductsList() для устранения дублирования кода
+ * - Добавлена обработка ошибок в openAddProductForm и openEditProductForm
+ * - Использование onSuccess колбэка для немедленного обновления UI
  */
 
 import { requireAuth, logout, isOnline, getSupabase } from '../core/auth.js';
@@ -186,17 +185,10 @@ function updateSyncIndicator() {
     const pendingCount = state.pendingOperations.length;
     
     if (pendingCount > 0) {
-        showNotification(`Ожидает синхронизации: ${pendingCount} операций`, 'info');
-    }
-    
-    // Можно добавить визуальный индикатор в UI
-    const syncBadge = document.getElementById('syncBadge');
-    if (syncBadge) {
-        if (pendingCount > 0) {
+        const syncBadge = document.getElementById('syncBadge');
+        if (syncBadge) {
             syncBadge.textContent = pendingCount;
             syncBadge.style.display = 'inline-block';
-        } else {
-            syncBadge.style.display = 'none';
         }
     }
 }
@@ -219,10 +211,6 @@ async function syncPendingOperations() {
         try {
             if (op.type === 'delete') {
                 await syncDeleteOperation(op);
-            } else if (op.type === 'create') {
-                // TODO: синхронизация создания
-            } else if (op.type === 'update') {
-                // TODO: синхронизация обновления
             }
             
             // Успешно — удаляем из очереди
@@ -557,6 +545,23 @@ function updateStats() {
     `;
 }
 
+// ========== ОБНОВЛЕНИЕ UI ПОСЛЕ ИЗМЕНЕНИЙ ==========
+
+/**
+ * Обновляет всё состояние и UI после изменения списка товаров
+ * @param {boolean} [skipRender=false] - Пропустить вызов render()
+ */
+function refreshProductsList(skipRender = false) {
+    saveProductsToCache(state.products);
+    updateCategoryFilter();
+    applyFilters();
+    updateStats();
+    
+    if (!skipRender) {
+        render();
+    }
+}
+
 // ========== CRUD ОПЕРАЦИИ ==========
 
 /**
@@ -581,11 +586,7 @@ async function deleteProduct(id) {
     
     // ОПТИМИСТИЧНОЕ УДАЛЕНИЕ: сразу удаляем из локального стейта
     state.products = state.products.filter(p => p.id !== id);
-    saveProductsToCache(state.products);
-    updateCategoryFilter();
-    applyFilters();
-    updateStats();
-    render();
+    refreshProductsList(false);
     
     // Если офлайн — добавляем в очередь
     if (!isOnline()) {
@@ -637,10 +638,7 @@ async function deleteProduct(id) {
         
         // Восстанавливаем товар в стейте при ошибке
         state.products.unshift(product);
-        saveProductsToCache(state.products);
-        updateCategoryFilter();
-        applyFilters();
-        updateStats();
+        refreshProductsList(false);
         
         showError('Ошибка удаления: ' + error.message);
     } finally {
@@ -649,29 +647,48 @@ async function deleteProduct(id) {
     }
 }
 
+/**
+ * Открывает форму добавления товара
+ */
 async function openAddProductForm() {
     if (!isOnline()) {
         showError('Добавление товара недоступно в офлайн-режиме', 'warning');
         return;
     }
     
-    const newProduct = await openProductFormModal({
-        mode: 'create',
-        userId: state.user?.id
-    });
+    if (!state.user?.id) {
+        showError('Не удалось определить пользователя. Перезагрузите страницу.', 'error');
+        return;
+    }
     
-    if (newProduct) {
-        state.products.unshift(newProduct);
-        saveProductsToCache(state.products);
-        updateCategoryFilter();
-        applyFilters();
-        updateStats();
-        render();
+    try {
+        const newProduct = await openProductFormModal({
+            mode: 'create',
+            userId: state.user.id,
+            onSuccess: (product) => {
+                // Товар уже создан, добавляем в начало списка
+                state.products.unshift(product);
+                refreshProductsList(false);
+                showNotification(`Товар "${product.name}" добавлен`, 'success');
+            }
+        });
         
-        showNotification(`Товар "${newProduct.name}" добавлен`, 'success');
+        // Если onSuccess не сработал (например, при ошибке), но продукт вернулся
+        if (newProduct && !state.products.find(p => p.id === newProduct.id)) {
+            state.products.unshift(newProduct);
+            refreshProductsList(false);
+            showNotification(`Товар "${newProduct.name}" добавлен`, 'success');
+        }
+        
+    } catch (error) {
+        console.error('[Inventory] Add product error:', error);
+        showError('Не удалось открыть форму добавления: ' + error.message);
     }
 }
 
+/**
+ * Открывает форму редактирования товара
+ */
 async function openEditProductForm(id) {
     if (!isOnline()) {
         showError('Редактирование товара недоступно в офлайн-режиме', 'warning');
@@ -684,24 +701,35 @@ async function openEditProductForm(id) {
         return;
     }
     
-    const updatedProduct = await openProductFormModal({
-        mode: 'edit',
-        initialData: product,
-        userId: state.user?.id
-    });
-    
-    if (updatedProduct) {
-        const index = state.products.findIndex(p => p.id === updatedProduct.id);
-        if (index !== -1) {
-            state.products[index] = updatedProduct;
-            saveProductsToCache(state.products);
-            updateCategoryFilter();
-            applyFilters();
-            updateStats();
-            render();
-            
-            showNotification(`Товар "${updatedProduct.name}" обновлён`, 'success');
+    try {
+        const updatedProduct = await openProductFormModal({
+            mode: 'edit',
+            initialData: product,
+            userId: state.user?.id,
+            onSuccess: (product) => {
+                // Обновляем товар в стейте
+                const index = state.products.findIndex(p => p.id === product.id);
+                if (index !== -1) {
+                    state.products[index] = product;
+                    refreshProductsList(false);
+                    showNotification(`Товар "${product.name}" обновлён`, 'success');
+                }
+            }
+        });
+        
+        // Если onSuccess не сработал, но продукт вернулся
+        if (updatedProduct) {
+            const index = state.products.findIndex(p => p.id === updatedProduct.id);
+            if (index !== -1) {
+                state.products[index] = updatedProduct;
+                refreshProductsList(false);
+                showNotification(`Товар "${updatedProduct.name}" обновлён`, 'success');
+            }
         }
+        
+    } catch (error) {
+        console.error('[Inventory] Edit product error:', error);
+        showError('Не удалось открыть форму редактирования: ' + error.message);
     }
 }
 
