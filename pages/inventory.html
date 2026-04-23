@@ -12,7 +12,6 @@
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/layouts/inventory.css">
     
-    <!-- Дополнительные стили для таблиц -->
     <style>
         /* Стили только для этой страницы (переопределения) */
         .inventory-page {
@@ -164,6 +163,29 @@
             pointer-events: auto;
         }
         
+        /* Индикатор загрузки модуля */
+        .module-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            gap: var(--spacing-4);
+        }
+        
+        .module-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--color-border);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
         @media (max-width: 768px) {
             .skeleton-row {
                 gap: var(--spacing-2);
@@ -251,8 +273,14 @@
                 
                 <!-- Таблица товаров -->
                 <div class="products-table-wrapper">
-                    <!-- Скелетон-лоадер -->
-                    <div class="skeleton-rows" id="skeletonLoader">
+                    <!-- Индикатор загрузки модуля -->
+                    <div id="moduleLoading" class="module-loading">
+                        <div class="spinner"></div>
+                        <p>Загрузка модуля...</p>
+                    </div>
+                    
+                    <!-- Скелетон-лоадер (скрыт изначально) -->
+                    <div class="skeleton-rows" id="skeletonLoader" style="display: none;">
                         <div class="skeleton-row">
                             <div class="skeleton skeleton-checkbox"></div>
                             <div class="skeleton skeleton-image"></div>
@@ -276,8 +304,8 @@
                         </div>
                     </div>
                     
-                    <!-- Пустое состояние -->
-                    <div class="empty-state" id="emptyState">
+                    <!-- Пустое состояние (скрыто изначально) -->
+                    <div class="empty-state" id="emptyState" style="display: none;">
                         <div class="empty-state-icon">📦</div>
                         <p class="empty-state-title">Нет товаров</p>
                         <p class="empty-state-message">Нажмите "Добавить товар" чтобы начать</p>
@@ -307,10 +335,10 @@
         </main>
     </div>
     
-    <!-- Контейнер для модальных окон (управляется через ui.js) -->
+    <!-- Контейнер для модальных окон -->
     <div id="modalContainer"></div>
     
-    <!-- Контейнер для уведомлений (управляется через ui.js) -->
+    <!-- Контейнер для уведомлений -->
     <div id="notificationContainer"></div>
     
     <!-- Основной скрипт страницы -->
@@ -319,39 +347,86 @@
     <!-- Fallback на случай ошибки -->
     <script>
         (function() {
+            const moduleLoading = document.getElementById('moduleLoading');
             const skeletonLoader = document.getElementById('skeletonLoader');
             const productsTable = document.getElementById('productsTable');
             const emptyState = document.getElementById('emptyState');
             const errorBanner = document.getElementById('errorBanner');
+            const errorMessage = document.getElementById('errorMessage');
             
-            // Таймаут для проверки загрузки модуля
-            const timeoutId = setTimeout(function() {
-                if (skeletonLoader && skeletonLoader.style.display !== 'none') {
-                    console.warn('[Inventory] Module load timeout');
-                    if (skeletonLoader) skeletonLoader.style.display = 'none';
-                    if (productsTable) productsTable.style.display = 'none';
-                    if (emptyState) {
-                        emptyState.style.display = 'flex';
-                        const title = emptyState.querySelector('.empty-state-title');
-                        const message = emptyState.querySelector('.empty-state-message');
-                        if (title) title.textContent = 'Ошибка загрузки';
-                        if (message) message.textContent = 'Превышено время ожидания. Обновите страницу.';
-                    }
+            let moduleLoaded = false;
+            let timeoutId = null;
+            
+            // Функция для отображения ошибки
+            function showModuleError(message) {
+                if (moduleLoading) moduleLoading.style.display = 'none';
+                if (skeletonLoader) skeletonLoader.style.display = 'none';
+                if (productsTable) productsTable.style.display = 'none';
+                
+                if (errorBanner && errorMessage) {
+                    errorMessage.textContent = message;
+                    errorBanner.style.display = 'flex';
+                    errorBanner.className = 'error-banner error-banner-error';
                 }
-            }, 8000);
+                
+                if (emptyState) {
+                    emptyState.style.display = 'flex';
+                    const title = emptyState.querySelector('.empty-state-title');
+                    const msg = emptyState.querySelector('.empty-state-message');
+                    if (title) title.textContent = 'Ошибка загрузки';
+                    if (msg) msg.textContent = message;
+                }
+            }
             
+            // Проверяем, загружен ли уже модуль
+            window.__inventoryModuleLoaded = false;
+            
+            // Таймаут для проверки загрузки модуля (уменьшен до 5 секунд)
+            timeoutId = setTimeout(function() {
+                if (!window.__inventoryModuleLoaded) {
+                    console.warn('[Inventory] Module load timeout');
+                    showModuleError('Превышено время ожидания. Проверьте подключение к интернету.');
+                }
+            }, 5000);
+            
+            // Слушаем успешную загрузку модуля
+            window.addEventListener('load', function() {
+                // Даём модулю 500 мс на инициализацию
+                setTimeout(function() {
+                    if (!window.__inventoryModuleLoaded) {
+                        // Проверяем, есть ли контент в таблице
+                        const tableBody = document.getElementById('tableBody');
+                        if (tableBody && tableBody.children.length > 0) {
+                            window.__inventoryModuleLoaded = true;
+                            clearTimeout(timeoutId);
+                            if (moduleLoading) moduleLoading.style.display = 'none';
+                        }
+                    }
+                }, 500);
+            });
+            
+            // Обработчик ошибки загрузки скрипта
             window.addEventListener('error', function(e) {
                 if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('inventory.js')) {
+                    console.error('[Inventory] Script load error:', e);
                     clearTimeout(timeoutId);
-                    if (skeletonLoader) skeletonLoader.style.display = 'none';
-                    if (productsTable) productsTable.style.display = 'none';
-                    if (emptyState) {
-                        emptyState.style.display = 'flex';
-                        const title = emptyState.querySelector('.empty-state-title');
-                        const message = emptyState.querySelector('.empty-state-message');
-                        if (title) title.textContent = 'Ошибка загрузки';
-                        if (message) message.textContent = 'Не удалось загрузить модуль страницы.';
-                    }
+                    window.__inventoryModuleLoaded = false;
+                    showModuleError('Не удалось загрузить модуль страницы. Проверьте подключение.');
+                }
+            }, true);
+            
+            // Экспортируем функцию для отметки загрузки модуля
+            window.markInventoryModuleLoaded = function() {
+                window.__inventoryModuleLoaded = true;
+                clearTimeout(timeoutId);
+                if (moduleLoading) moduleLoading.style.display = 'none';
+                console.log('[Inventory] Module loaded successfully');
+            };
+            
+            // Обработчик кнопки повтора
+            document.addEventListener('click', function(e) {
+                if (e.target.id === 'offlineRetryBtn' || e.target.closest('#offlineRetryBtn')) {
+                    location.reload();
                 }
             });
         })();
