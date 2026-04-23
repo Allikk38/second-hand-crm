@@ -15,9 +15,9 @@
  * - Экспортирует функцию getSupabase для централизованного доступа к БД.
  * 
  * @module auth
- * @version 3.4.0
+ * @version 3.4.1
  * @changes
- * - Добавлен экспорт функции getSupabase для использования в других модулях.
+ * - Добавлен export перед функцией getSupabase (исправление ошибки импорта).
  * - getSupabase добавлена в экспорт по умолчанию.
  */
 
@@ -298,7 +298,7 @@ export function setReturnUrl(url) {
 // ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
 
 export default {
-    getSupabase, // <-- Добавлено в экспорт
+    getSupabase,
     getCurrentUser,
     isAuthenticated,
     requireAuth,
