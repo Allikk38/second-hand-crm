@@ -106,6 +106,58 @@
             margin-bottom: var(--spacing-6);
         }
         
+        /* Кнопка быстрого добавления товара */
+        .quick-add-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--spacing-2);
+            padding: 0 var(--spacing-4);
+            height: 36px;
+            background: var(--color-white);
+            border: var(--border-width) solid var(--color-border);
+            border-radius: var(--radius-md);
+            font-size: var(--font-size-sm);
+            font-weight: var(--font-weight-medium);
+            color: var(--color-text);
+            cursor: pointer;
+            transition: background-color var(--transition-fast);
+            margin-right: var(--spacing-2);
+        }
+        
+        .quick-add-btn:hover {
+            background: var(--color-gray-50);
+            border-color: var(--color-gray-400);
+        }
+        
+        .quick-add-btn .icon {
+            font-size: 16px;
+        }
+        
+        /* Панель инструментов кассы */
+        .products-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--spacing-3) var(--spacing-4);
+            background: var(--color-white);
+            border-bottom: var(--border-width) solid var(--color-border);
+            flex-wrap: wrap;
+            gap: var(--spacing-2);
+        }
+        
+        .toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-2);
+            flex: 1;
+        }
+        
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-2);
+        }
+        
         /* Мобильная адаптация */
         @media (max-width: 768px) {
             .skeleton-grid {
@@ -122,6 +174,36 @@
                 margin-left: 0;
                 margin-top: var(--spacing-2);
                 width: 100%;
+            }
+            
+            .products-toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .toolbar-left {
+                flex-wrap: wrap;
+            }
+            
+            .toolbar-right {
+                justify-content: flex-end;
+            }
+            
+            .quick-add-btn {
+                flex: 1;
+                justify-content: center;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .quick-add-btn span:not(.icon) {
+                display: none;
+            }
+            
+            .quick-add-btn {
+                padding: 0;
+                width: 36px;
+                justify-content: center;
             }
         }
     </style>
