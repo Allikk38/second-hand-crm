@@ -8,11 +8,14 @@
  * Логика синхронизации операций с сервером Supabase.
  * 
  * @module sync-engine/sync
- * @version 1.0.0
+ * @version 1.1.0
+ * @changes
+ * - Добавлено логирование операций синхронизации
  */
 
 import { getSupabase } from '../auth.js';
 import { cacheGet, cacheSet } from './db.js';
+import { logSyncOperation, logError } from './logger.js';
 
 // ========== КОНСТАНТЫ ==========
 
@@ -40,36 +43,63 @@ export const PRIORITIES = {
  * Синхронизирует операцию создания
  */
 async function syncCreate(supabase, op) {
-    const { entity, data } = op;
+    const { entity, data, id: opId } = op;
+    const startTime = Date.now();
     
-    switch (entity) {
-        case ENTITIES.PRODUCTS:
-            const { data: product, error } = await supabase
-                .from('products')
-                .insert(data)
-                .select()
-                .single();
-            if (error) throw error;
-            await updateLocalCache(entity, product);
-            return true;
-            
-        case ENTITIES.SALES:
-            const { error: saleError } = await supabase
-                .from('sales')
-                .insert(data);
-            if (saleError) throw saleError;
-            return true;
-            
-        case ENTITIES.SHIFTS:
-            const { error: shiftError } = await supabase
-                .from('shifts')
-                .insert(data);
-            if (shiftError) throw shiftError;
-            return true;
-            
-        default:
-            console.warn('[Sync] Unknown entity for create:', entity);
-            return true;
+    try {
+        switch (entity) {
+            case ENTITIES.PRODUCTS:
+                const { data: product, error } = await supabase
+                    .from('products')
+                    .insert(data)
+                    .select()
+                    .single();
+                if (error) throw error;
+                await updateLocalCache(entity, product);
+                
+                logSyncOperation('create', entity, 'success', {
+                    opId,
+                    productId: product.id,
+                    duration: Date.now() - startTime
+                });
+                return true;
+                
+            case ENTITIES.SALES:
+                const { error: saleError } = await supabase
+                    .from('sales')
+                    .insert(data);
+                if (saleError) throw saleError;
+                
+                logSyncOperation('create', entity, 'success', {
+                    opId,
+                    saleTotal: data.total,
+                    duration: Date.now() - startTime
+                });
+                return true;
+                
+            case ENTITIES.SHIFTS:
+                const { error: shiftError } = await supabase
+                    .from('shifts')
+                    .insert(data);
+                if (shiftError) throw shiftError;
+                
+                logSyncOperation('create', entity, 'success', {
+                    opId,
+                    duration: Date.now() - startTime
+                });
+                return true;
+                
+            default:
+                logSyncOperation('create', entity, 'skipped', { opId, reason: 'unknown entity' });
+                return true;
+        }
+    } catch (error) {
+        logError(`Sync create ${entity} failed`, error, {
+            opId,
+            entity,
+            duration: Date.now() - startTime
+        });
+        throw error;
     }
 }
 
@@ -77,29 +107,46 @@ async function syncCreate(supabase, op) {
  * Синхронизирует операцию обновления
  */
 async function syncUpdate(supabase, op) {
-    const { entity, data } = op;
-    const id = data.id;
+    const { entity, data, id: opId } = op;
+    const itemId = data.id;
+    const startTime = Date.now();
     
-    if (!id) {
-        console.warn('[Sync] Update operation without id');
+    if (!itemId) {
+        logSyncOperation('update', entity, 'skipped', { opId, reason: 'no id' });
         return true;
     }
     
-    switch (entity) {
-        case ENTITIES.PRODUCTS:
-            const { data: product, error } = await supabase
-                .from('products')
-                .update(data)
-                .eq('id', id)
-                .select()
-                .single();
-            if (error) throw error;
-            await updateLocalCache(entity, product);
-            return true;
-            
-        default:
-            console.warn('[Sync] Unknown entity for update:', entity);
-            return true;
+    try {
+        switch (entity) {
+            case ENTITIES.PRODUCTS:
+                const { data: product, error } = await supabase
+                    .from('products')
+                    .update(data)
+                    .eq('id', itemId)
+                    .select()
+                    .single();
+                if (error) throw error;
+                await updateLocalCache(entity, product);
+                
+                logSyncOperation('update', entity, 'success', {
+                    opId,
+                    productId: itemId,
+                    duration: Date.now() - startTime
+                });
+                return true;
+                
+            default:
+                logSyncOperation('update', entity, 'skipped', { opId, reason: 'unknown entity' });
+                return true;
+        }
+    } catch (error) {
+        logError(`Sync update ${entity} failed`, error, {
+            opId,
+            entity,
+            itemId,
+            duration: Date.now() - startTime
+        });
+        throw error;
     }
 }
 
@@ -107,46 +154,70 @@ async function syncUpdate(supabase, op) {
  * Синхронизирует операцию удаления
  */
 async function syncDelete(supabase, op) {
-    const { entity, data } = op;
-    const id = data.id;
+    const { entity, data, id: opId } = op;
+    const itemId = data.id;
+    const startTime = Date.now();
     
-    if (!id) {
-        console.warn('[Sync] Delete operation without id');
+    if (!itemId) {
+        logSyncOperation('delete', entity, 'skipped', { opId, reason: 'no id' });
         return true;
     }
     
-    switch (entity) {
-        case ENTITIES.PRODUCTS:
-            const { data: existing, error: checkError } = await supabase
-                .from('products')
-                .select('id, status, photo_url')
-                .eq('id', id)
-                .maybeSingle();
-            
-            if (checkError && checkError.code !== 'PGRST116') throw checkError;
-            if (!existing || existing.status === 'sold') return true;
-            
-            if (existing.photo_url) {
-                const photoPath = existing.photo_url.split('/').pop();
-                if (photoPath) {
-                    await supabase.storage
-                        .from('product-photos')
-                        .remove([photoPath]);
+    try {
+        switch (entity) {
+            case ENTITIES.PRODUCTS:
+                const { data: existing, error: checkError } = await supabase
+                    .from('products')
+                    .select('id, status, photo_url')
+                    .eq('id', itemId)
+                    .maybeSingle();
+                
+                if (checkError && checkError.code !== 'PGRST116') throw checkError;
+                if (!existing || existing.status === 'sold') {
+                    logSyncOperation('delete', entity, 'skipped', {
+                        opId,
+                        productId: itemId,
+                        reason: existing ? 'already sold' : 'not found'
+                    });
+                    return true;
                 }
-            }
-            
-            const { error } = await supabase
-                .from('products')
-                .delete()
-                .eq('id', id);
-            
-            if (error) throw error;
-            await removeFromLocalCache(entity, id);
-            return true;
-            
-        default:
-            console.warn('[Sync] Unknown entity for delete:', entity);
-            return true;
+                
+                if (existing.photo_url) {
+                    const photoPath = existing.photo_url.split('/').pop();
+                    if (photoPath) {
+                        await supabase.storage
+                            .from('product-photos')
+                            .remove([photoPath]);
+                    }
+                }
+                
+                const { error } = await supabase
+                    .from('products')
+                    .delete()
+                    .eq('id', itemId);
+                
+                if (error) throw error;
+                await removeFromLocalCache(entity, itemId);
+                
+                logSyncOperation('delete', entity, 'success', {
+                    opId,
+                    productId: itemId,
+                    duration: Date.now() - startTime
+                });
+                return true;
+                
+            default:
+                logSyncOperation('delete', entity, 'skipped', { opId, reason: 'unknown entity' });
+                return true;
+        }
+    } catch (error) {
+        logError(`Sync delete ${entity} failed`, error, {
+            opId,
+            entity,
+            itemId,
+            duration: Date.now() - startTime
+        });
+        throw error;
     }
 }
 
@@ -161,10 +232,16 @@ export async function syncOperation(op) {
             case OP_TYPES.CREATE: return await syncCreate(supabase, op);
             case OP_TYPES.UPDATE: return await syncUpdate(supabase, op);
             case OP_TYPES.DELETE: return await syncDelete(supabase, op);
-            default: return true;
+            default:
+                logSyncOperation(op.type, op.entity, 'skipped', { opId: op.id, reason: 'unknown type' });
+                return true;
         }
     } catch (error) {
-        console.error('[Sync] Operation error:', error);
+        logError(`Sync operation ${op.type} ${op.entity} failed`, error, {
+            opId: op.id,
+            operationType: op.type,
+            entity: op.entity
+        });
         throw error;
     }
 }
