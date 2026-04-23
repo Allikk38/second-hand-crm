@@ -22,6 +22,41 @@
             background: var(--color-bg);
         }
         
+        /* Офлайн-баннер */
+        .offline-banner {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            padding: var(--spacing-3) var(--spacing-4);
+            margin-bottom: var(--spacing-4);
+            background: var(--color-warning-bg);
+            border-radius: var(--radius-md);
+            border-left: 3px solid var(--color-warning);
+        }
+        
+        .offline-banner .message {
+            flex: 1;
+            font-size: var(--font-size-sm);
+            color: var(--color-warning-dark);
+            font-weight: var(--font-weight-medium);
+        }
+        
+        .offline-banner .btn-ghost {
+            padding: var(--spacing-1) var(--spacing-3);
+            font-size: var(--font-size-xs);
+            background: transparent;
+            border: var(--border-width) solid var(--color-warning);
+            color: var(--color-warning-dark);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            margin-left: var(--spacing-3);
+        }
+        
+        .offline-banner .btn-ghost:hover {
+            background: var(--color-warning);
+            color: var(--color-white);
+        }
+        
         /* Скелетон-лоадер */
         .skeleton-kpi {
             display: grid;
@@ -126,6 +161,16 @@
             .skeleton-chart {
                 height: 200px;
             }
+            
+            .offline-banner {
+                flex-wrap: wrap;
+            }
+            
+            .offline-banner .btn-ghost {
+                margin-left: 0;
+                margin-top: var(--spacing-2);
+                width: 100%;
+            }
         }
         
         @media (max-width: 480px) {
@@ -156,6 +201,12 @@
         <!-- Основной контент -->
         <main class="app-main">
             <div class="reports-page">
+                <!-- Офлайн-баннер -->
+                <div class="offline-banner" id="offlineBanner">
+                    <span class="message">⚠️ Нет подключения к интернету. Работа в офлайн-режиме.</span>
+                    <button class="btn-ghost" id="offlineRetryBtn">Повторить подключение</button>
+                </div>
+                
                 <!-- Заголовок с переключателем периода -->
                 <div class="reports-header">
                     <h1>Аналитика и отчеты</h1>
