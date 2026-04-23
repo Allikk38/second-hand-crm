@@ -1,3 +1,7 @@
+// ========================================
+// FILE: js/reports.js
+// ========================================
+
 /**
  * Reports Page Module - MPA Edition
  * 
@@ -9,24 +13,24 @@
  * - Динамический импорт для уменьшения initial bundle.
  * - Кэширование данных в sessionStorage.
  * - Chart.js загружается только для дашборда.
+ * - Использование централизованных утилит из core/auth.js и utils/ui.js.
  * 
  * @module reports
- * @version 3.2.0
+ * @version 3.3.0
  * @changes
- * - Рефакторинг: выделены отдельные модули dashboard и tables.
- * - Убрана зависимость от core/supabase.js.
- * - Добавлено кэширование.
+ * - Удалена локальная реализация getSupabase (импортируется из core/auth.js).
+ * - Удалены локальные реализации showNotification и escapeHtml.
+ * - Добавлены импорты из utils/ui.js и utils/formatters.js.
  */
 
-import { requireAuth, logout, getCurrentUser, isOnline } from '../core/auth.js';
-import { formatMoney, formatDate, debounce } from '../utils/formatters.js';
+import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
+import { formatMoney, formatDate, debounce, escapeHtml } from '../utils/formatters.js';
+import { showNotification } from '../utils/ui.js';
 
 // ========== КОНСТАНТЫ ==========
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 минут
 const CACHE_KEY_PREFIX = 'reports_cache_';
-const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
 
 // ========== СОСТОЯНИЕ ==========
 
@@ -60,53 +64,9 @@ const DOM = {
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-function getSupabase() {
-    if (!window.supabase) {
-        throw new Error('Supabase client not loaded');
-    }
-    
-    if (!window.__supabaseClient) {
-        window.__supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
-    
-    return window.__supabaseClient;
-}
-
-function showNotification(message, type = 'info') {
-    const container = DOM.notificationContainer;
-    if (!container) return;
-    
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <div class="notification-icon"></div>
-        <div class="notification-content">
-            <div class="notification-message">${escapeHtml(message)}</div>
-        </div>
-        <button class="notification-close">×</button>
-    `;
-    
-    notification.querySelector('.notification-close').addEventListener('click', () => {
-        notification.remove();
-    });
-    
-    container.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 4000);
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
+/**
+ * Показывает или скрывает лоадер
+ */
 function showLoader() {
     if (DOM.skeletonLoader) {
         DOM.skeletonLoader.style.display = 'block';
@@ -116,6 +76,9 @@ function showLoader() {
     }
 }
 
+/**
+ * Скрывает лоадер
+ */
 function hideLoader() {
     if (DOM.skeletonLoader) {
         DOM.skeletonLoader.style.display = 'none';
@@ -127,10 +90,21 @@ function hideLoader() {
 
 // ========== КЭШИРОВАНИЕ ==========
 
+/**
+ * Формирует ключ кэша
+ * @param {string} tab - Вкладка
+ * @param {string} period - Период
+ * @returns {string}
+ */
 function getCacheKey(tab, period) {
     return `${CACHE_KEY_PREFIX}${tab}_${period}`;
 }
 
+/**
+ * Получает данные из кэша
+ * @param {string} key - Ключ кэша
+ * @returns {Object|null}
+ */
 function getFromCache(key) {
     try {
         const cached = sessionStorage.getItem(key);
@@ -148,6 +122,11 @@ function getFromCache(key) {
     }
 }
 
+/**
+ * Сохраняет данные в кэш
+ * @param {string} key - Ключ кэша
+ * @param {Object} data - Данные
+ */
 function setToCache(key, data) {
     try {
         sessionStorage.setItem(key, JSON.stringify({
@@ -159,6 +138,9 @@ function setToCache(key, data) {
     }
 }
 
+/**
+ * Очищает весь кэш отчетов
+ */
 function clearCache() {
     Object.keys(sessionStorage).forEach(key => {
         if (key.startsWith(CACHE_KEY_PREFIX)) {
@@ -169,6 +151,11 @@ function clearCache() {
 
 // ========== ДИАПАЗОНЫ ДАТ ==========
 
+/**
+ * Вычисляет диапазоны дат для выбранного периода
+ * @param {string} period - Период
+ * @returns {Object} Диапазоны дат
+ */
 function getDateRange(period) {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -222,8 +209,12 @@ function getDateRange(period) {
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
+/**
+ * Загружает все данные для отчетов
+ * @returns {Promise<Object>}
+ */
 async function fetchSalesData(dateRange) {
-    const supabase = getSupabase();
+    const supabase = await getSupabase();
     
     const { data: sales, error } = await supabase
         .from('sales')
@@ -377,6 +368,19 @@ async function fetchSalesData(dateRange) {
     const totalStockValue = (stockValue || []).reduce((sum, p) => sum + (p.price || 0), 0);
     const totalCostValue = (stockValue || []).reduce((sum, p) => sum + (p.cost_price || 0), 0);
     
+    // Статистика по продавцам
+    const bySeller = {};
+    enrichedShifts.forEach(shift => {
+        const seller = shift.seller_name;
+        if (!bySeller[seller]) {
+            bySeller[seller] = { shifts: 0, salesCount: 0, revenue: 0, profit: 0 };
+        }
+        bySeller[seller].shifts++;
+        bySeller[seller].salesCount += shift.sales_count || 0;
+        bySeller[seller].revenue += shift.total_revenue || 0;
+        bySeller[seller].profit += shift.total_profit || 0;
+    });
+    
     return {
         dashboard: {
             overview: {
@@ -421,6 +425,7 @@ async function fetchSalesData(dateRange) {
         },
         shifts: {
             shifts: enrichedShifts,
+            bySeller,
             summary: {
                 totalShifts: enrichedShifts.length,
                 activeShifts: enrichedShifts.filter(s => !s.closed_at).length,
@@ -431,6 +436,12 @@ async function fetchSalesData(dateRange) {
     };
 }
 
+/**
+ * Вычисляет тренд (изменение в процентах)
+ * @param {number} current - Текущее значение
+ * @param {number} previous - Предыдущее значение
+ * @returns {Object}
+ */
 function calculateTrend(current, previous) {
     if (!previous || previous === 0) {
         return { direction: 'neutral', value: 0 };
@@ -442,6 +453,11 @@ function calculateTrend(current, previous) {
     };
 }
 
+/**
+ * Форматирует длительность в читаемый вид
+ * @param {number} ms - Миллисекунды
+ * @returns {string}
+ */
 function formatDuration(ms) {
     const hours = Math.floor(ms / (1000 * 60 * 60));
     const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
@@ -449,6 +465,9 @@ function formatDuration(ms) {
     return `${minutes} мин`;
 }
 
+/**
+ * Основная функция загрузки данных
+ */
 async function loadData() {
     if (state.isLoading) return;
     
@@ -489,6 +508,9 @@ async function loadData() {
 
 // ========== ДИНАМИЧЕСКИЙ РЕНДЕРИНГ ==========
 
+/**
+ * Главная функция рендеринга
+ */
 async function render() {
     if (!DOM.content) return;
     
@@ -528,7 +550,20 @@ async function render() {
         
         // Привязываем события экспорта
         if (module.exportData && DOM.exportBtn) {
-            const exportHandler = () => module.exportData(data, state.activeTab);
+            const exportHandler = () => {
+                const csv = module.exportData(data, state.activeTab);
+                if (csv) {
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `${state.activeTab}_${state.period}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            };
             DOM.exportBtn.removeEventListener('click', exportHandler);
             DOM.exportBtn.addEventListener('click', exportHandler);
         }
@@ -541,6 +576,9 @@ async function render() {
 
 // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
+/**
+ * Кэширует DOM элементы
+ */
 function cacheElements() {
     DOM.content = document.getElementById('reportsContent');
     DOM.skeletonLoader = document.getElementById('skeletonLoader');
@@ -553,12 +591,19 @@ function cacheElements() {
     DOM.notificationContainer = document.getElementById('notificationContainer');
 }
 
+/**
+ * Отображает email пользователя в шапке
+ */
 function displayUserInfo() {
     if (DOM.userEmail && state.user) {
-        DOM.userEmail.textContent = state.user.email?.split('@')[0] || 'Пользователь';
+        const name = state.user.email?.split('@')[0] || 'Пользователь';
+        DOM.userEmail.textContent = name;
     }
 }
 
+/**
+ * Привязывает обработчики событий
+ */
 function attachEvents() {
     if (DOM.logoutBtn) {
         DOM.logoutBtn.addEventListener('click', () => logout());
@@ -597,8 +642,19 @@ function attachEvents() {
             }
         });
     });
+    
+    // Обработчик ошибки загрузки
+    const retryBtn = document.getElementById('retryBtn');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', () => {
+            location.reload();
+        });
+    }
 }
 
+/**
+ * Инициализация страницы
+ */
 async function init() {
     console.log('[Reports] Initializing MPA page...');
     
@@ -614,6 +670,8 @@ async function init() {
     
     console.log('[Reports] Page initialized');
 }
+
+// ========== ЗАПУСК ==========
 
 document.addEventListener('DOMContentLoaded', init);
 
