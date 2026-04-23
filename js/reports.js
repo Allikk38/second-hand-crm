@@ -17,9 +17,10 @@
  * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module reports
- * @version 3.4.1
+ * @version 3.4.2
  * @changes
- * - Исправлен формат даты в запросах к Supabase (убраны миллисекунды).
+ * - Все запросы к Supabase переведены на синтаксис .filter().
+ * - Исправлен формат даты (без миллисекунд).
  * - Исправлен динамический импорт renderDashboard.
  * - Добавлена поддержка офлайн-режима.
  */
@@ -204,36 +205,41 @@ function getDateRange(period) {
 async function fetchSalesData(dateRange) {
     const supabase = await getSupabase();
     
-const { data: sales, error } = await supabase
-    .from('sales')
-    .select('*')
-    .filter('created_at', 'gte', dateRange.start)
-    .filter('created_at', 'lte', dateRange.end)
-    .order('created_at', { ascending: false });
+    // Основной запрос продаж
+    const { data: sales, error } = await supabase
+        .from('sales')
+        .select('*')
+        .filter('created_at', 'gte', dateRange.start)
+        .filter('created_at', 'lte', dateRange.end)
+        .order('created_at', { ascending: false });
     
     if (error) throw error;
     
+    // Предыдущий период
     const { data: previousSales } = await supabase
         .from('sales')
         .select('total, profit')
-        .gte('created_at', dateRange.previousStart)
-        .lte('created_at', dateRange.previousEnd);
+        .filter('created_at', 'gte', dateRange.previousStart)
+        .filter('created_at', 'lte', dateRange.previousEnd);
     
+    // Товары в наличии
     const { count: inStock } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'in_stock');
+        .filter('status', 'eq', 'in_stock');
     
+    // Стоимость склада
     const { data: stockValue } = await supabase
         .from('products')
         .select('price, cost_price')
-        .eq('status', 'in_stock');
+        .filter('status', 'eq', 'in_stock');
     
+    // Смены для получения продавцов
     const { data: shifts } = await supabase
         .from('shifts')
         .select('user_id')
-        .gte('opened_at', dateRange.start)
-        .lte('opened_at', dateRange.end);
+        .filter('opened_at', 'gte', dateRange.start)
+        .filter('opened_at', 'lte', dateRange.end);
     
     const userIds = [...new Set((shifts || []).map(s => s.user_id).filter(Boolean))];
     const { data: profiles } = await supabase
@@ -312,10 +318,11 @@ const { data: sales, error } = await supabase
     });
     const paymentMethods = Array.from(paymentStats.values());
     
+    // Залежавшиеся товары
     const { data: allProducts } = await supabase
         .from('products')
         .select('*')
-        .eq('status', 'in_stock');
+        .filter('status', 'eq', 'in_stock');
     
     const now = new Date();
     const slowMoving = (allProducts || [])
@@ -327,11 +334,12 @@ const { data: sales, error } = await supabase
         .sort((a, b) => b.daysInStock - a.daysInStock)
         .slice(0, 20);
     
+    // Данные смен
     const { data: shiftsData } = await supabase
         .from('shifts')
         .select('*')
-        .gte('opened_at', dateRange.start)
-        .lte('opened_at', dateRange.end)
+        .filter('opened_at', 'gte', dateRange.start)
+        .filter('opened_at', 'lte', dateRange.end)
         .order('opened_at', { ascending: false });
     
     const enrichedShifts = (shiftsData || []).map(shift => ({
@@ -500,7 +508,6 @@ async function render() {
                 if (renderCharts) {
                     setTimeout(() => renderCharts(data.daily, data.paymentMethods), 100);
                 }
-                // Сохраняем для экспорта
                 window.__currentReportsModule = { exportData: (await import('./reports-dashboard.js')).exportDashboardData };
                 break;
             }
@@ -526,7 +533,6 @@ async function render() {
                 DOM.content.innerHTML = '<div class="empty-state">Выберите отчет</div>';
         }
         
-        // Привязываем экспорт
         if (DOM.exportBtn && window.__currentReportsModule) {
             const exportHandler = () => {
                 const csv = window.__currentReportsModule.exportData(data, state.activeTab);
