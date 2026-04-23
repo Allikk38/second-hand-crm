@@ -1,3 +1,7 @@
+// ========================================
+// FILE: js/login.js
+// ========================================
+
 /**
  * Login Page Module - MPA Edition
  * 
@@ -6,20 +10,19 @@
  * Архитектурные решения:
  * - Полностью автономный модуль, не зависит от других страниц.
  * - Использует единый клиент из core/auth.js.
- * - Простые уведомления через единый компонент.
+ * - Использование централизованных UI-утилит из utils/ui.js.
  * - Блокировка повторной отправки формы.
  * 
  * @module login
- * @version 3.2.0
+ * @version 3.3.0
  * @changes
- * - Убран импорт несуществующей getReturnUrl.
- * - Заменен alert() на кастомные уведомления.
- * - Добавлена проверка isOnline().
- * - Упрощена структура.
+ * - Удалена локальная реализация showNotification.
+ * - Добавлен импорт из utils/ui.js.
  */
 
 import { signIn, isOnline } from '../core/auth.js';
 import { isValidEmail, escapeHtml } from '../utils/formatters.js';
+import { showNotification } from '../utils/ui.js';
 
 // ========== СОСТОЯНИЕ ==========
 
@@ -42,40 +45,6 @@ const DOM = {
     notificationContainer: document.getElementById('notificationContainer'),
     offlineBanner: document.getElementById('offlineBanner')
 };
-
-// ========== УВЕДОМЛЕНИЯ ==========
-
-/**
- * Показывает уведомление
- * @param {string} message - Текст уведомления
- * @param {string} type - Тип (success, error, warning, info)
- */
-function showNotification(message, type = 'info') {
-    if (!DOM.notificationContainer) return;
-    
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.innerHTML = `
-        <div class="notification-icon"></div>
-        <div class="notification-content">
-            <div class="notification-message">${escapeHtml(message)}</div>
-        </div>
-        <button class="notification-close">×</button>
-    `;
-    
-    notification.querySelector('.notification-close').addEventListener('click', () => {
-        notification.remove();
-    });
-    
-    DOM.notificationContainer.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 4000);
-}
 
 // ========== ВАЛИДАЦИЯ ==========
 
