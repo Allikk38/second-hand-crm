@@ -9,7 +9,9 @@
  * Реализует стратегию "Cache First, Sync Later".
  * 
  * @module sync-engine
- * @version 1.0.0
+ * @version 1.1.0
+ * @changes
+ * - Добавлен модуль логирования ошибок в Supabase
  */
 
 import {
@@ -32,6 +34,14 @@ import {
     syncOperation,
     updateLocalCacheOptimistic
 } from './sync.js';
+
+import {
+    logInfo,
+    logWarn,
+    logError,
+    logSyncOperation,
+    flushAllLogs
+} from './logger.js';
 
 // ========== КОНСТАНТЫ ==========
 
@@ -104,6 +114,8 @@ export async function enqueueOperation(operation) {
     await updatePendingCount();
     notifyListeners({ type: 'operation-added', operation: op });
     
+    logInfo(`Operation enqueued: ${type} ${entity}`, { opId: op.id });
+    
     if (syncState.isOnline) syncNow();
     return op.id;
 }
@@ -123,13 +135,15 @@ export async function syncNow() {
     syncState.isSyncing = true;
     notifyListeners({ type: 'sync-started' });
     
-    console.log('[SyncEngine] Syncing', pendingOps.length, 'operations');
+    logInfo(`Sync started: ${pendingOps.length} operations`);
+    const startTime = Date.now();
     
     let synced = 0, failed = 0;
     
     for (const op of pendingOps) {
         if (Date.now() - op.timestamp > OPERATION_TTL) {
             await dbRemoveOperation(op.id);
+            logWarn(`Operation expired: ${op.id}`, { op });
             continue;
         }
         
@@ -145,6 +159,7 @@ export async function syncNow() {
                 const newRetry = op.retryCount + 1;
                 if (newRetry >= MAX_RETRY_COUNT) {
                     await dbUpdateOperation(op.id, { status: 'failed', retryCount: newRetry });
+                    logError(`Operation max retries exceeded: ${op.id}`, null, { op });
                 } else {
                     await dbUpdateOperation(op.id, { status: 'pending', retryCount: newRetry });
                 }
@@ -165,6 +180,13 @@ export async function syncNow() {
     syncState.lastSyncTime = Date.now();
     await updatePendingCount();
     notifyListeners({ type: 'sync-completed', synced, failed });
+    
+    logInfo(`Sync completed`, {
+        synced,
+        failed,
+        duration: Date.now() - startTime,
+        remaining: syncState.pendingCount
+    });
     
     if (failed > 0) scheduleRetry();
 }
@@ -197,12 +219,14 @@ export function stopBackgroundSync() {
 
 window.addEventListener('online', () => {
     syncState.isOnline = true;
+    logInfo('Network online');
     notifyListeners({ type: 'online' });
     syncNow();
 });
 
 window.addEventListener('offline', () => {
     syncState.isOnline = false;
+    logWarn('Network offline');
     notifyListeners({ type: 'offline' });
 });
 
@@ -215,15 +239,22 @@ export async function loadData(entity, options = {}) {
     
     if (cached) {
         if (syncState.isOnline && fetcher) {
-            fetcher().then(data => cacheSet(entity, id, data)).catch(() => {});
+            fetcher().then(data => cacheSet(entity, id, data)).catch(err => {
+                logWarn(`Background refresh failed: ${entity}`, { error: err.message });
+            });
         }
         return { data: cached, fromCache: true };
     }
     
     if (fetcher) {
-        const data = await fetcher();
-        await cacheSet(entity, id, data);
-        return { data, fromCache: false };
+        try {
+            const data = await fetcher();
+            await cacheSet(entity, id, data);
+            return { data, fromCache: false };
+        } catch (error) {
+            logError(`Failed to load ${entity}`, error);
+            throw error;
+        }
     }
     
     return { data: null, fromCache: false };
@@ -235,19 +266,28 @@ export async function saveChange(entity, type, data, originalData = null) {
 }
 
 export async function initSyncEngine() {
-    await openDatabase();
-    await updatePendingCount();
-    startBackgroundSync();
-    if (syncState.isOnline) syncNow();
-    console.log('[SyncEngine] Initialized. Pending:', syncState.pendingCount);
+    logInfo('Sync engine initializing...');
+    
+    try {
+        await openDatabase();
+        await updatePendingCount();
+        startBackgroundSync();
+        if (syncState.isOnline) syncNow();
+        
+        logInfo('Sync engine initialized', { pendingCount: syncState.pendingCount });
+    } catch (error) {
+        logError('Sync engine init failed', error);
+        throw error;
+    }
 }
 
-// ========== ЭКСПОРТ КОНСТАНТ ==========
+// ========== ЭКСПОРТ ==========
 
 export { ENTITIES, OP_TYPES };
 export { cacheGet, cacheSet, cacheDelete, cacheClear } from './db.js';
 
-// ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
+// Экспорт логгера
+export { logInfo, logWarn, logError, logSyncOperation, flushAllLogs } from './logger.js';
 
 export default {
     syncState,
@@ -265,6 +305,10 @@ export default {
     syncNow,
     startBackgroundSync,
     stopBackgroundSync,
+    logInfo,
+    logWarn,
+    logError,
+    logSyncOperation,
     ENTITIES,
     OP_TYPES
 };
