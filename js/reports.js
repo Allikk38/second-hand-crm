@@ -204,12 +204,12 @@ function getDateRange(period) {
 async function fetchSalesData(dateRange) {
     const supabase = await getSupabase();
     
-    const { data: sales, error } = await supabase
-        .from('sales')
-        .select('*')
-        .gte('created_at', dateRange.start)
-        .lte('created_at', dateRange.end)
-        .order('created_at', { ascending: false });
+const { data: sales, error } = await supabase
+    .from('sales')
+    .select('*')
+    .filter('created_at', 'gte', dateRange.start)
+    .filter('created_at', 'lte', dateRange.end)
+    .order('created_at', { ascending: false });
     
     if (error) throw error;
     
@@ -493,35 +493,43 @@ async function render() {
     }
     
     try {
-        let module;
-        
         switch (state.activeTab) {
-            case 'dashboard':
-                module = await import('./reports-dashboard.js');
-                DOM.content.innerHTML = module.renderDashboard(data, state.period);
-                if (module.renderCharts) {
-                    setTimeout(() => module.renderCharts(data.daily, data.paymentMethods), 100);
+            case 'dashboard': {
+                const { renderDashboard, renderCharts } = await import('./reports-dashboard.js');
+                DOM.content.innerHTML = renderDashboard(data, state.period);
+                if (renderCharts) {
+                    setTimeout(() => renderCharts(data.daily, data.paymentMethods), 100);
                 }
+                // Сохраняем для экспорта
+                window.__currentReportsModule = { exportData: (await import('./reports-dashboard.js')).exportDashboardData };
                 break;
-            case 'sales':
-                module = await import('./reports-tables.js');
-                DOM.content.innerHTML = module.renderSalesTable(data);
+            }
+            case 'sales': {
+                const { renderSalesTable, exportSalesData } = await import('./reports-tables.js');
+                DOM.content.innerHTML = renderSalesTable(data);
+                window.__currentReportsModule = { exportData: exportSalesData };
                 break;
-            case 'products':
-                module = await import('./reports-tables.js');
-                DOM.content.innerHTML = module.renderProductsTable(data);
+            }
+            case 'products': {
+                const { renderProductsTable, exportProductsData } = await import('./reports-tables.js');
+                DOM.content.innerHTML = renderProductsTable(data);
+                window.__currentReportsModule = { exportData: exportProductsData };
                 break;
-            case 'shifts':
-                module = await import('./reports-tables.js');
-                DOM.content.innerHTML = module.renderShiftsTable(data);
+            }
+            case 'shifts': {
+                const { renderShiftsTable, exportShiftsData } = await import('./reports-tables.js');
+                DOM.content.innerHTML = renderShiftsTable(data);
+                window.__currentReportsModule = { exportData: exportShiftsData };
                 break;
+            }
             default:
                 DOM.content.innerHTML = '<div class="empty-state">Выберите отчет</div>';
         }
         
-        if (module.exportData && DOM.exportBtn) {
+        // Привязываем экспорт
+        if (DOM.exportBtn && window.__currentReportsModule) {
             const exportHandler = () => {
-                const csv = module.exportData(data, state.activeTab);
+                const csv = window.__currentReportsModule.exportData(data, state.activeTab);
                 if (csv) {
                     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                     const link = document.createElement('a');
@@ -539,8 +547,8 @@ async function render() {
         }
         
     } catch (error) {
-        console.error('[Reports] Dynamic import error:', error);
-        DOM.content.innerHTML = `<div class="error-state">Ошибка загрузки модуля: ${error.message}</div>`;
+        console.error('[Reports] Render error:', error);
+        DOM.content.innerHTML = `<div class="error-state">Ошибка: ${error.message}</div>`;
     }
 }
 
