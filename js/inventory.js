@@ -13,14 +13,14 @@
  * - Полная независимость от других страниц (MPA).
  * - Кэширование данных в sessionStorage.
  * - Использование централизованных UI-утилит из utils/ui.js.
+ * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module inventory
- * @version 3.3.0
+ * @version 3.4.0
  * @changes
- * - Удалена локальная реализация getSupabase (импортируется из core/auth.js).
- * - Удалены локальные реализации showNotification, showConfirmDialog.
- * - showError переписана с использованием showNotification.
- * - Добавлены импорты из utils/ui.js.
+ * - Добавлена поддержка офлайн-режима через requireAuth.
+ * - Добавлен офлайн-баннер и функция showOfflineBanner.
+ * - Исправлено дублирование вызова loadProducts.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
@@ -36,6 +36,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 минут
 
 const state = {
     user: null,
+    isOffline: false,
     products: [],
     filteredProducts: [],
     isLoading: false,
@@ -62,10 +63,30 @@ const DOM = {
     refreshBtn: null,
     logoutBtn: null,
     userEmail: null,
-    modalContainer: null
+    modalContainer: null,
+    offlineBanner: null,
+    offlineRetryBtn: null
 };
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+
+/**
+ * Показывает офлайн-баннер
+ */
+function showOfflineBanner() {
+    if (DOM.offlineBanner) {
+        DOM.offlineBanner.style.display = 'block';
+    }
+}
+
+/**
+ * Скрывает офлайн-баннер
+ */
+function hideOfflineBanner() {
+    if (DOM.offlineBanner) {
+        DOM.offlineBanner.style.display = 'none';
+    }
+}
 
 /**
  * Показывает ошибку в баннере или через уведомление
@@ -143,7 +164,7 @@ function loadProductsFromCache() {
 async function loadProducts(forceRefresh = false) {
     if (state.isLoading) return;
     
-    // Проверяем кэш
+    // Проверяем кэш при офлайн-режиме
     if (!forceRefresh && !isOnline()) {
         const cached = loadProductsFromCache();
         if (cached) {
@@ -178,6 +199,7 @@ async function loadProducts(forceRefresh = false) {
         updateCategoryFilter();
         applyFilters();
         updateStats();
+        hideOfflineBanner();
         
     } catch (error) {
         console.error('[Inventory] Load products error:', error);
@@ -385,6 +407,10 @@ async function deleteProduct(id) {
  * Открывает форму добавления товара
  */
 function openAddProductForm() {
+    if (!isOnline()) {
+        showError('Добавление товара недоступно в офлайн-режиме', 'warning');
+        return;
+    }
     showNotification('Функция добавления товара в разработке', 'info');
 }
 
@@ -393,6 +419,10 @@ function openAddProductForm() {
  * @param {string} id - ID товара
  */
 function openEditProductForm(id) {
+    if (!isOnline()) {
+        showError('Редактирование товара недоступно в офлайн-режиме', 'warning');
+        return;
+    }
     showNotification(`Редактирование товара ${id} в разработке`, 'info');
 }
 
@@ -561,15 +591,21 @@ function cacheElements() {
     DOM.logoutBtn = document.getElementById('logoutBtn');
     DOM.userEmail = document.getElementById('userEmail');
     DOM.modalContainer = document.getElementById('modalContainer');
+    DOM.offlineBanner = document.getElementById('offlineBanner');
+    DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
 }
 
 /**
  * Отображает email пользователя в шапке
  */
 function displayUserInfo() {
-    if (DOM.userEmail && state.user) {
-        const name = state.user.email?.split('@')[0] || 'Пользователь';
-        DOM.userEmail.textContent = name;
+    if (DOM.userEmail) {
+        if (state.user) {
+            const name = state.user.email?.split('@')[0] || 'Пользователь';
+            DOM.userEmail.textContent = name;
+        } else {
+            DOM.userEmail.textContent = 'Офлайн-режим';
+        }
     }
 }
 
@@ -590,6 +626,12 @@ function attachEvents() {
     
     if (DOM.addProductBtn) {
         DOM.addProductBtn.addEventListener('click', openAddProductForm);
+    }
+    
+    if (DOM.offlineRetryBtn) {
+        DOM.offlineRetryBtn.addEventListener('click', () => {
+            loadProducts(true);
+        });
     }
     
     if (DOM.searchInput) {
@@ -635,6 +677,21 @@ function attachEvents() {
             checkboxes.forEach(cb => cb.checked = e.target.checked);
         });
     }
+    
+    // Слушатели сети
+    window.addEventListener('online', () => {
+        hideOfflineBanner();
+        showNotification('Соединение восстановлено', 'success');
+        if (!state.user) {
+            // Можно попробовать переинициализировать
+            location.reload();
+        }
+    });
+    
+    window.addEventListener('offline', () => {
+        showOfflineBanner();
+        showNotification('Отсутствует подключение к интернету', 'warning');
+    });
 }
 
 /**
@@ -645,8 +702,21 @@ async function init() {
     
     cacheElements();
     
-    state.user = await requireAuth();
-    if (!state.user) return;
+    const authResult = await requireAuth();
+    
+    if (authResult.user) {
+        state.user = authResult.user;
+        state.isOffline = false;
+        hideOfflineBanner();
+    } else if (authResult.offline || authResult.networkError) {
+        state.isOffline = true;
+        state.user = null;
+        showOfflineBanner();
+        showNotification('Работа в офлайн-режиме. Некоторые функции недоступны.', 'warning');
+    } else if (authResult.authError) {
+        // Уже произошел редирект
+        return;
+    }
     
     displayUserInfo();
     attachEvents();
