@@ -17,12 +17,12 @@
  * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module reports
- * @version 3.4.2
+ * @version 3.4.3
  * @changes
- * - Все запросы к Supabase переведены на синтаксис .filter().
- * - Исправлен формат даты (без миллисекунд).
- * - Исправлен динамический импорт renderDashboard.
- * - Добавлена поддержка офлайн-режима.
+ * - Исправлен синтаксис фильтрации дат в Supabase запросах (использование .gte() и .lte()).
+ * - Исправлен динамический импорт renderDashboard (правильное имя экспорта).
+ * - Добавлена обработка ошибок при динамическом импорте.
+ * - Улучшена отладка с console.warn при отсутствии функций.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
@@ -205,49 +205,75 @@ function getDateRange(period) {
 async function fetchSalesData(dateRange) {
     const supabase = await getSupabase();
     
-    // Основной запрос продаж
+    // ИСПРАВЛЕНО: Используем правильный синтаксис фильтрации с методами .gte() и .lte()
     const { data: sales, error } = await supabase
         .from('sales')
         .select('*')
-        .filter('created_at', 'gte', dateRange.start)
-        .filter('created_at', 'lte', dateRange.end)
+        .gte('created_at', dateRange.start)
+        .lte('created_at', dateRange.end)
         .order('created_at', { ascending: false });
     
-    if (error) throw error;
+    if (error) {
+        console.error('[Reports] Sales query error:', error);
+        throw error;
+    }
     
     // Предыдущий период
-    const { data: previousSales } = await supabase
+    const { data: previousSales, error: prevError } = await supabase
         .from('sales')
         .select('total, profit')
-        .filter('created_at', 'gte', dateRange.previousStart)
-        .filter('created_at', 'lte', dateRange.previousEnd);
+        .gte('created_at', dateRange.previousStart)
+        .lte('created_at', dateRange.previousEnd);
+    
+    if (prevError) {
+        console.warn('[Reports] Previous sales query error:', prevError);
+    }
     
     // Товары в наличии
-    const { count: inStock } = await supabase
+    const { count: inStock, error: stockError } = await supabase
         .from('products')
         .select('*', { count: 'exact', head: true })
-        .filter('status', 'eq', 'in_stock');
+        .eq('status', 'in_stock');
+    
+    if (stockError) {
+        console.warn('[Reports] Stock count error:', stockError);
+    }
     
     // Стоимость склада
-    const { data: stockValue } = await supabase
+    const { data: stockValue, error: valueError } = await supabase
         .from('products')
         .select('price, cost_price')
-        .filter('status', 'eq', 'in_stock');
+        .eq('status', 'in_stock');
+    
+    if (valueError) {
+        console.warn('[Reports] Stock value error:', valueError);
+    }
     
     // Смены для получения продавцов
-    const { data: shifts } = await supabase
+    const { data: shifts, error: shiftsError } = await supabase
         .from('shifts')
         .select('user_id')
-        .filter('opened_at', 'gte', dateRange.start)
-        .filter('opened_at', 'lte', dateRange.end);
+        .gte('opened_at', dateRange.start)
+        .lte('opened_at', dateRange.end);
     
+    if (shiftsError) {
+        console.warn('[Reports] Shifts query error:', shiftsError);
+    }
+    
+    // Профили пользователей
+    let userMap = new Map();
     const userIds = [...new Set((shifts || []).map(s => s.user_id).filter(Boolean))];
-    const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', userIds);
     
-    const userMap = new Map((profiles || []).map(p => [p.id, p.full_name]));
+    if (userIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', userIds);
+        
+        if (!profilesError && profiles) {
+            userMap = new Map(profiles.map(p => [p.id, p.full_name]));
+        }
+    }
     
     const salesData = sales || [];
     const prevSalesData = previousSales || [];
@@ -260,6 +286,7 @@ async function fetchSalesData(dateRange) {
     const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
     const prevMargin = prevRevenue > 0 ? (prevProfit / prevRevenue) * 100 : 0;
     
+    // Данные по дням
     const dailyMap = new Map();
     salesData.forEach(s => {
         const day = s.created_at.split('T')[0];
@@ -273,6 +300,7 @@ async function fetchSalesData(dateRange) {
     });
     const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     
+    // Топ товаров
     const productStats = new Map();
     salesData.forEach(s => {
         if (!s.items) return;
@@ -293,6 +321,7 @@ async function fetchSalesData(dateRange) {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 10);
     
+    // Топ категорий
     const categoryStats = new Map();
     salesData.forEach(s => {
         if (!s.items) return;
@@ -308,6 +337,7 @@ async function fetchSalesData(dateRange) {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5);
     
+    // Способы оплаты
     const paymentStats = new Map();
     salesData.forEach(s => {
         const method = s.payment_method || 'unknown';
@@ -319,10 +349,14 @@ async function fetchSalesData(dateRange) {
     const paymentMethods = Array.from(paymentStats.values());
     
     // Залежавшиеся товары
-    const { data: allProducts } = await supabase
+    const { data: allProducts, error: allProductsError } = await supabase
         .from('products')
         .select('*')
-        .filter('status', 'eq', 'in_stock');
+        .eq('status', 'in_stock');
+    
+    if (allProductsError) {
+        console.warn('[Reports] All products error:', allProductsError);
+    }
     
     const now = new Date();
     const slowMoving = (allProducts || [])
@@ -335,12 +369,16 @@ async function fetchSalesData(dateRange) {
         .slice(0, 20);
     
     // Данные смен
-    const { data: shiftsData } = await supabase
+    const { data: shiftsData, error: shiftsDataError } = await supabase
         .from('shifts')
         .select('*')
-        .filter('opened_at', 'gte', dateRange.start)
-        .filter('opened_at', 'lte', dateRange.end)
+        .gte('opened_at', dateRange.start)
+        .lte('opened_at', dateRange.end)
         .order('opened_at', { ascending: false });
+    
+    if (shiftsDataError) {
+        console.warn('[Reports] Shifts data error:', shiftsDataError);
+    }
     
     const enrichedShifts = (shiftsData || []).map(shift => ({
         ...shift,
@@ -503,41 +541,90 @@ async function render() {
     try {
         switch (state.activeTab) {
             case 'dashboard': {
-                const { renderDashboard, renderCharts } = await import('./reports-dashboard.js');
-                DOM.content.innerHTML = renderDashboard(data, state.period);
-                if (renderCharts) {
-                    setTimeout(() => renderCharts(data.daily, data.paymentMethods), 100);
+                const dashboardModule = await import('./reports-dashboard.js');
+                
+                // ИСПРАВЛЕНО: Проверяем наличие функций и используем правильные имена
+                if (typeof dashboardModule.renderDashboard === 'function') {
+                    DOM.content.innerHTML = dashboardModule.renderDashboard(data, state.period);
+                    
+                    if (typeof dashboardModule.renderCharts === 'function') {
+                        setTimeout(() => dashboardModule.renderCharts(data.daily, data.paymentMethods), 100);
+                    } else {
+                        console.warn('[Reports] renderCharts not found in dashboard module');
+                    }
+                    
+                    if (typeof dashboardModule.exportDashboardData === 'function') {
+                        window.__currentReportsModule = { 
+                            exportData: dashboardModule.exportDashboardData 
+                        };
+                    }
+                } else {
+                    console.error('[Reports] renderDashboard is not a function in dashboard module');
+                    DOM.content.innerHTML = '<div class="error-state">Ошибка загрузки дашборда</div>';
                 }
-                window.__currentReportsModule = { exportData: (await import('./reports-dashboard.js')).exportDashboardData };
                 break;
             }
             case 'sales': {
-                const { renderSalesTable, exportSalesData } = await import('./reports-tables.js');
-                DOM.content.innerHTML = renderSalesTable(data);
-                window.__currentReportsModule = { exportData: exportSalesData };
+                const tablesModule = await import('./reports-tables.js');
+                
+                if (typeof tablesModule.renderSalesTable === 'function') {
+                    DOM.content.innerHTML = tablesModule.renderSalesTable(data);
+                    
+                    if (typeof tablesModule.exportSalesData === 'function') {
+                        window.__currentReportsModule = { 
+                            exportData: tablesModule.exportSalesData 
+                        };
+                    }
+                } else {
+                    console.error('[Reports] renderSalesTable not found in tables module');
+                    DOM.content.innerHTML = '<div class="error-state">Ошибка загрузки отчёта по продажам</div>';
+                }
                 break;
             }
             case 'products': {
-                const { renderProductsTable, exportProductsData } = await import('./reports-tables.js');
-                DOM.content.innerHTML = renderProductsTable(data);
-                window.__currentReportsModule = { exportData: exportProductsData };
+                const tablesModule = await import('./reports-tables.js');
+                
+                if (typeof tablesModule.renderProductsTable === 'function') {
+                    DOM.content.innerHTML = tablesModule.renderProductsTable(data);
+                    
+                    if (typeof tablesModule.exportProductsData === 'function') {
+                        window.__currentReportsModule = { 
+                            exportData: tablesModule.exportProductsData 
+                        };
+                    }
+                } else {
+                    console.error('[Reports] renderProductsTable not found in tables module');
+                    DOM.content.innerHTML = '<div class="error-state">Ошибка загрузки отчёта по товарам</div>';
+                }
                 break;
             }
             case 'shifts': {
-                const { renderShiftsTable, exportShiftsData } = await import('./reports-tables.js');
-                DOM.content.innerHTML = renderShiftsTable(data);
-                window.__currentReportsModule = { exportData: exportShiftsData };
+                const tablesModule = await import('./reports-tables.js');
+                
+                if (typeof tablesModule.renderShiftsTable === 'function') {
+                    DOM.content.innerHTML = tablesModule.renderShiftsTable(data);
+                    
+                    if (typeof tablesModule.exportShiftsData === 'function') {
+                        window.__currentReportsModule = { 
+                            exportData: tablesModule.exportShiftsData 
+                        };
+                    }
+                } else {
+                    console.error('[Reports] renderShiftsTable not found in tables module');
+                    DOM.content.innerHTML = '<div class="error-state">Ошибка загрузки отчёта по сменам</div>';
+                }
                 break;
             }
             default:
                 DOM.content.innerHTML = '<div class="empty-state">Выберите отчет</div>';
         }
         
-        if (DOM.exportBtn && window.__currentReportsModule) {
+        // Привязываем экспорт
+        if (DOM.exportBtn && window.__currentReportsModule?.exportData) {
             const exportHandler = () => {
                 const csv = window.__currentReportsModule.exportData(data, state.activeTab);
                 if (csv) {
-                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
                     const link = document.createElement('a');
                     const url = URL.createObjectURL(blob);
                     link.setAttribute('href', url);
