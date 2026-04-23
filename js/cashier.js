@@ -13,13 +13,14 @@
  * - Полная независимость от других страниц (MPA).
  * - Локальное кэширование смены и корзины в localStorage.
  * - Использование централизованных UI-утилит из utils/ui.js.
+ * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module cashier
- * @version 3.3.0
+ * @version 3.4.0
  * @changes
- * - Удалена локальная реализация getSupabase (импортируется из core/auth.js).
- * - Удалены локальные реализации showNotification, showConfirmDialog, showPaymentModal.
- * - Добавлены импорты из utils/ui.js.
+ * - Добавлена поддержка офлайн-режима через requireAuth.
+ * - Добавлен офлайн-баннер и функции управления им.
+ * - Блокировка критических операций в офлайн-режиме.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
@@ -47,6 +48,7 @@ const SCANNER_DEBOUNCE_MS = 500;
 const state = {
     // Пользователь
     user: null,
+    isOffline: false,
     
     // Смена
     currentShift: null,
@@ -66,9 +68,7 @@ const state = {
     cartTotalDiscount: 0,
     
     // UI
-    errorMessage: null,
-    modalResolve: null,
-    modalReject: null
+    errorMessage: null
 };
 
 // ========== DOM ЭЛЕМЕНТЫ ==========
@@ -78,8 +78,30 @@ const DOM = {
     content: null,
     modalContainer: null,
     userEmail: null,
-    logoutBtn: null
+    logoutBtn: null,
+    offlineBanner: null,
+    offlineRetryBtn: null
 };
+
+// ========== ОФЛАЙН-БАННЕР ==========
+
+/**
+ * Показывает офлайн-баннер
+ */
+function showOfflineBanner() {
+    if (DOM.offlineBanner) {
+        DOM.offlineBanner.style.display = 'flex';
+    }
+}
+
+/**
+ * Скрывает офлайн-баннер
+ */
+function hideOfflineBanner() {
+    if (DOM.offlineBanner) {
+        DOM.offlineBanner.style.display = 'none';
+    }
+}
 
 // ========== КЭШИРОВАНИЕ ==========
 
@@ -171,7 +193,7 @@ async function checkOpenShift() {
         const { data, error } = await supabase
             .from('shifts')
             .select('*')
-            .eq('user_id', state.user.id)
+            .eq('user_id', state.user?.id)
             .is('closed_at', null)
             .order('opened_at', { ascending: false })
             .limit(1)
@@ -230,7 +252,12 @@ async function loadShiftStats() {
  * Открывает новую смену
  */
 async function openShift() {
-    if (state.isShiftActionPending || !isOnline()) return;
+    if (state.isShiftActionPending) return;
+    
+    if (!isOnline()) {
+        showNotification('Невозможно открыть смену в офлайн-режиме', 'error');
+        return;
+    }
     
     state.isShiftActionPending = true;
     render();
@@ -270,6 +297,11 @@ async function openShift() {
  */
 async function closeShift() {
     if (!state.currentShift || state.isShiftActionPending) return;
+    
+    if (!isOnline()) {
+        showNotification('Невозможно закрыть смену в офлайн-режиме', 'error');
+        return;
+    }
     
     const confirmed = await showConfirmDialog({
         title: 'Закрытие смены',
@@ -327,6 +359,13 @@ async function loadProducts() {
     state.isLoadingProducts = true;
     render();
     
+    if (!isOnline()) {
+        state.isLoadingProducts = false;
+        render();
+        showNotification('Невозможно загрузить товары в офлайн-режиме', 'warning');
+        return;
+    }
+    
     try {
         const supabase = await getSupabase();
         const { data, error } = await supabase
@@ -340,6 +379,7 @@ async function loadProducts() {
         state.products = data || [];
         buildCategories();
         applyFilters();
+        hideOfflineBanner();
         
     } catch (error) {
         console.error('[Cashier] Load products error:', error);
@@ -475,7 +515,7 @@ function calculateTotal() {
  * @returns {Promise<boolean>}
  */
 async function checkStockAvailability() {
-    if (!isOnline()) return true;
+    if (!isOnline()) return false;
     
     try {
         const supabase = await getSupabase();
@@ -504,7 +544,7 @@ async function checkStockAvailability() {
         
     } catch (error) {
         console.error('[Cashier] Stock check error:', error);
-        return true;
+        return false;
     }
 }
 
@@ -522,10 +562,14 @@ async function checkout() {
         return;
     }
     
+    if (!isOnline()) {
+        showNotification('Невозможно оформить продажу в офлайн-режиме', 'error');
+        return;
+    }
+    
     // Проверяем остатки
     const stockOk = await checkStockAvailability();
     if (!stockOk) {
-        // Обновляем товары, чтобы показать актуальное состояние
         await loadProducts();
         return;
     }
@@ -848,9 +892,13 @@ function attachRenderEvents() {
  * Отображает email текущего пользователя в шапке
  */
 function displayUserInfo() {
-    if (DOM.userEmail && state.user) {
-        const name = state.user.email?.split('@')[0] || 'Пользователь';
-        DOM.userEmail.textContent = name;
+    if (DOM.userEmail) {
+        if (state.user) {
+            const name = state.user.email?.split('@')[0] || 'Пользователь';
+            DOM.userEmail.textContent = name;
+        } else {
+            DOM.userEmail.textContent = 'Офлайн-режим';
+        }
     }
 }
 
@@ -862,6 +910,8 @@ function cacheElements() {
     DOM.modalContainer = document.getElementById('modalContainer');
     DOM.userEmail = document.getElementById('userEmail');
     DOM.logoutBtn = document.getElementById('logoutBtn');
+    DOM.offlineBanner = document.getElementById('offlineBanner');
+    DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
 }
 
 /**
@@ -872,10 +922,29 @@ function attachGlobalEvents() {
         DOM.logoutBtn.addEventListener('click', () => logout());
     }
     
+    if (DOM.offlineRetryBtn) {
+        DOM.offlineRetryBtn.addEventListener('click', () => {
+            loadProducts();
+            checkOpenShift();
+        });
+    }
+    
     document.addEventListener('keydown', handleHotkeys);
     
     window.addEventListener('beforeunload', () => {
         saveCartToCache();
+    });
+    
+    window.addEventListener('online', () => {
+        hideOfflineBanner();
+        showNotification('Соединение восстановлено', 'success');
+        loadProducts();
+        checkOpenShift();
+    });
+    
+    window.addEventListener('offline', () => {
+        showOfflineBanner();
+        showNotification('Отсутствует подключение к интернету', 'warning');
     });
 }
 
@@ -887,8 +956,20 @@ async function init() {
     
     cacheElements();
     
-    state.user = await requireAuth();
-    if (!state.user) return;
+    const authResult = await requireAuth();
+    
+    if (authResult.user) {
+        state.user = authResult.user;
+        state.isOffline = false;
+        hideOfflineBanner();
+    } else if (authResult.offline || authResult.networkError) {
+        state.isOffline = true;
+        state.user = null;
+        showOfflineBanner();
+        showNotification('Работа в офлайн-режиме. Некоторые функции недоступны.', 'warning');
+    } else if (authResult.authError) {
+        return;
+    }
     
     displayUserInfo();
     attachGlobalEvents();
