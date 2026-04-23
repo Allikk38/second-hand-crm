@@ -381,17 +381,17 @@
             // Проверяем, загружен ли уже модуль
             window.__inventoryModuleLoaded = false;
             
-            // Таймаут для проверки загрузки модуля (уменьшен до 5 секунд)
+            // Таймаут для проверки загрузки модуля (увеличен до 10 секунд)
             timeoutId = setTimeout(function() {
                 if (!window.__inventoryModuleLoaded) {
                     console.warn('[Inventory] Module load timeout');
                     showModuleError('Превышено время ожидания. Проверьте подключение к интернету.');
                 }
-            }, 5000);
+            }, 10000);
             
             // Слушаем успешную загрузку модуля
             window.addEventListener('load', function() {
-                // Даём модулю 500 мс на инициализацию
+                // Даём модулю время на инициализацию
                 setTimeout(function() {
                     if (!window.__inventoryModuleLoaded) {
                         // Проверяем, есть ли контент в таблице
@@ -402,7 +402,7 @@
                             if (moduleLoading) moduleLoading.style.display = 'none';
                         }
                     }
-                }, 500);
+                }, 1000);
             });
             
             // Обработчик ошибки загрузки скрипта
@@ -417,10 +417,12 @@
             
             // Экспортируем функцию для отметки загрузки модуля
             window.markInventoryModuleLoaded = function() {
-                window.__inventoryModuleLoaded = true;
-                clearTimeout(timeoutId);
-                if (moduleLoading) moduleLoading.style.display = 'none';
-                console.log('[Inventory] Module loaded successfully');
+                if (!window.__inventoryModuleLoaded) {
+                    window.__inventoryModuleLoaded = true;
+                    clearTimeout(timeoutId);
+                    if (moduleLoading) moduleLoading.style.display = 'none';
+                    console.log('[Inventory] Module loaded successfully');
+                }
             };
             
             // Обработчик кнопки повтора
