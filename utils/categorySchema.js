@@ -1,7 +1,3 @@
-// ========================================
-// FILE: ./utils/categorySchema.js
-// ========================================
-
 /**
  * Category Schema Module
  * 
@@ -15,13 +11,12 @@
  * - Форматирование атрибутов для отображения в UI.
  * 
  * @module categorySchema
- * @version 2.0.0
+ * @version 2.1.0
  * @changes
- * - Добавлена полная JSDoc-документация.
- * - Экспортированы дополнительные утилиты: getCategoryOptions, validateAttributes.
- * - Улучшена функция formatAttributes с fallback-значением.
- * - Добавлена функция groupByCategory для статистики.
- * - Добавлены константы CATEGORY_KEYS и CATEGORY_NAMES.
+ * - Добавлены категории electronics и furniture.
+ * - Обновлён CATEGORY_KEYS.
+ * - Поле setItems в dishes изменено на текстовое.
+ * - Добавлен формат 'compact' в formatAttributes.
  */
 
 // ========== КОНСТАНТЫ ==========
@@ -30,7 +25,7 @@
  * Ключи всех доступных категорий.
  * @type {string[]}
  */
-export const CATEGORY_KEYS = ['clothes', 'toys', 'dishes', 'other'];
+export const CATEGORY_KEYS = ['clothes', 'toys', 'dishes', 'electronics', 'furniture', 'other'];
 
 /**
  * Человекочитаемые названия категорий.
@@ -40,22 +35,14 @@ export const CATEGORY_NAMES = {
     clothes: 'Одежда',
     toys: 'Игрушки',
     dishes: 'Посуда',
+    electronics: 'Электроника',
+    furniture: 'Мебель',
     other: 'Другое'
 };
 
 /**
  * Схема полей для каждой категории товаров.
- * Определяет какие атрибуты нужны для каждой категории и как их отображать.
- * 
  * @type {Object<string, Object>}
- * @property {string} name - Человекочитаемое название категории
- * @property {Array<Object>} fields - Массив полей категории
- * @property {string} fields[].name - Ключ поля в объекте attributes
- * @property {string} fields[].label - Метка для отображения в UI
- * @property {string} fields[].type - Тип поля (text, select, textarea, number)
- * @property {string} [fields[].placeholder] - Placeholder для input
- * @property {boolean} [fields[].required] - Обязательное ли поле
- * @property {Array<string>} [fields[].options] - Опции для select
  */
 export const CATEGORY_SCHEMA = {
     clothes: {
@@ -150,7 +137,7 @@ export const CATEGORY_SCHEMA = {
             },
             { 
                 name: 'volume', 
-                label: 'Объем', 
+                label: 'Объём', 
                 type: 'text', 
                 placeholder: '250 мл, 1 л, 3 л',
                 required: false 
@@ -172,8 +159,88 @@ export const CATEGORY_SCHEMA = {
             {
                 name: 'setItems',
                 label: 'Предметов в наборе',
-                type: 'number',
-                placeholder: '1, 6, 12',
+                type: 'text',
+                placeholder: '1, 6, 12, набор',
+                required: false
+            }
+        ]
+    },
+    electronics: {
+        name: 'Электроника',
+        fields: [
+            { 
+                name: 'brand', 
+                label: 'Бренд', 
+                type: 'text', 
+                placeholder: 'Apple, Samsung, Xiaomi',
+                required: true 
+            },
+            { 
+                name: 'model', 
+                label: 'Модель', 
+                type: 'text', 
+                placeholder: 'iPhone 13, Galaxy S22',
+                required: true 
+            },
+            { 
+                name: 'condition', 
+                label: 'Состояние', 
+                type: 'select',
+                options: ['Новое', 'Отличное', 'Хорошее', 'Среднее', 'Требует ремонта'],
+                required: true 
+            },
+            {
+                name: 'accessories',
+                label: 'Комплектация',
+                type: 'text',
+                placeholder: 'Зарядное устройство, коробка, чехол',
+                required: false
+            },
+            {
+                name: 'warranty',
+                label: 'Гарантия',
+                type: 'text',
+                placeholder: '3 месяца, 1 год',
+                required: false
+            }
+        ]
+    },
+    furniture: {
+        name: 'Мебель',
+        fields: [
+            { 
+                name: 'material', 
+                label: 'Материал', 
+                type: 'select',
+                options: ['Дерево', 'Металл', 'Пластик', 'Стекло', 'Ткань', 'Кожа', 'Комбинированный'],
+                required: true 
+            },
+            { 
+                name: 'dimensions', 
+                label: 'Размеры (Ш×Г×В)', 
+                type: 'text', 
+                placeholder: '80×40×120 см',
+                required: false 
+            },
+            { 
+                name: 'condition', 
+                label: 'Состояние', 
+                type: 'select',
+                options: ['Новое', 'Отличное', 'Хорошее', 'Среднее', 'Требует ремонта'],
+                required: true 
+            },
+            {
+                name: 'assembly',
+                label: 'Требуется сборка',
+                type: 'select',
+                options: ['Да', 'Нет', 'Частично'],
+                required: false
+            },
+            {
+                name: 'color',
+                label: 'Цвет',
+                type: 'text',
+                placeholder: 'Белый, дуб, венге',
                 required: false
             }
         ]
@@ -210,50 +277,30 @@ export const CATEGORY_SCHEMA = {
 
 /**
  * Получает схему для указанной категории.
- * Если категория не найдена, возвращает схему для 'other'.
- * 
  * @param {string} category - Ключ категории
- * @returns {Object} Схема категории с полями и названием
- * 
- * @example
- * const schema = getCategorySchema('clothes');
- * console.log(schema.name); // "Одежда"
- * console.log(schema.fields); // [{ name: 'size', label: 'Размер', ... }]
+ * @returns {Object} Схема категории
  */
 export function getCategorySchema(category) {
     if (!category || typeof category !== 'string') {
-        console.warn('[categorySchema] Invalid category, using "other":', category);
         return CATEGORY_SCHEMA.other;
     }
-    
     return CATEGORY_SCHEMA[category] || CATEGORY_SCHEMA.other;
 }
 
 /**
  * Получает человекочитаемое название категории.
- * 
  * @param {string} category - Ключ категории
- * @returns {string} Название категории или исходный ключ если не найдено
- * 
- * @example
- * getCategoryName('clothes') // "Одежда"
- * getCategoryName('unknown') // "unknown"
+ * @returns {string} Название категории
  */
 export function getCategoryName(category) {
     if (!category) return 'Другое';
-    
     return CATEGORY_SCHEMA[category]?.name || category;
 }
 
 /**
  * Получает список категорий для использования в select.
- * 
  * @param {boolean} [includeOther=true] - Включать ли категорию "Другое"
- * @returns {Array<{value: string, label: string}>} Массив объектов для option
- * 
- * @example
- * const options = getCategoryOptions();
- * // [{ value: 'clothes', label: 'Одежда' }, ...]
+ * @returns {Array<{value: string, label: string}>}
  */
 export function getCategoryOptions(includeOther = true) {
     return Object.entries(CATEGORY_SCHEMA)
@@ -266,8 +313,7 @@ export function getCategoryOptions(includeOther = true) {
 
 /**
  * Получает все категории с дополнительной информацией.
- * 
- * @returns {Array<Object>} Массив объектов категорий с ключом и схемой
+ * @returns {Array<Object>}
  */
 export function getAllCategories() {
     return Object.entries(CATEGORY_SCHEMA).map(([key, schema]) => ({
@@ -280,13 +326,8 @@ export function getAllCategories() {
 
 /**
  * Получает поля для указанной категории.
- * 
  * @param {string} category - Ключ категории
- * @returns {Array<Object>} Массив полей категории
- * 
- * @example
- * const fields = getCategoryFields('toys');
- * // [{ name: 'age', label: 'Возраст', type: 'text', ... }, ...]
+ * @returns {Array<Object>}
  */
 export function getCategoryFields(category) {
     const schema = getCategorySchema(category);
@@ -295,9 +336,8 @@ export function getCategoryFields(category) {
 
 /**
  * Получает обязательные поля для категории.
- * 
  * @param {string} category - Ключ категории
- * @returns {Array<Object>} Массив обязательных полей
+ * @returns {Array<Object>}
  */
 export function getRequiredFields(category) {
     const fields = getCategoryFields(category);
@@ -306,19 +346,9 @@ export function getRequiredFields(category) {
 
 /**
  * Валидирует атрибуты товара на соответствие схеме категории.
- * 
  * @param {string} category - Ключ категории
- * @param {Object} attributes - Объект атрибутов для проверки
- * @returns {Object} Объект с результатом валидации
- * @returns {boolean} .valid - true если все обязательные поля заполнены
- * @returns {Array<string>} .errors - Массив сообщений об ошибках
- * @returns {Array<string>} .missingFields - Ключи незаполненных обязательных полей
- * 
- * @example
- * const result = validateAttributes('clothes', { size: 'M', condition: 'Отличное' });
- * if (!result.valid) {
- *     console.error('Missing fields:', result.missingFields);
- * }
+ * @param {Object} attributes - Объект атрибутов
+ * @returns {Object} { valid, errors, missingFields }
  */
 export function validateAttributes(category, attributes = {}) {
     const requiredFields = getRequiredFields(category);
@@ -345,25 +375,17 @@ export function validateAttributes(category, attributes = {}) {
 
 /**
  * Форматирует атрибуты товара для отображения в UI.
- * 
- * @param {string} category - Ключ категории товара
+ * @param {string} category - Ключ категории
  * @param {Object} attributes - Объект атрибутов
  * @param {Object} options - Опции форматирования
- * @param {boolean} [options.showLabels=true] - Показывать названия полей
- * @param {string} [options.separator=' • '] - Разделитель между атрибутами
- * @param {string} [options.emptyValue='—'] - Что показывать если атрибутов нет
- * @returns {string} Отформатированная строка с атрибутами
- * 
- * @example
- * formatAttributes('clothes', { size: 'M', brand: 'Zara', condition: 'Отличное' })
- * // "Размер: M • Бренд: Zara • Состояние: Отличное"
- * 
- * formatAttributes('clothes', { size: 'M' }, { showLabels: false })
- * // "M"
+ * @param {string} [options.format='labels'] - 'labels', 'values', 'compact'
+ * @param {string} [options.separator=' • '] - Разделитель
+ * @param {string} [options.emptyValue='—'] - Значение по умолчанию
+ * @returns {string}
  */
 export function formatAttributes(category, attributes = {}, options = {}) {
     const {
-        showLabels = true,
+        format = 'labels',
         separator = ' • ',
         emptyValue = '—'
     } = options;
@@ -379,76 +401,58 @@ export function formatAttributes(category, attributes = {}, options = {}) {
         const value = attributes[field.name];
         
         if (value !== undefined && value !== null && String(value).trim() !== '') {
-            if (showLabels) {
+            if (format === 'labels') {
                 parts.push(`${field.label}: ${value}`);
+            } else if (format === 'compact') {
+                parts.push(value);
             } else {
-                parts.push(String(value));
+                parts.push(value);
             }
         }
     });
     
     // Добавляем дополнительные атрибуты, которых нет в схеме
-    Object.entries(attributes).forEach(([key, value]) => {
-        const isInSchema = schema.fields.some(f => f.name === key);
-        
-        if (!isInSchema && value !== undefined && value !== null && String(value).trim() !== '') {
-            if (showLabels) {
+    if (format === 'labels') {
+        Object.entries(attributes).forEach(([key, value]) => {
+            const isInSchema = schema.fields.some(f => f.name === key);
+            if (!isInSchema && value !== undefined && value !== null && String(value).trim() !== '') {
                 parts.push(`${key}: ${value}`);
-            } else {
-                parts.push(String(value));
             }
-        }
-    });
+        });
+    }
     
     return parts.length > 0 ? parts.join(separator) : emptyValue;
 }
 
 /**
- * Создает пустой объект атрибутов с значениями по умолчанию для категории.
- * 
+ * Создает пустой объект атрибутов для категории.
  * @param {string} category - Ключ категории
- * @returns {Object} Объект атрибутов с пустыми строками
- * 
- * @example
- * const emptyAttrs = createEmptyAttributes('clothes');
- * // { size: '', brand: '', material: '', condition: '', season: '' }
+ * @returns {Object}
  */
 export function createEmptyAttributes(category) {
     const fields = getCategoryFields(category);
     const attributes = {};
-    
     fields.forEach(field => {
         attributes[field.name] = '';
     });
-    
     return attributes;
 }
 
 /**
- * Группирует массив товаров по категориям с подсчетом.
- * 
+ * Группирует массив товаров по категориям.
  * @param {Array<Object>} products - Массив товаров
- * @returns {Object} Объект с группировкой
- * @returns {Object} .byCategory - Товары сгруппированные по категориям
- * @returns {Object} .counts - Количество товаров в каждой категории
- * @returns {Array} .sorted - Категории отсортированные по количеству
- * 
- * @example
- * const grouped = groupByCategory(products);
- * console.log(grouped.counts); // { clothes: 15, toys: 8, dishes: 3, other: 2 }
- * console.log(grouped.sorted); // ['clothes', 'toys', 'dishes', 'other']
+ * @returns {Object} { byCategory, counts, sorted }
  */
 export function groupByCategory(products = []) {
     const byCategory = {};
     const counts = {};
     
-    // Инициализируем все категории
-    CATEGORY_KEYS.forEach(key => {
+    // Инициализируем все категории из схемы
+    Object.keys(CATEGORY_SCHEMA).forEach(key => {
         byCategory[key] = [];
         counts[key] = 0;
     });
     
-    // Группируем товары
     products.forEach(product => {
         const category = product.category || 'other';
         
@@ -461,24 +465,18 @@ export function groupByCategory(products = []) {
         counts[category]++;
     });
     
-    // Сортируем категории по количеству товаров
     const sorted = Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
         .map(([key]) => key);
     
-    return {
-        byCategory,
-        counts,
-        sorted
-    };
+    return { byCategory, counts, sorted };
 }
 
 /**
  * Проверяет, поддерживает ли категория указанное поле.
- * 
  * @param {string} category - Ключ категории
  * @param {string} fieldName - Имя поля
- * @returns {boolean} true если поле есть в схеме категории
+ * @returns {boolean}
  */
 export function hasField(category, fieldName) {
     const fields = getCategoryFields(category);
@@ -486,11 +484,10 @@ export function hasField(category, fieldName) {
 }
 
 /**
- * Получает метаданные конкретного поля в категории.
- * 
+ * Получает метаданные поля в категории.
  * @param {string} category - Ключ категории
  * @param {string} fieldName - Имя поля
- * @returns {Object|null} Объект поля или null если не найдено
+ * @returns {Object|null}
  */
 export function getFieldMetadata(category, fieldName) {
     const fields = getCategoryFields(category);
