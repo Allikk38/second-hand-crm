@@ -17,15 +17,16 @@
  * - Использование универсального модуля product-form.js для создания/редактирования товаров.
  * 
  * @module inventory
- * @version 3.6.0
+ * @version 3.7.0
  * @changes
- * - Заменена встроенная реализация формы на вызов openProductFormModal.
- * - openEditProductForm теперь использует тот же модуль в режиме edit.
- * - Значительно сокращён объём кода за счёт удаления дублирующейся логики.
- * - Улучшена читаемость и поддерживаемость.
+ * - Исправлена загрузка товаров: теперь по умолчанию показываются все товары.
+ * - Исправлено удаление товара: добавлена проверка существования фото.
+ * - Исправлено кэширование: данные не кэшируются при ошибке.
+ * - Добавлен индикатор загрузки при удалении.
+ * - Улучшена обработка ошибок.
  */
 
-import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
+import { requireAuth, logout, isOnline, getSupabase } from '../core/auth.js';
 import { formatMoney, escapeHtml, getStatusText, getCategoryName, debounce } from '../utils/formatters.js';
 import { showNotification, showConfirmDialog } from '../utils/ui.js';
 import { openProductFormModal } from '../utils/product-form.js';
@@ -43,6 +44,7 @@ const state = {
     products: [],
     filteredProducts: [],
     isLoading: false,
+    isDeleting: false,
     searchQuery: '',
     selectedStatus: '',
     selectedCategory: '',
@@ -57,7 +59,6 @@ const DOM = {
     statsBar: null,
     errorBanner: null,
     errorMessage: null,
-    emptyState: null,
     searchInput: null,
     statusFilter: null,
     categoryFilter: null,
@@ -66,36 +67,24 @@ const DOM = {
     refreshBtn: null,
     logoutBtn: null,
     userEmail: null,
-    modalContainer: null,
     offlineBanner: null,
     offlineRetryBtn: null
 };
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
-/**
- * Показывает офлайн-баннер
- */
 function showOfflineBanner() {
     if (DOM.offlineBanner) {
         DOM.offlineBanner.style.display = 'block';
     }
 }
 
-/**
- * Скрывает офлайн-баннер
- */
 function hideOfflineBanner() {
     if (DOM.offlineBanner) {
         DOM.offlineBanner.style.display = 'none';
     }
 }
 
-/**
- * Показывает ошибку в баннере или через уведомление
- * @param {string} message - Сообщение об ошибке
- * @param {string} type - Тип ошибки (error, success, warning, info)
- */
 function showError(message, type = 'error') {
     if (DOM.errorBanner && DOM.errorMessage) {
         DOM.errorMessage.textContent = message;
@@ -112,9 +101,6 @@ function showError(message, type = 'error') {
     }
 }
 
-/**
- * Скрывает баннер ошибки
- */
 function hideError() {
     if (DOM.errorBanner) {
         DOM.errorBanner.style.display = 'none';
@@ -123,31 +109,25 @@ function hideError() {
 
 // ========== КЭШИРОВАНИЕ ==========
 
-/**
- * Сохраняет товары в кэш
- * @param {Array} products - Массив товаров
- */
 function saveProductsToCache(products) {
     try {
         sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
             data: products,
             timestamp: Date.now()
         }));
+        console.log('[Inventory] Cache saved:', products.length, 'products');
     } catch (e) {
         console.warn('[Inventory] Failed to cache products:', e);
     }
 }
 
-/**
- * Загружает товары из кэша
- * @returns {Array|null}
- */
 function loadProductsFromCache() {
     try {
         const cached = sessionStorage.getItem(PRODUCTS_CACHE_KEY);
         if (cached) {
             const { data, timestamp } = JSON.parse(cached);
             if (Date.now() - timestamp < CACHE_TTL) {
+                console.log('[Inventory] Loaded from cache:', data.length, 'products');
                 return data;
             }
             sessionStorage.removeItem(PRODUCTS_CACHE_KEY);
@@ -160,10 +140,6 @@ function loadProductsFromCache() {
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
-/**
- * Загружает список товаров
- * @param {boolean} forceRefresh - Принудительно обновить без кэша
- */
 async function loadProducts(forceRefresh = false) {
     if (state.isLoading) return;
     
@@ -186,16 +162,20 @@ async function loadProducts(forceRefresh = false) {
     }
     
     state.isLoading = true;
-    renderLoadingState();
+    render();
     
     try {
         const supabase = await getSupabase();
+        
+        // Загружаем ВСЕ товары (не фильтруем по статусу)
         const { data, error } = await supabase
             .from('products')
             .select('*')
             .order('created_at', { ascending: false });
         
         if (error) throw error;
+        
+        console.log('[Inventory] Loaded from server:', data?.length || 0, 'products');
         
         state.products = data || [];
         saveProductsToCache(state.products);
@@ -223,9 +203,6 @@ async function loadProducts(forceRefresh = false) {
     }
 }
 
-/**
- * Обновляет список категорий в фильтре
- */
 function updateCategoryFilter() {
     const categories = new Set();
     state.products.forEach(p => {
@@ -254,12 +231,10 @@ function updateCategoryFilter() {
     }
 }
 
-/**
- * Применяет фильтры к списку товаров
- */
 function applyFilters() {
     let filtered = [...state.products];
     
+    // Поиск по названию или ID
     if (state.searchQuery) {
         const q = state.searchQuery.toLowerCase();
         filtered = filtered.filter(p => 
@@ -268,25 +243,21 @@ function applyFilters() {
         );
     }
     
+    // Фильтр по статусу
     if (state.selectedStatus) {
         filtered = filtered.filter(p => p.status === state.selectedStatus);
     }
     
+    // Фильтр по категории
     if (state.selectedCategory) {
         filtered = filtered.filter(p => p.category === state.selectedCategory);
     }
     
+    // Сортировка
     filtered = sortProducts(filtered, state.sortBy);
     state.filteredProducts = filtered;
-    render();
 }
 
-/**
- * Сортирует товары
- * @param {Array} products - Массив товаров
- * @param {string} sortBy - Критерий сортировки
- * @returns {Array}
- */
 function sortProducts(products, sortBy) {
     const sorted = [...products];
     
@@ -307,9 +278,6 @@ function sortProducts(products, sortBy) {
     }
 }
 
-/**
- * Обновляет панель статистики
- */
 function updateStats() {
     if (!DOM.statsBar) return;
     
@@ -364,11 +332,15 @@ function updateStats() {
 
 /**
  * Удаляет товар
- * @param {string} id - ID товара
  */
 async function deleteProduct(id) {
+    if (state.isDeleting) return;
+    
     const product = state.products.find(p => p.id === id);
-    if (!product) return;
+    if (!product) {
+        showNotification('Товар не найден', 'error');
+        return;
+    }
     
     const confirmed = await showConfirmDialog({
         title: 'Удаление товара',
@@ -383,19 +355,32 @@ async function deleteProduct(id) {
         return;
     }
     
+    state.isDeleting = true;
+    render(); // Показываем индикатор загрузки
+    
     try {
         const supabase = await getSupabase();
         
         // Удаляем фото из storage если есть
         if (product.photo_url) {
-            const photoPath = product.photo_url.split('/').pop();
-            if (photoPath) {
-                await supabase.storage
-                    .from('product-photos')
-                    .remove([photoPath]);
+            try {
+                const photoPath = product.photo_url.split('/').pop();
+                if (photoPath) {
+                    const { error: storageError } = await supabase.storage
+                        .from('product-photos')
+                        .remove([photoPath]);
+                    
+                    if (storageError) {
+                        console.warn('[Inventory] Failed to delete photo:', storageError);
+                    }
+                }
+            } catch (photoError) {
+                console.warn('[Inventory] Photo deletion error:', photoError);
+                // Продолжаем удаление товара даже если фото не удалилось
             }
         }
         
+        // Удаляем товар из базы
         const { error } = await supabase
             .from('products')
             .delete()
@@ -403,17 +388,21 @@ async function deleteProduct(id) {
         
         if (error) throw error;
         
+        // Удаляем из локального стейта
         state.products = state.products.filter(p => p.id !== id);
         saveProductsToCache(state.products);
         updateCategoryFilter();
         applyFilters();
         updateStats();
         
-        showNotification('Товар удален', 'success');
+        showNotification(`Товар "${product.name}" удалён`, 'success');
         
     } catch (error) {
         console.error('[Inventory] Delete error:', error);
         showError('Ошибка удаления: ' + error.message);
+    } finally {
+        state.isDeleting = false;
+        render();
     }
 }
 
@@ -428,24 +417,24 @@ async function openAddProductForm() {
     
     const newProduct = await openProductFormModal({
         mode: 'create',
-        userId: state.user?.id,
-        onSuccess: (product) => {
-            // Добавляем новый товар в начало списка
-            state.products.unshift(product);
-            saveProductsToCache(state.products);
-            updateCategoryFilter();
-            applyFilters();
-            updateStats();
-        }
+        userId: state.user?.id
     });
     
-    // Если товар был создан, показываем уведомление (уже показано в модуле)
-    // Дополнительных действий не требуется
+    if (newProduct) {
+        // Добавляем новый товар в начало списка
+        state.products.unshift(newProduct);
+        saveProductsToCache(state.products);
+        updateCategoryFilter();
+        applyFilters();
+        updateStats();
+        render();
+        
+        showNotification(`Товар "${newProduct.name}" добавлен`, 'success');
+    }
 }
 
 /**
  * Открывает форму редактирования товара
- * @param {string} id - ID товара
  */
 async function openEditProductForm(id) {
     if (!isOnline()) {
@@ -462,65 +451,27 @@ async function openEditProductForm(id) {
     const updatedProduct = await openProductFormModal({
         mode: 'edit',
         initialData: product,
-        userId: state.user?.id,
-        onSuccess: (product) => {
-            // Обновляем товар в списке
-            const index = state.products.findIndex(p => p.id === product.id);
-            if (index !== -1) {
-                state.products[index] = product;
-                saveProductsToCache(state.products);
-                updateCategoryFilter();
-                applyFilters();
-                updateStats();
-            }
-        }
+        userId: state.user?.id
     });
+    
+    if (updatedProduct) {
+        // Обновляем товар в списке
+        const index = state.products.findIndex(p => p.id === updatedProduct.id);
+        if (index !== -1) {
+            state.products[index] = updatedProduct;
+            saveProductsToCache(state.products);
+            updateCategoryFilter();
+            applyFilters();
+            updateStats();
+            render();
+            
+            showNotification(`Товар "${updatedProduct.name}" обновлён`, 'success');
+        }
+    }
 }
 
 // ========== РЕНДЕРИНГ ==========
 
-/**
- * Отрисовывает состояние загрузки
- */
-function renderLoadingState() {
-    if (!DOM.tableBody) return;
-    
-    DOM.tableBody.innerHTML = `
-        <tr>
-            <td colspan="7" style="text-align: center; padding: 40px;">
-                <div class="loading-spinner"></div>
-                <span style="margin-left: 12px;">Загрузка товаров...</span>
-            </td>
-        </tr>
-    `;
-}
-
-/**
- * Отрисовывает пустое состояние
- */
-function renderEmptyState() {
-    if (!DOM.tableBody) return;
-    
-    let message = 'Товары не найдены';
-    if (state.searchQuery || state.selectedStatus || state.selectedCategory) {
-        message = 'По вашему запросу ничего не найдено';
-    }
-    
-    DOM.tableBody.innerHTML = `
-        <tr>
-            <td colspan="7" style="text-align: center; padding: 60px;">
-                <div class="empty-state-icon">📦</div>
-                <p style="margin-top: 16px; color: var(--color-text-muted);">${escapeHtml(message)}</p>
-            </td>
-        </tr>
-    `;
-}
-
-/**
- * Получает CSS-класс для статуса
- * @param {string} status - Ключ статуса
- * @returns {string}
- */
 function getStatusClass(status) {
     const classes = {
         'in_stock': 'status-in_stock',
@@ -531,26 +482,46 @@ function getStatusClass(status) {
     return classes[status] || 'status-unknown';
 }
 
-/**
- * Главная функция рендеринга
- */
 function render() {
     if (!DOM.tableBody) return;
     
-    if (state.isLoading && state.products.length === 0) {
-        renderLoadingState();
-        return;
-    }
-    
-    if (state.filteredProducts.length === 0) {
-        renderEmptyState();
-        return;
-    }
-    
     const productsTable = document.getElementById('productsTable');
-    if (productsTable) {
-        productsTable.style.display = 'table';
+    
+    // Показываем загрузку
+    if (state.isLoading && state.products.length === 0) {
+        DOM.tableBody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 40px;">
+                    <div class="loading-spinner"></div>
+                    <span style="margin-left: 12px;">Загрузка товаров...</span>
+                </td>
+            </tr>
+        `;
+        if (productsTable) productsTable.style.display = 'table';
+        return;
     }
+    
+    // Показываем пустое состояние
+    if (state.filteredProducts.length === 0) {
+        let message = 'Товары не найдены';
+        if (state.searchQuery || state.selectedStatus || state.selectedCategory) {
+            message = 'По вашему запросу ничего не найдено';
+        }
+        
+        DOM.tableBody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 60px;">
+                    <div class="empty-state-icon">📦</div>
+                    <p style="margin-top: 16px; color: var(--color-text-muted);">${escapeHtml(message)}</p>
+                </td>
+            </tr>
+        `;
+        if (productsTable) productsTable.style.display = 'table';
+        return;
+    }
+    
+    // Рендерим таблицу
+    if (productsTable) productsTable.style.display = 'table';
     
     DOM.tableBody.innerHTML = state.filteredProducts.map(product => {
         const statusText = getStatusText(product.status);
@@ -558,11 +529,12 @@ function render() {
         const safeName = escapeHtml(product.name || 'Без названия');
         const safeId = escapeHtml(product.id?.slice(0, 8) || '—');
         const safePhotoUrl = product.photo_url ? escapeHtml(product.photo_url) : null;
+        const isDeleting = state.isDeleting;
         
         return `
             <tr class="product-row" data-id="${product.id}">
                 <td class="checkbox-cell">
-                    <input type="checkbox" class="table-checkbox" data-id="${product.id}">
+                    <input type="checkbox" class="table-checkbox" data-id="${product.id}" ${isDeleting ? 'disabled' : ''}>
                 </td>
                 <td class="photo-cell">
                     <div class="product-thumb">
@@ -586,11 +558,11 @@ function render() {
                 </td>
                 <td class="actions-cell">
                     <div class="row-actions">
-                        <button class="btn-icon" data-action="edit" data-id="${product.id}" title="Редактировать">
+                        <button class="btn-icon" data-action="edit" data-id="${product.id}" title="Редактировать" ${isDeleting ? 'disabled' : ''}>
                             ✎
                         </button>
-                        <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" title="Удалить">
-                            ✕
+                        <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" title="Удалить" ${isDeleting ? 'disabled' : ''}>
+                            ${isDeleting ? '⌛' : '✕'}
                         </button>
                     </div>
                 </td>
@@ -601,38 +573,35 @@ function render() {
     attachRowEvents();
 }
 
-/**
- * Привязывает обработчики к кнопкам в строках таблицы
- */
 function attachRowEvents() {
     if (!DOM.tableBody) return;
     
     DOM.tableBody.querySelectorAll('[data-action="edit"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            openEditProductForm(btn.dataset.id);
+            if (!state.isDeleting) {
+                openEditProductForm(btn.dataset.id);
+            }
         });
     });
     
     DOM.tableBody.querySelectorAll('[data-action="delete"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            deleteProduct(btn.dataset.id);
+            if (!state.isDeleting) {
+                deleteProduct(btn.dataset.id);
+            }
         });
     });
 }
 
 // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
-/**
- * Кэширует DOM элементы
- */
 function cacheElements() {
     DOM.tableBody = document.getElementById('tableBody');
     DOM.statsBar = document.getElementById('statsBar');
     DOM.errorBanner = document.getElementById('errorBanner');
     DOM.errorMessage = document.getElementById('errorMessage');
-    DOM.emptyState = document.getElementById('emptyState');
     DOM.searchInput = document.getElementById('searchInput');
     DOM.statusFilter = document.getElementById('statusFilter');
     DOM.categoryFilter = document.getElementById('categoryFilter');
@@ -641,14 +610,10 @@ function cacheElements() {
     DOM.refreshBtn = document.getElementById('refreshBtn');
     DOM.logoutBtn = document.getElementById('logoutBtn');
     DOM.userEmail = document.getElementById('userEmail');
-    DOM.modalContainer = document.getElementById('modalContainer');
     DOM.offlineBanner = document.getElementById('offlineBanner');
     DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
 }
 
-/**
- * Отображает email пользователя в шапке
- */
 function displayUserInfo() {
     if (DOM.userEmail) {
         if (state.user) {
@@ -660,9 +625,6 @@ function displayUserInfo() {
     }
 }
 
-/**
- * Привязывает обработчики событий
- */
 function attachEvents() {
     if (DOM.logoutBtn) {
         DOM.logoutBtn.addEventListener('click', () => logout());
@@ -680,15 +642,14 @@ function attachEvents() {
     }
     
     if (DOM.offlineRetryBtn) {
-        DOM.offlineRetryBtn.addEventListener('click', () => {
-            loadProducts(true);
-        });
+        DOM.offlineRetryBtn.addEventListener('click', () => loadProducts(true));
     }
     
     if (DOM.searchInput) {
         const debouncedSearch = debounce(() => {
             state.searchQuery = DOM.searchInput.value.trim().toLowerCase();
             applyFilters();
+            render();
         }, 300);
         DOM.searchInput.addEventListener('input', debouncedSearch);
     }
@@ -697,6 +658,7 @@ function attachEvents() {
         DOM.statusFilter.addEventListener('change', (e) => {
             state.selectedStatus = e.target.value;
             applyFilters();
+            render();
         });
     }
     
@@ -704,6 +666,7 @@ function attachEvents() {
         DOM.categoryFilter.addEventListener('change', (e) => {
             state.selectedCategory = e.target.value;
             applyFilters();
+            render();
         });
     }
     
@@ -711,16 +674,15 @@ function attachEvents() {
         DOM.sortSelect.addEventListener('change', (e) => {
             state.sortBy = e.target.value;
             applyFilters();
+            render();
         });
     }
     
-    // Закрытие баннера ошибки
     const closeErrorBtn = document.getElementById('closeErrorBtn');
     if (closeErrorBtn) {
         closeErrorBtn.addEventListener('click', hideError);
     }
     
-    // Выделение всех чекбоксов
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
     if (selectAllCheckbox) {
         selectAllCheckbox.addEventListener('change', (e) => {
@@ -729,7 +691,6 @@ function attachEvents() {
         });
     }
     
-    // Слушатели сети
     window.addEventListener('online', () => {
         hideOfflineBanner();
         showNotification('Соединение восстановлено', 'success');
@@ -744,9 +705,6 @@ function attachEvents() {
     });
 }
 
-/**
- * Инициализация страницы
- */
 async function init() {
     console.log('[Inventory] Initializing MPA page...');
     
@@ -774,8 +732,6 @@ async function init() {
     
     console.log('[Inventory] Page initialized');
 }
-
-// ========== ЗАПУСК ==========
 
 document.addEventListener('DOMContentLoaded', init);
 
