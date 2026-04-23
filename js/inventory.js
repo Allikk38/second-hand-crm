@@ -17,13 +17,12 @@
  * - Использование универсального модуля product-form.js для создания/редактирования товаров.
  * 
  * @module inventory
- * @version 3.7.0
+ * @version 3.7.1
  * @changes
- * - Исправлена загрузка товаров: теперь по умолчанию показываются все товары.
- * - Исправлено удаление товара: добавлена проверка существования фото.
+ * - Добавлен вызов window.markInventoryModuleLoaded() после инициализации.
+ * - Улучшена обработка офлайн-режима: быстрая проверка сети перед запросами.
+ * - Добавлена проверка доступности Supabase перед запросами.
  * - Исправлено кэширование: данные не кэшируются при ошибке.
- * - Добавлен индикатор загрузки при удалении.
- * - Улучшена обработка ошибок.
  */
 
 import { requireAuth, logout, isOnline, getSupabase } from '../core/auth.js';
@@ -49,7 +48,8 @@ const state = {
     selectedStatus: '',
     selectedCategory: '',
     sortBy: 'created_at-desc',
-    categories: []
+    categories: [],
+    initComplete: false
 };
 
 // ========== DOM ЭЛЕМЕНТЫ ==========
@@ -68,7 +68,8 @@ const DOM = {
     logoutBtn: null,
     userEmail: null,
     offlineBanner: null,
-    offlineRetryBtn: null
+    offlineRetryBtn: null,
+    moduleLoading: null
 };
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -107,9 +108,24 @@ function hideError() {
     }
 }
 
+function markModuleLoaded() {
+    if (!state.initComplete) {
+        state.initComplete = true;
+        if (DOM.moduleLoading) {
+            DOM.moduleLoading.style.display = 'none';
+        }
+        if (window.markInventoryModuleLoaded) {
+            window.markInventoryModuleLoaded();
+        }
+        console.log('[Inventory] Module marked as loaded');
+    }
+}
+
 // ========== КЭШИРОВАНИЕ ==========
 
 function saveProductsToCache(products) {
+    if (!products || products.length === 0) return;
+    
     try {
         sessionStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({
             data: products,
@@ -140,34 +156,78 @@ function loadProductsFromCache() {
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
+/**
+ * Проверяет доступность Supabase перед запросом
+ */
+async function isSupabaseAvailable() {
+    if (!isOnline()) return false;
+    
+    try {
+        const supabase = await getSupabase();
+        const { error } = await supabase.from('products').select('id', { count: 'exact', head: true });
+        return !error;
+    } catch {
+        return false;
+    }
+}
+
 async function loadProducts(forceRefresh = false) {
     if (state.isLoading) return;
     
-    // Проверяем кэш при офлайн-режиме
-    if (!forceRefresh && !isOnline()) {
-        const cached = loadProductsFromCache();
+    // Сначала проверяем кэш при любых условиях
+    const cached = loadProductsFromCache();
+    
+    // Если нет сети, работаем только с кэшем
+    if (!isOnline()) {
+        state.isOffline = true;
+        showOfflineBanner();
+        
         if (cached) {
             state.products = cached;
             updateCategoryFilter();
             applyFilters();
             updateStats();
             showNotification('Работа в офлайн-режиме (данные из кэша)', 'warning');
-            return;
+        } else {
+            showError('Нет подключения к интернету и нет кэшированных данных', 'warning');
         }
-    }
-    
-    if (!isOnline()) {
-        showError('Отсутствует подключение к интернету', 'warning');
+        
+        markModuleLoaded();
+        render();
         return;
     }
     
+    // Есть сеть, но проверяем доступность Supabase
     state.isLoading = true;
     render();
     
     try {
+        const supabaseAvailable = await isSupabaseAvailable();
+        
+        if (!supabaseAvailable) {
+            console.warn('[Inventory] Supabase unavailable, using cache');
+            state.isOffline = true;
+            showOfflineBanner();
+            
+            if (cached) {
+                state.products = cached;
+                updateCategoryFilter();
+                applyFilters();
+                updateStats();
+                showNotification('Сервер недоступен. Работа с кэшированными данными.', 'warning');
+            } else {
+                showError('Сервер недоступен и нет кэшированных данных', 'error');
+            }
+            
+            state.isLoading = false;
+            markModuleLoaded();
+            render();
+            return;
+        }
+        
+        // Сервер доступен, загружаем свежие данные
         const supabase = await getSupabase();
         
-        // Загружаем ВСЕ товары (не фильтруем по статусу)
         const { data, error } = await supabase
             .from('products')
             .select('*')
@@ -178,27 +238,29 @@ async function loadProducts(forceRefresh = false) {
         console.log('[Inventory] Loaded from server:', data?.length || 0, 'products');
         
         state.products = data || [];
+        state.isOffline = false;
+        hideOfflineBanner();
+        
         saveProductsToCache(state.products);
         updateCategoryFilter();
         applyFilters();
         updateStats();
-        hideOfflineBanner();
         
     } catch (error) {
         console.error('[Inventory] Load products error:', error);
-        showError('Ошибка загрузки товаров: ' + error.message);
         
-        // Пробуем загрузить из кэша
-        const cached = loadProductsFromCache();
         if (cached) {
             state.products = cached;
             updateCategoryFilter();
             applyFilters();
             updateStats();
-            showNotification('Загружены данные из кэша', 'info');
+            showNotification('Ошибка загрузки. Используются кэшированные данные.', 'warning');
+        } else {
+            showError('Ошибка загрузки товаров: ' + error.message);
         }
     } finally {
         state.isLoading = false;
+        markModuleLoaded();
         render();
     }
 }
@@ -234,7 +296,6 @@ function updateCategoryFilter() {
 function applyFilters() {
     let filtered = [...state.products];
     
-    // Поиск по названию или ID
     if (state.searchQuery) {
         const q = state.searchQuery.toLowerCase();
         filtered = filtered.filter(p => 
@@ -243,17 +304,14 @@ function applyFilters() {
         );
     }
     
-    // Фильтр по статусу
     if (state.selectedStatus) {
         filtered = filtered.filter(p => p.status === state.selectedStatus);
     }
     
-    // Фильтр по категории
     if (state.selectedCategory) {
         filtered = filtered.filter(p => p.category === state.selectedCategory);
     }
     
-    // Сортировка
     filtered = sortProducts(filtered, state.sortBy);
     state.filteredProducts = filtered;
 }
@@ -330,9 +388,6 @@ function updateStats() {
 
 // ========== CRUD ОПЕРАЦИИ ==========
 
-/**
- * Удаляет товар
- */
 async function deleteProduct(id) {
     if (state.isDeleting) return;
     
@@ -356,7 +411,7 @@ async function deleteProduct(id) {
     }
     
     state.isDeleting = true;
-    render(); // Показываем индикатор загрузки
+    render();
     
     try {
         const supabase = await getSupabase();
@@ -366,17 +421,12 @@ async function deleteProduct(id) {
             try {
                 const photoPath = product.photo_url.split('/').pop();
                 if (photoPath) {
-                    const { error: storageError } = await supabase.storage
+                    await supabase.storage
                         .from('product-photos')
                         .remove([photoPath]);
-                    
-                    if (storageError) {
-                        console.warn('[Inventory] Failed to delete photo:', storageError);
-                    }
                 }
             } catch (photoError) {
                 console.warn('[Inventory] Photo deletion error:', photoError);
-                // Продолжаем удаление товара даже если фото не удалилось
             }
         }
         
@@ -406,9 +456,6 @@ async function deleteProduct(id) {
     }
 }
 
-/**
- * Открывает форму добавления товара
- */
 async function openAddProductForm() {
     if (!isOnline()) {
         showError('Добавление товара недоступно в офлайн-режиме', 'warning');
@@ -421,7 +468,6 @@ async function openAddProductForm() {
     });
     
     if (newProduct) {
-        // Добавляем новый товар в начало списка
         state.products.unshift(newProduct);
         saveProductsToCache(state.products);
         updateCategoryFilter();
@@ -433,9 +479,6 @@ async function openAddProductForm() {
     }
 }
 
-/**
- * Открывает форму редактирования товара
- */
 async function openEditProductForm(id) {
     if (!isOnline()) {
         showError('Редактирование товара недоступно в офлайн-режиме', 'warning');
@@ -455,7 +498,6 @@ async function openEditProductForm(id) {
     });
     
     if (updatedProduct) {
-        // Обновляем товар в списке
         const index = state.products.findIndex(p => p.id === updatedProduct.id);
         if (index !== -1) {
             state.products[index] = updatedProduct;
@@ -487,7 +529,6 @@ function render() {
     
     const productsTable = document.getElementById('productsTable');
     
-    // Показываем загрузку
     if (state.isLoading && state.products.length === 0) {
         DOM.tableBody.innerHTML = `
             <tr>
@@ -501,7 +542,6 @@ function render() {
         return;
     }
     
-    // Показываем пустое состояние
     if (state.filteredProducts.length === 0) {
         let message = 'Товары не найдены';
         if (state.searchQuery || state.selectedStatus || state.selectedCategory) {
@@ -520,7 +560,6 @@ function render() {
         return;
     }
     
-    // Рендерим таблицу
     if (productsTable) productsTable.style.display = 'table';
     
     DOM.tableBody.innerHTML = state.filteredProducts.map(product => {
@@ -529,12 +568,11 @@ function render() {
         const safeName = escapeHtml(product.name || 'Без названия');
         const safeId = escapeHtml(product.id?.slice(0, 8) || '—');
         const safePhotoUrl = product.photo_url ? escapeHtml(product.photo_url) : null;
-        const isDeleting = state.isDeleting;
         
         return `
             <tr class="product-row" data-id="${product.id}">
                 <td class="checkbox-cell">
-                    <input type="checkbox" class="table-checkbox" data-id="${product.id}" ${isDeleting ? 'disabled' : ''}>
+                    <input type="checkbox" class="table-checkbox" data-id="${product.id}" ${state.isDeleting ? 'disabled' : ''}>
                 </td>
                 <td class="photo-cell">
                     <div class="product-thumb">
@@ -558,11 +596,11 @@ function render() {
                 </td>
                 <td class="actions-cell">
                     <div class="row-actions">
-                        <button class="btn-icon" data-action="edit" data-id="${product.id}" title="Редактировать" ${isDeleting ? 'disabled' : ''}>
+                        <button class="btn-icon" data-action="edit" data-id="${product.id}" title="Редактировать" ${state.isDeleting ? 'disabled' : ''}>
                             ✎
                         </button>
-                        <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" title="Удалить" ${isDeleting ? 'disabled' : ''}>
-                            ${isDeleting ? '⌛' : '✕'}
+                        <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" title="Удалить" ${state.isDeleting ? 'disabled' : ''}>
+                            ${state.isDeleting ? '⌛' : '✕'}
                         </button>
                     </div>
                 </td>
@@ -612,6 +650,7 @@ function cacheElements() {
     DOM.userEmail = document.getElementById('userEmail');
     DOM.offlineBanner = document.getElementById('offlineBanner');
     DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
+    DOM.moduleLoading = document.getElementById('moduleLoading');
 }
 
 function displayUserInfo() {
@@ -692,14 +731,17 @@ function attachEvents() {
     }
     
     window.addEventListener('online', () => {
-        hideOfflineBanner();
-        showNotification('Соединение восстановлено', 'success');
-        if (!state.user) {
-            location.reload();
+        console.log('[Inventory] Online detected');
+        if (state.isOffline) {
+            hideOfflineBanner();
+            showNotification('Соединение восстановлено', 'success');
+            loadProducts(true);
         }
     });
     
     window.addEventListener('offline', () => {
+        console.log('[Inventory] Offline detected');
+        state.isOffline = true;
         showOfflineBanner();
         showNotification('Отсутствует подключение к интернету', 'warning');
     });
@@ -710,12 +752,16 @@ async function init() {
     
     cacheElements();
     
+    // Проверяем состояние сети сразу
+    state.isOffline = !isOnline();
+    if (state.isOffline) {
+        showOfflineBanner();
+    }
+    
     const authResult = await requireAuth();
     
     if (authResult.user) {
         state.user = authResult.user;
-        state.isOffline = false;
-        hideOfflineBanner();
     } else if (authResult.offline || authResult.networkError) {
         state.isOffline = true;
         state.user = null;
