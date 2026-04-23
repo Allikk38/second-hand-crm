@@ -1,160 +1,81 @@
 /**
  * Responsive - Business Professional
  * 
- * Минимальные медиа-запросы для адаптивности.
- * Без анимаций, только необходимые правила.
+ * Глобальные медиа-запросы для адаптивности.
+ * Содержит только правила, общие для всего приложения.
+ * Специфичные для страниц правила находятся в соответствующих файлах.
  * 
  * @stylesheet responsive
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны сложные брейкпоинты
- * - Убраны адаптивные утилиты с анимациями
- * - Упрощены правила для печати
- * - Только основные брейкпоинты
+ * - Удалены дублирующиеся правила.
+ * - Упрощены селекторы.
+ * - Добавлены комментарии.
  */
 
-/* ========== BREAKPOINTS ========== */
+/* ========== БРЕЙКПОИНТЫ ========== */
 /* 
- * sm: 640px (планшеты)
- * md: 768px (планшеты landscape)
- * lg: 1024px (десктопы)
- * xl: 1280px (большие десктопы)
+ * sm: 640px (мобильные телефоны)
+ * md: 768px (планшеты portrait)
+ * lg: 1024px (планшеты landscape / маленькие десктопы)
+ * xl: 1280px (десктопы)
  */
 
-/* ========== ПЛАНШЕТЫ (640px и меньше) ========== */
+/* ========== МОБИЛЬНЫЕ ТЕЛЕФОНЫ (640px и меньше) ========== */
 @media (max-width: 640px) {
-    .app-header {
-        padding: 0 var(--spacing-3);
+    /* Глобальные утилиты */
+    .text-sm\:hidden {
+        display: none;
     }
     
-    .app-header h1 {
-        font-size: var(--font-size-sm);
+    /* Контейнеры */
+    .container {
+        padding-left: var(--spacing-3);
+        padding-right: var(--spacing-3);
     }
     
-    .app-tabs {
-        padding: 0 var(--spacing-3);
-    }
-    
-    .app-tab {
-        padding: var(--spacing-1) var(--spacing-2);
-        font-size: var(--font-size-xs);
-    }
-    
-    .page-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: var(--spacing-2);
-    }
-    
-    .header-right {
-        justify-content: flex-end;
-    }
-    
-    .filters-panel {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .bulk-actions-panel {
-        margin-left: 0;
-        justify-content: center;
-    }
-    
-    .cashier-layout {
-        grid-template-columns: 1fr;
-        grid-template-rows: 1fr auto;
-    }
-    
-    .cart-panel {
-        max-height: 450px;
-    }
-    
-    .charts-row {
-        grid-template-columns: 1fr;
-    }
-    
-    .dashboard-bottom {
-        grid-template-columns: 1fr;
-    }
-    
-    .two-columns {
-        grid-template-columns: 1fr;
-    }
-    
-    .kpi-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-}
-
-/* ========== МОБИЛЬНЫЕ (480px и меньше) ========== */
-@media (max-width: 480px) {
-    .kpi-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .reports-tabs {
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        width: 100%;
-    }
-    
-    .products-table-wrapper {
-        overflow-x: auto;
-    }
-    
-    .products-table td {
-        padding: var(--spacing-2);
-    }
-    
-    .category-products.grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .shift-stats-panel .stats-grid {
-        grid-template-columns: 1fr;
-        gap: var(--spacing-2);
-    }
-    
-    .shift-stats-panel .stat-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
-    .shift-stats-panel .stat-label {
-        margin-bottom: 0;
-    }
-    
-    .payment-methods {
-        flex-direction: column;
-    }
-    
+    /* Модальные окна на весь экран */
     .modal {
         max-height: 100vh;
         border-radius: 0;
         border: none;
     }
     
-    .quick-view-content {
-        width: 100%;
-        max-height: 100vh;
-        border-radius: 0;
+    /* Уведомления на всю ширину */
+    #notificationContainer {
+        top: var(--spacing-2);
+        right: var(--spacing-2);
+        left: var(--spacing-2);
+        max-width: none;
+        width: auto;
     }
-    
-    .fab-add-product {
-        bottom: 80px;
-        right: var(--spacing-3);
-        width: 48px;
-        height: 48px;
-    }
-    
-    .header-right .btn-primary {
+}
+
+/* ========== МАЛЕНЬКИЕ МОБИЛЬНЫЕ (480px и меньше) ========== */
+@media (max-width: 480px) {
+    /* Скрываем email в шапке */
+    .user-email {
         display: none;
+    }
+    
+    /* Упрощаем отступы */
+    .app-main {
+        padding: var(--spacing-2);
+    }
+    
+    /* Кнопки на всю ширину в формах */
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .form-actions .btn {
+        width: 100%;
     }
 }
 
 /* ========== ДЕСКТОПЫ (1024px и больше) ========== */
 @media (min-width: 1024px) {
+    /* Увеличенные отступы для страниц */
     .inventory-page,
     .cashier-page,
     .reports-page {
@@ -162,10 +83,49 @@
     }
 }
 
+/* ========== БОЛЬШИЕ ДЕСКТОПЫ (1280px и больше) ========== */
+@media (min-width: 1280px) {
+    /* Фиксированная ширина контента */
+    .container {
+        max-width: 1280px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+}
+
+/* ========== TOUCH DEVICES ========== */
+@media (hover: none) and (pointer: coarse) {
+    /* На тач-устройствах действия всегда видны */
+    .product-actions,
+    .row-actions {
+        opacity: 1;
+    }
+    
+    /* Увеличиваем зону нажатия (минимальная высота 44px по Apple HIG) */
+    .btn,
+    .category-tab,
+    .product-card,
+    [data-action] {
+        min-height: 44px;
+    }
+    
+    .btn-icon {
+        min-width: 44px;
+    }
+    
+    /* Убираем :hover эффекты на тач-устройствах */
+    .btn:hover,
+    .product-card:hover,
+    .category-tab:hover {
+        transform: none;
+    }
+}
+
 /* ========== ПЕЧАТЬ ========== */
 @media print {
-    /* Скрываем навигацию и кнопки */
+    /* Скрываем навигацию и интерактивные элементы */
     .app-header,
+    .app-nav,
     .app-tabs,
     .filters-panel,
     .bulk-actions-panel,
@@ -179,11 +139,12 @@
     .view-controls,
     .reports-tabs,
     .header-right,
-    #notification-container {
+    #notificationContainer,
+    .modal-overlay {
         display: none !important;
     }
     
-    /* Основной контент */
+    /* Основной контент на всю ширину */
     .page-container {
         overflow: visible;
         height: auto;
@@ -219,35 +180,17 @@
         break-inside: avoid;
     }
     
-    /* Статусы */
+    /* Статусы (без фона) */
     .status-badge {
         border: var(--border-width) solid currentColor;
         background: transparent !important;
     }
     
-    /* Ссылки */
+    /* Ссылки с URL */
     a[href]:after {
         content: " (" attr(href) ")";
         font-size: 10px;
-    }
-}
-
-/* ========== TOUCH DEVICES ========== */
-@media (hover: none) and (pointer: coarse) {
-    /* На тач-устройствах действия всегда видны */
-    .product-actions,
-    .row-actions {
-        opacity: 1;
-    }
-    
-    /* Увеличиваем зону нажатия */
-    .btn,
-    .category-tab,
-    .product-card {
-        min-height: 44px;
-    }
-    
-    .btn-icon {
-        min-width: 44px;
+        font-weight: normal;
+        color: var(--color-text-muted);
     }
 }
