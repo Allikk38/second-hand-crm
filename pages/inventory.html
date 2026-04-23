@@ -149,6 +149,21 @@
             50% { opacity: 0.5; }
         }
         
+        /* Модальное окно добавления товара (базовый контейнер) */
+        #modalContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: var(--z-modal);
+        }
+        
+        #modalContainer > * {
+            pointer-events: auto;
+        }
+        
         @media (max-width: 768px) {
             .skeleton-row {
                 gap: var(--spacing-2);
@@ -292,10 +307,10 @@
         </main>
     </div>
     
-    <!-- Контейнер для модальных окон -->
+    <!-- Контейнер для модальных окон (управляется через ui.js) -->
     <div id="modalContainer"></div>
     
-    <!-- Контейнер для уведомлений -->
+    <!-- Контейнер для уведомлений (управляется через ui.js) -->
     <div id="notificationContainer"></div>
     
     <!-- Основной скрипт страницы -->
