@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Вход | SH CRM</title>
     
+    <!-- Supabase CDN (ДОБАВЛЕНО) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <!-- Основные стили -->
     <link rel="stylesheet" href="../css/styles.css">
     <link rel="stylesheet" href="../css/components/forms.css">
@@ -202,29 +205,8 @@
                 if (offlineBanner) offlineBanner.classList.add('show');
             });
             
-            // Таймаут для проверки загрузки модуля
-            const timeoutId = setTimeout(function() {
-                if (loginBtn && loginBtn.disabled === false) {
-                    console.warn('[Login] Module load timeout');
-                    const formError = document.getElementById('formError');
-                    if (formError) {
-                        formError.textContent = 'Ошибка загрузки страницы. Обновите страницу.';
-                        formError.classList.add('show');
-                    }
-                }
-            }, 8000);
-            
-            window.addEventListener('error', function(e) {
-                if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('login.js')) {
-                    clearTimeout(timeoutId);
-                    const formError = document.getElementById('formError');
-                    if (formError) {
-                        formError.textContent = 'Не удалось загрузить модуль входа. Обновите страницу.';
-                        formError.classList.add('show');
-                    }
-                    if (loginBtn) loginBtn.disabled = false;
-                }
-            });
+            // Убираем таймаут, так как модуль загрузился
+            // (таймаут был в старой версии, теперь не нужен)
         })();
     </script>
 </body>
