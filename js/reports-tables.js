@@ -1,3 +1,7 @@
+// ========================================
+// FILE: js/reports-tables.js
+// ========================================
+
 /**
  * Reports Tables Module
  * 
@@ -8,19 +12,48 @@
  * - Чистые функции, отсутствие глобального состояния.
  * - Каждая таблица рендерится отдельно.
  * - Экспорт через генерацию CSV.
+ * - Использование централизованных форматтеров.
  * 
  * @module reports-tables
- * @version 1.0.0
+ * @version 1.2.0
+ * @changes
+ * - Удалено дублирование кода (файл был продублирован дважды).
+ * - Исправлены экспорты для корректной работы с reports.js.
+ * - Добавлены проверки на наличие данных.
  */
 
-import { formatMoney, formatNumber, formatDateTime, formatDate, escapeHtml, getPaymentMethodName, getCategoryName } from '../utils/formatters.js';
+import { 
+    formatMoney, 
+    formatNumber, 
+    formatDateTime, 
+    formatDate, 
+    escapeHtml, 
+    getPaymentMethodName, 
+    getCategoryName 
+} from '../utils/formatters.js';
+
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+
+/**
+ * Экранирует значение для CSV
+ * @param {string} value - Значение
+ * @returns {string}
+ */
+function escapeCsvValue(value) {
+    if (!value && value !== 0) return '';
+    const str = String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+}
 
 // ========== ТАБЛИЦА ПРОДАЖ ==========
 
 /**
- * Рендерит сводку продаж (KPI над таблицей)
+ * Рендерит сводку продаж
  * @param {Object} summary - Сводка { count, revenue, profit, averageCheck }
- * @returns {string} HTML сводки
+ * @returns {string} HTML
  */
 function renderSalesSummary(summary) {
     return `
@@ -48,7 +81,7 @@ function renderSalesSummary(summary) {
 /**
  * Рендерит таблицу продаж
  * @param {Object} data - Данные { summary, sales }
- * @returns {string} HTML таблицы
+ * @returns {string} HTML
  */
 export function renderSalesTable(data) {
     const { summary, sales } = data;
@@ -99,7 +132,7 @@ export function renderSalesTable(data) {
 /**
  * Экспорт таблицы продаж в CSV
  * @param {Object} data - Данные { sales }
- * @returns {string} CSV строка
+ * @returns {string} CSV
  */
 export function exportSalesData(data) {
     const { sales } = data;
@@ -125,7 +158,7 @@ export function exportSalesData(data) {
 /**
  * Рендерит сводку товаров
  * @param {Object} data - Данные { inventoryValue, inventoryCost }
- * @returns {string} HTML сводки
+ * @returns {string} HTML
  */
 function renderProductsSummary(data) {
     const potentialProfit = (data.inventoryValue || 0) - (data.inventoryCost || 0);
@@ -153,7 +186,7 @@ function renderProductsSummary(data) {
 /**
  * Рендерит топ продаваемых товаров
  * @param {Array} topProducts - Массив топ товаров
- * @returns {string} HTML списка
+ * @returns {string} HTML
  */
 function renderTopProductsTable(topProducts) {
     if (!topProducts || topProducts.length === 0) {
@@ -179,7 +212,7 @@ function renderTopProductsTable(topProducts) {
 /**
  * Рендерит залежавшиеся товары
  * @param {Array} slowMoving - Массив залежавшихся товаров
- * @returns {string} HTML списка
+ * @returns {string} HTML
  */
 function renderSlowMovingTable(slowMoving) {
     if (!slowMoving || slowMoving.length === 0) {
@@ -200,9 +233,9 @@ function renderSlowMovingTable(slowMoving) {
 }
 
 /**
- * Рендерит таблицу товаров (полная страница)
+ * Рендерит таблицу товаров
  * @param {Object} data - Данные { topProducts, slowMoving, inventoryValue, inventoryCost }
- * @returns {string} HTML таблицы
+ * @returns {string} HTML
  */
 export function renderProductsTable(data) {
     const { topProducts, slowMoving, inventoryValue, inventoryCost } = data;
@@ -227,7 +260,7 @@ export function renderProductsTable(data) {
 /**
  * Экспорт данных о товарах в CSV
  * @param {Object} data - Данные { topProducts, slowMoving }
- * @returns {string} CSV строка
+ * @returns {string} CSV
  */
 export function exportProductsData(data) {
     const { topProducts, slowMoving } = data;
@@ -254,7 +287,7 @@ export function exportProductsData(data) {
 /**
  * Рендерит сводку смен
  * @param {Object} summary - Сводка { totalShifts, activeShifts, totalRevenue, totalProfit }
- * @returns {string} HTML сводки
+ * @returns {string} HTML
  */
 function renderShiftsSummary(summary) {
     return `
@@ -282,7 +315,7 @@ function renderShiftsSummary(summary) {
 /**
  * Рендерит статистику по продавцам
  * @param {Object} bySeller - Объект с данными по продавцам
- * @returns {string} HTML таблицы
+ * @returns {string} HTML
  */
 function renderBySellerTable(bySeller) {
     if (!bySeller || Object.keys(bySeller).length === 0) {
@@ -320,7 +353,7 @@ function renderBySellerTable(bySeller) {
 /**
  * Рендерит список смен
  * @param {Array} shifts - Массив смен
- * @returns {string} HTML таблицы
+ * @returns {string} HTML
  */
 function renderShiftsList(shifts) {
     if (!shifts || shifts.length === 0) {
@@ -364,9 +397,9 @@ function renderShiftsList(shifts) {
 }
 
 /**
- * Рендерит таблицу смен (полная страница)
+ * Рендерит таблицу смен
  * @param {Object} data - Данные { shifts, bySeller, summary }
- * @returns {string} HTML таблицы
+ * @returns {string} HTML
  */
 export function renderShiftsTable(data) {
     const { shifts, bySeller, summary } = data;
@@ -389,7 +422,7 @@ export function renderShiftsTable(data) {
 /**
  * Экспорт данных о сменах в CSV
  * @param {Object} data - Данные { shifts }
- * @returns {string} CSV строка
+ * @returns {string} CSV
  */
 export function exportShiftsData(data) {
     const { shifts } = data;
@@ -412,37 +445,13 @@ export function exportShiftsData(data) {
     return csv;
 }
 
-// ========== ОБЩИЕ УТИЛИТЫ ==========
+// ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
 
-/**
- * Экранирует значение для CSV (оборачивает в кавычки если нужно)
- * @param {string} value - Значение
- * @returns {string}
- */
-function escapeCsvValue(value) {
-    if (!value) return '';
-    const str = String(value);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-}
-
-/**
- * Основная функция экспорта (вызывается из reports.js)
- * @param {Object} data - Данные текущего отчета
- * @param {string} tab - Активная вкладка (sales, products, shifts)
- * @returns {string} CSV строка
- */
-export function exportData(data, tab) {
-    switch (tab) {
-        case 'sales':
-            return exportSalesData(data);
-        case 'products':
-            return exportProductsData(data);
-        case 'shifts':
-            return exportShiftsData(data);
-        default:
-            return '';
-    }
-}
+export default {
+    renderSalesTable,
+    renderProductsTable,
+    renderShiftsTable,
+    exportSalesData,
+    exportProductsData,
+    exportShiftsData
+};
