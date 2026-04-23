@@ -4,13 +4,18 @@
  * Стили для отображения товаров в виде карточек и в таблице.
  * 
  * @stylesheet product-card
+ * @version 5.0.0
+ * @changes
+ * - Убраны transform-анимации (translateY, scale).
+ * - Убрана анимация pulse.
+ * - Упрощены переходы (только shadow и background).
  */
 
 /* ========== PRODUCTS GRID ========== */
 .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--product-card-width), 1fr));
-    gap: var(--spacing-5);
+    grid-template-columns: repeat(auto-fill, minmax(var(--product-card-width, 160px), 1fr));
+    gap: var(--spacing-4);
     padding: var(--spacing-4);
 }
 
@@ -23,26 +28,19 @@
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: var(--shadow-sm);
-    transition: all var(--transition-base);
     cursor: pointer;
 }
 
 .product-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
-}
-
-.product-card.added-to-cart {
-    animation: pulse var(--transition-fast);
+    box-shadow: var(--shadow-md);
 }
 
 .product-card.product-sold {
-    opacity: 0.7;
+    opacity: 0.6;
     cursor: not-allowed;
 }
 
 .product-card.product-sold:hover {
-    transform: none;
     box-shadow: var(--shadow-sm);
 }
 
@@ -50,7 +48,7 @@
 .product-photo {
     position: relative;
     width: 100%;
-    height: var(--product-card-image-height);
+    height: var(--product-card-image-height, 160px);
     background: var(--color-gray-100);
     display: flex;
     align-items: center;
@@ -62,11 +60,6 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform var(--transition-slow);
-}
-
-.product-card:hover .product-photo img {
-    transform: scale(1.05);
 }
 
 .photo-placeholder {
@@ -98,7 +91,7 @@
 
 /* ========== PRODUCT INFO ========== */
 .product-info {
-    padding: var(--product-card-padding);
+    padding: var(--product-card-padding, var(--spacing-3));
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -146,12 +139,6 @@
     right: var(--spacing-2);
     display: flex;
     gap: var(--spacing-1);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.product-card:hover .product-actions {
-    opacity: 1;
 }
 
 /* ========== PRODUCTS TABLE ========== */
@@ -159,21 +146,22 @@
     background: var(--color-white);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
-    overflow: hidden;
+    overflow-x: auto;
 }
 
 .products-table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 640px;
 }
 
 .products-table thead {
-    background: var(--table-header-bg);
+    background: var(--color-gray-50);
     border-bottom: var(--border-width) solid var(--color-border);
 }
 
 .products-table th {
-    padding: var(--table-cell-padding);
+    padding: var(--spacing-3) var(--spacing-4);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
     color: var(--color-text-secondary);
@@ -182,17 +170,13 @@
 }
 
 .products-table td {
-    padding: var(--table-cell-padding);
+    padding: var(--spacing-3) var(--spacing-4);
     border-bottom: var(--border-width) solid var(--color-border-light);
     vertical-align: middle;
 }
 
-.products-table tbody tr {
-    transition: background var(--transition-fast);
-}
-
 .products-table tbody tr:hover {
-    background: var(--table-row-hover);
+    background: var(--color-gray-50);
 }
 
 .products-table .product-row.row-sold {
@@ -335,12 +319,10 @@
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-sm);
     cursor: pointer;
-    transition: all var(--transition-fast);
     min-width: 80px;
 }
 
 .quick-item:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-md);
 }
 
@@ -388,9 +370,8 @@
 }
 
 .skeleton {
-    background: var(--skeleton-bg);
-    border-radius: var(--skeleton-radius);
-    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    background: var(--color-gray-200);
+    border-radius: var(--radius-sm);
 }
 
 .skeleton-checkbox {
@@ -419,6 +400,7 @@
     height: 32px;
 }
 
+/* Простая пульсация для скелетона (только opacity) */
 @keyframes skeleton-pulse {
     0%, 100% {
         opacity: 1;
@@ -428,13 +410,8 @@
     }
 }
 
-@keyframes pulse {
-    0%, 100% {
-        transform: scale(1);
-    }
-    50% {
-        transform: scale(1.02);
-    }
+.skeleton {
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
 
 /* ========== PRODUCTS LIST VIEW ========== */
@@ -453,7 +430,6 @@
     background: var(--color-white);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-xs);
-    transition: all var(--transition-fast);
     cursor: pointer;
 }
 
@@ -499,7 +475,6 @@
     border-radius: var(--radius-md);
     cursor: pointer;
     user-select: none;
-    transition: background var(--transition-fast);
 }
 
 .category-header:hover {
