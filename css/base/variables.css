@@ -5,50 +5,34 @@
  * Минимум анимаций, максимум контраста и иерархии.
  * 
  * @stylesheet variables
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны градиенты и glass-эффекты
- * - Умеренные тени для четкого разделения слоев
- * - Увеличен контраст текста
- * - Добавлены статусные цвета с хорошей читаемостью
- * - Строгие отступы по сетке 4px
+ * - Удалено агрессивное правило * { animation-duration: 0.01ms !important; }
+ * - Добавлена поддержка prefers-reduced-motion.
+ * - Удалены дублирующиеся переменные.
  */
 
 :root {
     /* ========== ОСНОВНЫЕ ЦВЕТА ========== */
-    /* Спокойный, профессиональный синий */
     --color-primary: #2563eb;
     --color-primary-light: #3b82f6;
     --color-primary-dark: #1d4ed8;
     --color-primary-bg: #eff6ff;
     
-    /* ========== НЕЙТРАЛЬНЫЕ ЦВЕТА ========== */
-    /* Slate — холодный, строгий, профессиональный */
+    /* ========== НЕЙТРАЛЬНЫЕ ЦВЕТА (SLATE) ========== */
     --color-white: #ffffff;
     --color-black: #0f172a;
     
-    --color-slate-50: #f8fafc;
-    --color-slate-100: #f1f5f9;
-    --color-slate-200: #e2e8f0;
-    --color-slate-300: #cbd5e1;
-    --color-slate-400: #94a3b8;
-    --color-slate-500: #64748b;
-    --color-slate-600: #475569;
-    --color-slate-700: #334155;
-    --color-slate-800: #1e293b;
-    --color-slate-900: #0f172a;
-    
-    /* Алиасы */
-    --color-gray-50: var(--color-slate-50);
-    --color-gray-100: var(--color-slate-100);
-    --color-gray-200: var(--color-slate-200);
-    --color-gray-300: var(--color-slate-300);
-    --color-gray-400: var(--color-slate-400);
-    --color-gray-500: var(--color-slate-500);
-    --color-gray-600: var(--color-slate-600);
-    --color-gray-700: var(--color-slate-700);
-    --color-gray-800: var(--color-slate-800);
-    --color-gray-900: var(--color-slate-900);
+    --color-gray-50: #f8fafc;
+    --color-gray-100: #f1f5f9;
+    --color-gray-200: #e2e8f0;
+    --color-gray-300: #cbd5e1;
+    --color-gray-400: #94a3b8;
+    --color-gray-500: #64748b;
+    --color-gray-600: #475569;
+    --color-gray-700: #334155;
+    --color-gray-800: #1e293b;
+    --color-gray-900: #0f172a;
 
     /* ========== СТАТУСНЫЕ ЦВЕТА ========== */
     --color-success: #16a34a;
@@ -72,15 +56,11 @@
     --color-info-bg: #f0f9ff;
 
     /* ========== КОНТЕКСТНЫЕ ЦВЕТА ========== */
-    /* Фон страницы — светлый, но контрастный с карточками */
     --color-bg: #f1f5f9;
     --color-bg-secondary: #f8fafc;
-    
-    /* Границы — едва заметные */
     --color-border: #e2e8f0;
     --color-border-light: #f1f5f9;
     
-    /* Текст — максимальный контраст */
     --color-text: #0f172a;
     --color-text-secondary: #475569;
     --color-text-muted: #64748b;
@@ -90,28 +70,24 @@
     --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     --font-family-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
     
-    /* Размеры — классическая шкала */
-    --font-size-xs: 0.75rem;    /* 12px */
-    --font-size-sm: 0.875rem;   /* 14px */
-    --font-size-base: 1rem;     /* 16px */
-    --font-size-lg: 1.125rem;   /* 18px */
-    --font-size-xl: 1.25rem;    /* 20px */
-    --font-size-2xl: 1.5rem;    /* 24px */
-    --font-size-3xl: 1.875rem;  /* 30px */
-    --font-size-4xl: 2.25rem;   /* 36px */
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 1.875rem;
+    --font-size-4xl: 2.25rem;
     
-    /* Веса */
     --font-weight-normal: 400;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
     --font-weight-bold: 700;
     
-    /* Высота строки */
     --line-height-tight: 1.25;
     --line-height-normal: 1.5;
     --line-height-relaxed: 1.6;
     
-    /* Межбуквенное расстояние */
     --letter-spacing-tight: -0.01em;
     --letter-spacing-normal: 0;
     --letter-spacing-wide: 0.02em;
@@ -119,19 +95,19 @@
     /* ========== ОТСТУПЫ (РИТМ 4PX) ========== */
     --spacing-0: 0;
     --spacing-px: 1px;
-    --spacing-0-5: 0.125rem;  /* 2px */
-    --spacing-1: 0.25rem;     /* 4px */
-    --spacing-1-5: 0.375rem;  /* 6px */
-    --spacing-2: 0.5rem;      /* 8px */
-    --spacing-2-5: 0.625rem;  /* 10px */
-    --spacing-3: 0.75rem;     /* 12px */
-    --spacing-4: 1rem;        /* 16px */
-    --spacing-5: 1.25rem;     /* 20px */
-    --spacing-6: 1.5rem;      /* 24px */
-    --spacing-8: 2rem;        /* 32px */
-    --spacing-10: 2.5rem;     /* 40px */
-    --spacing-12: 3rem;       /* 48px */
-    --spacing-16: 4rem;       /* 64px */
+    --spacing-0-5: 0.125rem;
+    --spacing-1: 0.25rem;
+    --spacing-1-5: 0.375rem;
+    --spacing-2: 0.5rem;
+    --spacing-2-5: 0.625rem;
+    --spacing-3: 0.75rem;
+    --spacing-4: 1rem;
+    --spacing-5: 1.25rem;
+    --spacing-6: 1.5rem;
+    --spacing-8: 2rem;
+    --spacing-10: 2.5rem;
+    --spacing-12: 3rem;
+    --spacing-16: 4rem;
     
     /* ========== РАДИУСЫ ========== */
     --radius-none: 0;
@@ -143,19 +119,15 @@
     --radius-full: 9999px;
     
     /* ========== ТЕНИ ========== */
-    /* Умеренные, но заметные — для четкого разделения */
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03), 0 1px 1px rgba(0, 0, 0, 0.02);
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
     --shadow-md: 0 4px 6px -2px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
     --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
     --shadow-inner: inset 0 1px 2px rgba(0, 0, 0, 0.04);
-    
-    /* Фокус — четкий, но не кричащий */
     --shadow-outline: 0 0 0 2px rgba(37, 99, 235, 0.2);
     
     /* ========== АНИМАЦИИ ========== */
-    /* Минимальные — только для обратной связи */
     --transition-fast: 100ms;
     --transition-base: 150ms;
     --transition-slow: 200ms;
@@ -200,9 +172,14 @@
     --opacity-disabled: 0.5;
 }
 
-/* ========== REDUCED MOTION (всегда включен для бизнес-интерфейса) ========== */
-* {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+/* ========== ПОДДЕРЖКА REDUCED MOTION ========== */
+/* Уважаем настройки пользователя в ОС */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
 }
