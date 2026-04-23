@@ -5,66 +5,38 @@
 /**
  * Inventory Page Module - Index
  * 
- * Точка входа для страницы управления складом.
- * Использует единый движок синхронизации sync-engine.js.
+ * Точка входа для страницы управления складом. Координирует модули данных,
+ * синхронизации и рендеринг интерфейса.
  * 
  * Архитектурные решения:
- * - Sync Engine для всех операций с данными (Cache First, Sync Later)
- * - Оптимистичное обновление UI без ожидания ответа сервера
- * - Единая очередь операций для всех изменений
- * - Подписка на события синхронизации для обновления UI
+ * - Контроллер управляет состоянием UI и рендерингом.
+ * - Делегирует работу с данными в модуль `products.js`.
+ * - Делегирует синхронизацию операций в модуль `operations.js`.
+ * - Подписывается на события `sync-engine` для обновления UI.
  * 
  * @module inventory/index
- * @version 2.0.0
+ * @version 3.0.0
  * @changes
- * - Полная интеграция с sync-engine.js
- * - Удалены отдельные модули products.js и operations.js
- * - Оптимистичные CRUD операции через saveChange()
- * - Мгновенная загрузка из IndexedDB
+ * - Полный рефакторинг в тонкий контроллер.
+ * - Удалена прямая работа с данными и синхронизацией.
+ * - Добавлена координация работы модулей `products` и `operations`.
+ * - Соблюдена модульная архитектура.
  */
 
-import { requireAuth, logout, isOnline, getSupabase } from '../../core/auth.js';
-import { 
-    formatMoney, 
-    escapeHtml, 
-    getStatusText, 
-    getCategoryName, 
-    debounce 
-} from '../../utils/formatters.js';
-import { showNotification, showConfirmDialog } from '../../utils/ui.js';
+import { requireAuth, logout } from '../../core/auth.js';
+import { debounce, escapeHtml, formatMoney, getCategoryName, getStatusText } from '../../utils/formatters.js';
+import { showNotification } from '../../utils/ui.js';
+import { initSyncEngine, subscribeToSync, syncNow, syncState } from '../../core/sync-engine.js';
+import * as productsModule from './products.js';
+import * as operationsModule from './operations.js';
 import { openProductFormModal } from '../../utils/product-form.js';
-import { 
-    initSyncEngine,
-    subscribeToSync,
-    loadData,
-    saveChange,
-    syncNow,
-    syncState,
-    ENTITIES,
-    OP_TYPES
-} from '../../core/sync-engine.js';
 
-// ========== СОСТОЯНИЕ СТРАНИЦЫ ==========
+// ========== СОСТОЯНИЕ UI ==========
 
 const state = {
     user: null,
-    products: [],
-    filteredProducts: [],
-    categories: [],
     isLoading: false,
-    isDeleting: false,
-    searchQuery: '',
-    selectedStatus: '',
-    selectedCategory: '',
-    sortBy: 'created_at-desc',
-    selectedIds: new Set(),
-    stats: {
-        total: 0,
-        inStock: 0,
-        sold: 0,
-        reserved: 0,
-        stockValue: 0
-    }
+    selectedIds: new Set()
 };
 
 // ========== DOM ЭЛЕМЕНТЫ ==========
@@ -89,7 +61,7 @@ const DOM = {
     moduleLoading: null
 };
 
-// ========== ОТОБРАЖЕНИЕ БАННЕРОВ ==========
+// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ UI ==========
 
 function showOfflineBanner() {
     if (DOM.offlineBanner) DOM.offlineBanner.style.display = 'flex';
@@ -100,11 +72,11 @@ function hideOfflineBanner() {
 }
 
 function updateSyncIndicator() {
-    const pendingCount = syncState.pendingCount;
+    const stats = operationsModule.getOperationsStats();
     
     if (DOM.syncBadge) {
-        if (pendingCount > 0) {
-            DOM.syncBadge.textContent = pendingCount;
+        if (stats.pending > 0) {
+            DOM.syncBadge.textContent = stats.pending;
             DOM.syncBadge.style.display = 'inline-block';
         } else {
             DOM.syncBadge.style.display = 'none';
@@ -112,11 +84,11 @@ function updateSyncIndicator() {
     }
     
     if (DOM.syncStatus) {
-        if (syncState.isSyncing) {
+        if (stats.syncing > 0) {
             DOM.syncStatus.textContent = 'Синхронизация...';
             DOM.syncStatus.style.display = 'inline';
-        } else if (pendingCount > 0) {
-            DOM.syncStatus.textContent = `Ожидает: ${pendingCount}`;
+        } else if (stats.pending > 0) {
+            DOM.syncStatus.textContent = `Ожидает: ${stats.pending}`;
             DOM.syncStatus.style.display = 'inline';
         } else {
             DOM.syncStatus.style.display = 'none';
@@ -142,306 +114,23 @@ function hideError() {
     if (DOM.errorBanner) DOM.errorBanner.style.display = 'none';
 }
 
-// ========== РАБОТА С ТОВАРАМИ ==========
+function markModuleLoaded() {
+    if (DOM.moduleLoading) {
+        DOM.moduleLoading.style.display = 'none';
+    }
+    if (window.markInventoryModuleLoaded) {
+        window.markInventoryModuleLoaded();
+    }
+}
 
-/**
- * Загрузка товаров через Sync Engine (Cache First)
- */
-async function loadProductsData(forceRefresh = false) {
-    state.isLoading = true;
-    render();
-    
-    try {
-        const result = await loadData(ENTITIES.PRODUCTS, {
-            id: 'all',
-            maxAge: forceRefresh ? 0 : 5 * 60 * 1000,
-            fetcher: async () => {
-                const supabase = await getSupabase();
-                const { data, error } = await supabase
-                    .from('products')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                
-                if (error) throw error;
-                return data || [];
-            }
-        });
-        
-        state.products = result.data || [];
-        
-        if (result.fromCache) {
-            console.log('[Inventory] Loaded from cache:', state.products.length);
+function displayUserInfo() {
+    if (DOM.userEmail) {
+        if (state.user) {
+            const name = state.user.email?.split('@')[0] || 'Пользователь';
+            DOM.userEmail.textContent = name;
         } else {
-            console.log('[Inventory] Loaded from server:', state.products.length);
+            DOM.userEmail.textContent = 'Гость';
         }
-        
-        updateCategories();
-        applyFilters();
-        updateStats();
-        
-    } catch (error) {
-        console.error('[Inventory] Load error:', error);
-        if (state.products.length === 0) {
-            showError('Не удалось загрузить товары', 'error');
-        }
-    } finally {
-        state.isLoading = false;
-        render();
-        markModuleLoaded();
-    }
-}
-
-function updateCategories() {
-    const counts = new Map();
-    
-    state.products.forEach(p => {
-        const cat = p.category || 'other';
-        counts.set(cat, (counts.get(cat) || 0) + 1);
-    });
-    
-    state.categories = Array.from(counts.entries())
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => b.count - a.count);
-}
-
-function applyFilters() {
-    let filtered = [...state.products];
-    
-    // Убираем оптимистично удалённые (помеченные _deleted)
-    filtered = filtered.filter(p => !p._deleted);
-    
-    if (state.searchQuery) {
-        const q = state.searchQuery.toLowerCase();
-        filtered = filtered.filter(p => 
-            p.name?.toLowerCase().includes(q) ||
-            p.id?.toLowerCase().includes(q)
-        );
-    }
-    
-    if (state.selectedStatus) {
-        filtered = filtered.filter(p => p.status === state.selectedStatus);
-    }
-    
-    if (state.selectedCategory) {
-        filtered = filtered.filter(p => p.category === state.selectedCategory);
-    }
-    
-    filtered = sortProducts(filtered, state.sortBy);
-    state.filteredProducts = filtered;
-}
-
-function sortProducts(products, sortBy) {
-    const sorted = [...products];
-    
-    switch (sortBy) {
-        case 'price-asc':
-            return sorted.sort((a, b) => (a.price || 0) - (b.price || 0));
-        case 'price-desc':
-            return sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
-        case 'name-asc':
-            return sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-        case 'created_at-desc':
-        default:
-            return sorted.sort((a, b) => {
-                const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
-                const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
-                return dateB - dateA;
-            });
-    }
-}
-
-function updateStats() {
-    const filtered = state.products.filter(p => !p._deleted);
-    const inStock = filtered.filter(p => p.status === 'in_stock');
-    
-    state.stats = {
-        total: filtered.length,
-        inStock: inStock.length,
-        sold: filtered.filter(p => p.status === 'sold').length,
-        reserved: filtered.filter(p => p.status === 'reserved').length,
-        stockValue: inStock.reduce((sum, p) => sum + (p.price || 0), 0)
-    };
-}
-
-// ========== ОПТИМИСТИЧНЫЕ CRUD ОПЕРАЦИИ ==========
-
-/**
- * Оптимистично добавляет товар в локальный стейт
- */
-function optimisticAdd(product) {
-    product._optimistic = true;
-    state.products.unshift(product);
-    updateCategories();
-    applyFilters();
-    updateStats();
-    render();
-}
-
-/**
- * Оптимистично обновляет товар в локальном стейте
- */
-function optimisticUpdate(productId, updates) {
-    const index = state.products.findIndex(p => p.id === productId);
-    if (index !== -1) {
-        state.products[index] = { ...state.products[index], ...updates, _optimistic: true };
-        updateCategories();
-        applyFilters();
-        updateStats();
-        render();
-        return true;
-    }
-    return false;
-}
-
-/**
- * Оптимистично удаляет товар из локального стейта
- */
-function optimisticDelete(productId) {
-    const index = state.products.findIndex(p => p.id === productId);
-    if (index !== -1) {
-        state.products[index]._deleted = true;
-        applyFilters();
-        updateStats();
-        render();
-        return true;
-    }
-    return false;
-}
-
-/**
- * Удаление товара через Sync Engine
- */
-async function deleteProduct(id) {
-    if (state.isDeleting) return;
-    
-    const product = state.products.find(p => p.id === id);
-    if (!product) {
-        showNotification('Товар не найден', 'error');
-        return;
-    }
-    
-    const confirmed = await showConfirmDialog({
-        title: 'Удаление товара',
-        message: `Вы уверены, что хотите удалить товар "${product.name}"?`,
-        confirmText: 'Удалить',
-        confirmClass: 'btn-danger'
-    });
-    
-    if (!confirmed) return;
-    
-    // Оптимистичное удаление
-    optimisticDelete(id);
-    
-    // Сохраняем изменение через Sync Engine
-    try {
-        await saveChange(
-            ENTITIES.PRODUCTS,
-            OP_TYPES.DELETE,
-            { id, name: product.name },
-            product
-        );
-        
-        showNotification(
-            syncState.isOnline 
-                ? `Товар "${product.name}" удалён`
-                : `Товар "${product.name}" будет удалён при восстановлении сети`,
-            'success'
-        );
-        
-    } catch (error) {
-        console.error('[Inventory] Delete error:', error);
-        showError('Ошибка удаления: ' + error.message);
-    }
-    
-    updateSyncIndicator();
-}
-
-/**
- * Открытие формы добавления товара
- */
-async function openAddProductForm() {
-    if (!state.user?.id) {
-        showError('Не удалось определить пользователя', 'error');
-        return;
-    }
-    
-    try {
-        const newProduct = await openProductFormModal({
-            mode: 'create',
-            userId: state.user.id,
-            onSuccess: async (product) => {
-                // Оптимистично добавляем
-                optimisticAdd(product);
-                
-                // Сохраняем через Sync Engine
-                await saveChange(
-                    ENTITIES.PRODUCTS,
-                    OP_TYPES.CREATE,
-                    product
-                );
-                
-                showNotification(
-                    syncState.isOnline
-                        ? `Товар "${product.name}" добавлен`
-                        : `Товар "${product.name}" сохранён локально`,
-                    'success'
-                );
-                
-                updateSyncIndicator();
-            }
-        });
-        
-        if (newProduct) {
-            optimisticAdd(newProduct);
-            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.CREATE, newProduct);
-            updateSyncIndicator();
-        }
-        
-    } catch (error) {
-        console.error('[Inventory] Add error:', error);
-        showError('Не удалось открыть форму добавления', 'error');
-    }
-}
-
-/**
- * Открытие формы редактирования товара
- */
-async function openEditProductForm(id) {
-    const product = state.products.find(p => p.id === id);
-    if (!product) {
-        showNotification('Товар не найден', 'error');
-        return;
-    }
-    
-    try {
-        const updatedProduct = await openProductFormModal({
-            mode: 'edit',
-            initialData: product,
-            userId: state.user?.id,
-            onSuccess: async (product) => {
-                optimisticUpdate(id, product);
-                
-                await saveChange(
-                    ENTITIES.PRODUCTS,
-                    OP_TYPES.UPDATE,
-                    product,
-                    product
-                );
-                
-                showNotification(`Товар "${product.name}" обновлён`, 'success');
-                updateSyncIndicator();
-            }
-        });
-        
-        if (updatedProduct) {
-            optimisticUpdate(id, updatedProduct);
-            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.UPDATE, updatedProduct, product);
-            updateSyncIndicator();
-        }
-        
-    } catch (error) {
-        console.error('[Inventory] Edit error:', error);
-        showError('Не удалось открыть форму редактирования', 'error');
     }
 }
 
@@ -460,7 +149,7 @@ function getStatusClass(status) {
 function renderStats() {
     if (!DOM.statsBar) return;
     
-    const stats = state.stats;
+    const stats = productsModule.getStats();
     
     DOM.statsBar.innerHTML = `
         <div class="stat-card-inline">
@@ -504,14 +193,15 @@ function renderStats() {
 function updateCategorySelect() {
     if (!DOM.categoryFilter) return;
     
-    const selectedCategory = state.selectedCategory;
+    const categories = productsModule.getCategories();
+    const selectedCategory = productsModule.getSelectedCategory();
     const currentValue = DOM.categoryFilter.value;
     
     while (DOM.categoryFilter.options.length > 1) {
         DOM.categoryFilter.remove(1);
     }
     
-    state.categories.forEach(cat => {
+    categories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat.value;
         option.textContent = `${getCategoryName(cat.value)} (${cat.count})`;
@@ -525,13 +215,18 @@ function updateCategorySelect() {
 
 function render() {
     if (!DOM.tableBody) return;
-    
+
     renderStats();
     updateCategorySelect();
     
     const productsTable = document.getElementById('productsTable');
+    const isLoading = productsModule.isLoading();
+    const filteredProducts = productsModule.getFilteredProducts();
+    const searchQuery = productsModule.getSearchQuery();
+    const selectedStatus = productsModule.getSelectedStatus();
+    const selectedCategory = productsModule.getSelectedCategory();
     
-    if (state.isLoading && state.products.length === 0) {
+    if (isLoading && filteredProducts.length === 0) {
         DOM.tableBody.innerHTML = `
             <tr>
                 <td colspan="7" style="text-align: center; padding: 40px;">
@@ -544,9 +239,9 @@ function render() {
         return;
     }
     
-    if (state.filteredProducts.length === 0) {
+    if (filteredProducts.length === 0) {
         let message = 'Товары не найдены';
-        if (state.searchQuery || state.selectedStatus || state.selectedCategory) {
+        if (searchQuery || selectedStatus || selectedCategory) {
             message = 'По вашему запросу ничего не найдено';
         }
         
@@ -564,7 +259,7 @@ function render() {
     
     if (productsTable) productsTable.style.display = 'table';
     
-    DOM.tableBody.innerHTML = state.filteredProducts.map(product => {
+    DOM.tableBody.innerHTML = filteredProducts.map(product => {
         const statusText = getStatusText(product.status);
         const statusClass = getStatusClass(product.status);
         const safeName = escapeHtml(product.name || 'Без названия');
@@ -577,7 +272,7 @@ function render() {
             <tr class="product-row ${isSelected ? 'selected' : ''} ${isOptimistic}" data-id="${product.id}">
                 <td class="checkbox-cell">
                     <input type="checkbox" class="table-checkbox" data-id="${product.id}" 
-                        ${state.isDeleting ? 'disabled' : ''} ${isSelected ? 'checked' : ''}>
+                        ${state.isLoading ? 'disabled' : ''} ${isSelected ? 'checked' : ''}>
                 </td>
                 <td class="photo-cell">
                     <div class="product-thumb">
@@ -605,12 +300,12 @@ function render() {
                 <td class="actions-cell">
                     <div class="row-actions">
                         <button class="btn-icon" data-action="edit" data-id="${product.id}" 
-                            title="Редактировать" ${state.isDeleting ? 'disabled' : ''}>
+                            title="Редактировать" ${state.isLoading ? 'disabled' : ''}>
                             ✎
                         </button>
                         <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" 
-                            title="Удалить" ${state.isDeleting ? 'disabled' : ''}>
-                            ${state.isDeleting ? '⌛' : '✕'}
+                            title="Удалить" ${state.isLoading ? 'disabled' : ''}>
+                            ${state.isLoading ? '⌛' : '✕'}
                         </button>
                     </div>
                 </td>
@@ -619,6 +314,7 @@ function render() {
     }).join('');
     
     attachRowEvents();
+    updateSelectAllCheckbox();
 }
 
 function attachRowEvents() {
@@ -627,7 +323,7 @@ function attachRowEvents() {
     DOM.tableBody.querySelectorAll('[data-action="edit"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!state.isDeleting) {
+            if (!state.isLoading) {
                 openEditProductForm(btn.dataset.id);
             }
         });
@@ -636,7 +332,7 @@ function attachRowEvents() {
     DOM.tableBody.querySelectorAll('[data-action="delete"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!state.isDeleting) {
+            if (!state.isLoading) {
                 deleteProduct(btn.dataset.id);
             }
         });
@@ -674,6 +370,86 @@ function updateSelectAllCheckbox() {
     }
 }
 
+// ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ ==========
+
+async function deleteProduct(id) {
+    const success = await operationsModule.deleteProduct(id);
+    if (success) {
+        render();
+        updateSyncIndicator();
+    }
+}
+
+async function openEditProductForm(id) {
+    const product = productsModule.getProductById(id);
+    if (!product) {
+        showNotification('Товар не найден', 'error');
+        return;
+    }
+    
+    try {
+        const updatedProduct = await openProductFormModal({
+            mode: 'edit',
+            initialData: product,
+            userId: state.user?.id,
+            onSuccess: async (product) => {
+                const success = await operationsModule.updateProduct(id, product);
+                if (success) {
+                    showNotification(`Товар "${product.name}" обновлён`, 'success');
+                    productsModule.updateProductInState(id, product);
+                    render();
+                    updateSyncIndicator();
+                }
+            }
+        });
+        
+        if (updatedProduct) {
+            await operationsModule.updateProduct(id, updatedProduct);
+            productsModule.updateProductInState(id, updatedProduct);
+            render();
+            updateSyncIndicator();
+        }
+        
+    } catch (error) {
+        console.error('[Inventory] Edit error:', error);
+        showError('Не удалось открыть форму редактирования', 'error');
+    }
+}
+
+async function openAddProductForm() {
+    if (!state.user?.id) {
+        showError('Не удалось определить пользователя', 'error');
+        return;
+    }
+    
+    try {
+        const newProduct = await openProductFormModal({
+            mode: 'create',
+            userId: state.user.id,
+            onSuccess: async (product) => {
+                const success = await operationsModule.createProduct(product);
+                if (success) {
+                    showNotification(`Товар "${product.name}" добавлен`, 'success');
+                    productsModule.addProductToState(product);
+                    render();
+                    updateSyncIndicator();
+                }
+            }
+        });
+        
+        if (newProduct) {
+            await operationsModule.createProduct(newProduct);
+            productsModule.addProductToState(newProduct);
+            render();
+            updateSyncIndicator();
+        }
+        
+    } catch (error) {
+        console.error('[Inventory] Add error:', error);
+        showError('Не удалось открыть форму добавления', 'error');
+    }
+}
+
 // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
 function cacheElements() {
@@ -696,38 +472,17 @@ function cacheElements() {
     DOM.moduleLoading = document.getElementById('moduleLoading');
 }
 
-function displayUserInfo() {
-    if (DOM.userEmail) {
-        if (state.user) {
-            const name = state.user.email?.split('@')[0] || 'Пользователь';
-            DOM.userEmail.textContent = name;
-        } else {
-            DOM.userEmail.textContent = 'Гость';
-        }
-    }
-}
-
-function markModuleLoaded() {
-    if (DOM.moduleLoading) {
-        DOM.moduleLoading.style.display = 'none';
-    }
-    if (window.markInventoryModuleLoaded) {
-        window.markInventoryModuleLoaded();
-    }
-}
-
 function attachEvents() {
     if (DOM.logoutBtn) {
         DOM.logoutBtn.addEventListener('click', () => logout());
     }
     
     if (DOM.refreshBtn) {
-        DOM.refreshBtn.addEventListener('click', () => {
+        DOM.refreshBtn.addEventListener('click', async () => {
             hideError();
-            loadProductsData(true);
-            if (syncState.isOnline) {
-                syncNow();
-            }
+            await productsModule.loadProducts(true);
+            await operationsModule.syncPendingOperations();
+            render();
         });
     }
     
@@ -736,18 +491,18 @@ function attachEvents() {
     }
     
     if (DOM.offlineRetryBtn) {
-        DOM.offlineRetryBtn.addEventListener('click', () => {
+        DOM.offlineRetryBtn.addEventListener('click', async () => {
             if (syncState.isOnline) {
-                syncNow();
+                await operationsModule.syncPendingOperations();
             }
-            loadProductsData(true);
+            await productsModule.loadProducts(true);
+            render();
         });
     }
     
     if (DOM.searchInput) {
         const debouncedSearch = debounce(() => {
-            state.searchQuery = DOM.searchInput.value.trim().toLowerCase();
-            applyFilters();
+            productsModule.setSearchQuery(DOM.searchInput.value.trim());
             render();
         }, 300);
         DOM.searchInput.addEventListener('input', debouncedSearch);
@@ -755,24 +510,21 @@ function attachEvents() {
     
     if (DOM.statusFilter) {
         DOM.statusFilter.addEventListener('change', (e) => {
-            state.selectedStatus = e.target.value;
-            applyFilters();
+            productsModule.setStatusFilter(e.target.value);
             render();
         });
     }
     
     if (DOM.categoryFilter) {
         DOM.categoryFilter.addEventListener('change', (e) => {
-            state.selectedCategory = e.target.value;
-            applyFilters();
+            productsModule.setCategoryFilter(e.target.value);
             render();
         });
     }
     
     if (DOM.sortSelect) {
         DOM.sortSelect.addEventListener('change', (e) => {
-            state.sortBy = e.target.value;
-            applyFilters();
+            productsModule.setSortBy(e.target.value);
             render();
         });
     }
@@ -795,6 +547,7 @@ function attachEvents() {
                     state.selectedIds.delete(id);
                 }
             });
+            updateSelectAllCheckbox();
         });
     }
     
@@ -810,6 +563,13 @@ function attachEvents() {
         showNotification('Отсутствует подключение к интернету. Работа в офлайн-режиме.', 'warning');
         updateSyncIndicator();
     });
+
+    // Подписка на изменения в модулях
+    productsModule.setProductsChangeCallback(render);
+    operationsModule.setOperationsChangeCallback(() => {
+        updateSyncIndicator();
+        productsModule.loadProducts(true);
+    });
 }
 
 function setupSyncSubscription() {
@@ -824,7 +584,7 @@ function setupSyncSubscription() {
         
         // При завершении синхронизации обновляем данные
         if (event?.type === 'sync-completed' && event.synced > 0) {
-            loadProductsData(true);
+            productsModule.loadProducts(true);
             showNotification(`Синхронизировано операций: ${event.synced}`, 'success');
         }
     });
@@ -864,7 +624,8 @@ async function init() {
     attachEvents();
     
     // Загружаем товары (мгновенно из кэша)
-    await loadProductsData();
+    await productsModule.loadProducts();
+    render();
     
     markModuleLoaded();
     
