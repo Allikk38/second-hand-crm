@@ -108,8 +108,11 @@ export function isOnline() {
  */
 export async function getCurrentUser() {
     if (!isOnline()) {
-        console.warn('[Auth] Offline mode - cannot get user');
-        return { user: null, error: 'Отсутствует подключение к интернету' };
+        return { 
+            user: null, 
+            error: 'Отсутствует подключение к интернету',
+            errorType: 'network'
+        };
     }
     
     try {
@@ -117,15 +120,27 @@ export async function getCurrentUser() {
         const { data: { user }, error } = await supabase.auth.getUser();
         
         if (error) {
-            console.error('[Auth] Get user error:', error);
-            return { user: null, error: error.message || 'Ошибка получения пользователя' };
+            // Определяем тип ошибки
+            const errorType = error.status === 401 || error.message?.includes('session') 
+                ? 'auth' 
+                : 'network';
+            
+            return { 
+                user: null, 
+                error: error.message || 'Ошибка получения пользователя',
+                errorType
+            };
         }
         
-        return { user, error: null };
+        return { user, error: null, errorType: null };
         
     } catch (error) {
-        console.error('[Auth] Unexpected error:', error);
-        return { user: null, error: error.message || 'Неизвестная ошибка' };
+        // Сетевые ошибки (Failed to fetch, timeout) попадают сюда
+        return { 
+            user: null, 
+            error: error.message || 'Неизвестная ошибка',
+            errorType: 'network'
+        };
     }
 }
 
