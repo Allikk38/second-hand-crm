@@ -1,3 +1,7 @@
+// ========================================
+// FILE: utils/categorySchema.js
+// ========================================
+
 /**
  * Category Schema Module
  * 
@@ -11,12 +15,10 @@
  * - Форматирование атрибутов для отображения в UI.
  * 
  * @module categorySchema
- * @version 2.1.0
+ * @version 2.2.0
  * @changes
- * - Добавлены категории electronics и furniture.
- * - Обновлён CATEGORY_KEYS.
- * - Поле setItems в dishes изменено на текстовое.
- * - Добавлен формат 'compact' в formatAttributes.
+ * - Добавлена функция groupByCategoryForDb для создания объектов, совместимых с Supabase JSONB.
+ * - Улучшен JSDoc.
  */
 
 // ========== КОНСТАНТЫ ==========
@@ -440,36 +442,61 @@ export function createEmptyAttributes(category) {
 
 /**
  * Группирует массив товаров по категориям.
+ * Возвращает Map для эффективной работы в UI.
+ * 
  * @param {Array<Object>} products - Массив товаров
  * @returns {Object} { byCategory, counts, sorted }
  */
 export function groupByCategory(products = []) {
-    const byCategory = {};
-    const counts = {};
+    const byCategory = new Map();
+    const counts = new Map();
     
     // Инициализируем все категории из схемы
     Object.keys(CATEGORY_SCHEMA).forEach(key => {
-        byCategory[key] = [];
-        counts[key] = 0;
+        byCategory.set(key, []);
+        counts.set(key, 0);
     });
     
     products.forEach(product => {
         const category = product.category || 'other';
         
-        if (!byCategory[category]) {
-            byCategory[category] = [];
-            counts[category] = 0;
+        if (!byCategory.has(category)) {
+            byCategory.set(category, []);
+            counts.set(category, 0);
         }
         
-        byCategory[category].push(product);
-        counts[category]++;
+        byCategory.get(category).push(product);
+        counts.set(category, (counts.get(category) || 0) + 1);
     });
     
-    const sorted = Object.entries(counts)
+    const sorted = Array.from(counts.entries())
         .sort((a, b) => b[1] - a[1])
         .map(([key]) => key);
     
     return { byCategory, counts, sorted };
+}
+
+/**
+ * Группирует товары по категориям и возвращает объект, совместимый с JSONB в Supabase.
+ * Используется для сохранения в БД.
+ * 
+ * @param {Array<Object>} products - Массив товаров
+ * @returns {Object} Объект { "categoryKey": [products] }
+ */
+export function groupByCategoryForDb(products = []) {
+    const result = {};
+    const { byCategory } = groupByCategory(products);
+    
+    for (const [key, value] of byCategory.entries()) {
+        // Фильтруем товары, чтобы убрать временные свойства из _optimistic
+        const cleanProducts = value.map(p => {
+            const { _optimistic, _deleted, ...cleanProduct } = p;
+            return cleanProduct;
+        });
+        result[key] = cleanProducts;
+    }
+    
+    return result;
 }
 
 /**
@@ -510,6 +537,7 @@ export default {
     formatAttributes,
     createEmptyAttributes,
     groupByCategory,
+    groupByCategoryForDb,
     hasField,
     getFieldMetadata
 };
