@@ -14,13 +14,14 @@
  * - Кэширование данных в sessionStorage.
  * - Chart.js загружается только для дашборда.
  * - Использование централизованных утилит из core/auth.js и utils/ui.js.
+ * - Поддержка офлайн-режима при отсутствии сети.
  * 
  * @module reports
- * @version 3.3.0
+ * @version 3.4.0
  * @changes
- * - Удалена локальная реализация getSupabase (импортируется из core/auth.js).
- * - Удалены локальные реализации showNotification и escapeHtml.
- * - Добавлены импорты из utils/ui.js и utils/formatters.js.
+ * - Добавлена поддержка офлайн-режима через requireAuth.
+ * - Добавлен офлайн-баннер и функции управления им.
+ * - Использование кэшированных данных в офлайн-режиме.
  */
 
 import { requireAuth, logout, getCurrentUser, isOnline, getSupabase } from '../core/auth.js';
@@ -36,6 +37,7 @@ const CACHE_KEY_PREFIX = 'reports_cache_';
 
 const state = {
     user: null,
+    isOffline: false,
     activeTab: 'dashboard',
     period: 'week',
     isLoading: false,
@@ -59,8 +61,30 @@ const DOM = {
     logoutBtn: null,
     userEmail: null,
     modalContainer: null,
-    notificationContainer: null
+    notificationContainer: null,
+    offlineBanner: null,
+    offlineRetryBtn: null
 };
+
+// ========== ОФЛАЙН-БАННЕР ==========
+
+/**
+ * Показывает офлайн-баннер
+ */
+function showOfflineBanner() {
+    if (DOM.offlineBanner) {
+        DOM.offlineBanner.style.display = 'flex';
+    }
+}
+
+/**
+ * Скрывает офлайн-баннер
+ */
+function hideOfflineBanner() {
+    if (DOM.offlineBanner) {
+        DOM.offlineBanner.style.display = 'none';
+    }
+}
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
@@ -471,20 +495,24 @@ function formatDuration(ms) {
 async function loadData() {
     if (state.isLoading) return;
     
+    if (!isOnline()) {
+        const cacheKey = getCacheKey(state.activeTab, state.period);
+        const cached = getFromCache(cacheKey);
+        if (cached) {
+            state.data[state.activeTab] = cached;
+            render();
+            showNotification('Работа в офлайн-режиме (данные из кэша)', 'warning');
+        } else {
+            showNotification('Нет данных для офлайн-режима', 'warning');
+        }
+        return;
+    }
+    
     state.isLoading = true;
     showLoader();
     
     const dateRange = getDateRange(state.period);
     const cacheKey = getCacheKey(state.activeTab, state.period);
-    
-    const cached = getFromCache(cacheKey);
-    if (cached) {
-        state.data[state.activeTab] = cached;
-        state.isLoading = false;
-        hideLoader();
-        render();
-        return;
-    }
     
     try {
         const allData = await fetchSalesData(dateRange);
@@ -495,10 +523,18 @@ async function loadData() {
         state.data.shifts = allData.shifts;
         
         setToCache(cacheKey, state.data[state.activeTab]);
+        hideOfflineBanner();
         
     } catch (error) {
         console.error('[Reports] Load data error:', error);
-        showNotification('Ошибка загрузки данных: ' + error.message, 'error');
+        
+        const cached = getFromCache(cacheKey);
+        if (cached) {
+            state.data[state.activeTab] = cached;
+            showNotification('Загружены данные из кэша', 'info');
+        } else {
+            showNotification('Ошибка загрузки данных: ' + error.message, 'error');
+        }
     } finally {
         state.isLoading = false;
         hideLoader();
@@ -589,15 +625,21 @@ function cacheElements() {
     DOM.userEmail = document.getElementById('userEmail');
     DOM.modalContainer = document.getElementById('modalContainer');
     DOM.notificationContainer = document.getElementById('notificationContainer');
+    DOM.offlineBanner = document.getElementById('offlineBanner');
+    DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
 }
 
 /**
  * Отображает email пользователя в шапке
  */
 function displayUserInfo() {
-    if (DOM.userEmail && state.user) {
-        const name = state.user.email?.split('@')[0] || 'Пользователь';
-        DOM.userEmail.textContent = name;
+    if (DOM.userEmail) {
+        if (state.user) {
+            const name = state.user.email?.split('@')[0] || 'Пользователь';
+            DOM.userEmail.textContent = name;
+        } else {
+            DOM.userEmail.textContent = 'Офлайн-режим';
+        }
     }
 }
 
@@ -620,6 +662,12 @@ function attachEvents() {
     if (DOM.refreshBtn) {
         DOM.refreshBtn.addEventListener('click', () => {
             clearCache();
+            loadData();
+        });
+    }
+    
+    if (DOM.offlineRetryBtn) {
+        DOM.offlineRetryBtn.addEventListener('click', () => {
             loadData();
         });
     }
@@ -650,6 +698,17 @@ function attachEvents() {
             location.reload();
         });
     }
+    
+    window.addEventListener('online', () => {
+        hideOfflineBanner();
+        showNotification('Соединение восстановлено', 'success');
+        loadData();
+    });
+    
+    window.addEventListener('offline', () => {
+        showOfflineBanner();
+        showNotification('Отсутствует подключение к интернету', 'warning');
+    });
 }
 
 /**
@@ -660,8 +719,20 @@ async function init() {
     
     cacheElements();
     
-    state.user = await requireAuth();
-    if (!state.user) return;
+    const authResult = await requireAuth();
+    
+    if (authResult.user) {
+        state.user = authResult.user;
+        state.isOffline = false;
+        hideOfflineBanner();
+    } else if (authResult.offline || authResult.networkError) {
+        state.isOffline = true;
+        state.user = null;
+        showOfflineBanner();
+        showNotification('Работа в офлайн-режиме. Некоторые функции недоступны.', 'warning');
+    } else if (authResult.authError) {
+        return;
+    }
     
     displayUserInfo();
     attachEvents();
