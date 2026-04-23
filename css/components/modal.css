@@ -5,16 +5,16 @@
  * Без анимаций, без эффектов стекла.
  * 
  * @stylesheet modal
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны все анимации (fade, scale, slide)
- * - Убран backdrop-filter (blur)
- * - Упрощены оверлей и контейнер
- * - Статичные, предсказуемые размеры
+ * - Упрощены селекторы.
+ * - Добавлен стиль для .modal-backdrop.
+ * - Удалены дублирующиеся правила.
  */
 
 /* ========== MODAL OVERLAY ========== */
-.modal-overlay {
+.modal-overlay,
+.modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
@@ -107,6 +107,9 @@
     border-top: var(--border-width) solid var(--color-border);
     background: var(--color-gray-50);
     flex-shrink: 0;
+    display: flex;
+    gap: var(--spacing-3);
+    justify-content: flex-end;
 }
 
 /* ========== CONFIRM DIALOG ========== */
@@ -121,14 +124,13 @@
     font-size: var(--font-size-base);
 }
 
-.confirm-dialog .actions {
-    display: flex;
-    gap: var(--spacing-3);
-    margin-top: var(--spacing-5);
+.confirm-dialog .modal-footer {
+    justify-content: center;
 }
 
-.confirm-dialog .actions button {
+.confirm-dialog .modal-footer button {
     flex: 1;
+    max-width: 150px;
 }
 
 /* ========== PRODUCT FORM MODAL ========== */
@@ -246,7 +248,8 @@
 
 /* ========== АДАПТИВНОСТЬ ========== */
 @media (max-width: 768px) {
-    .modal-overlay {
+    .modal-overlay,
+    .modal-backdrop {
         padding: var(--spacing-2);
     }
     
@@ -266,13 +269,14 @@
         max-height: 250px;
     }
     
-    .confirm-dialog .actions {
-        flex-direction: column;
+    .confirm-dialog .modal-footer button {
+        max-width: none;
     }
 }
 
 @media (max-width: 480px) {
-    .modal-overlay {
+    .modal-overlay,
+    .modal-backdrop {
         padding: 0;
     }
     
@@ -286,5 +290,9 @@
         width: 100%;
         max-height: 100vh;
         border-radius: 0;
+    }
+    
+    .confirm-dialog .modal-footer {
+        flex-direction: column;
     }
 }
