@@ -172,14 +172,12 @@ export async function requireAuth(options = {}) {
         }
         
         return user;
-        
     } catch (error) {
         console.error('[Auth] Require auth error:', error);
         window.location.href = redirectTo;
         return null;
     }
 }
-
 // ========== ВХОД В СИСТЕМУ ==========
 
 /**
