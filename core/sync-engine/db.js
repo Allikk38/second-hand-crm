@@ -9,7 +9,7 @@
  * Управляет кэшем данных и очередью операций.
  * 
  * @module sync-engine/db
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 // ========== КОНСТАНТЫ ==========
@@ -85,7 +85,21 @@ export async function withTransaction(storeName, mode, callback) {
         transaction.onerror = () => reject(transaction.error);
         transaction.onabort = () => reject(new Error('Transaction aborted'));
         
-        result = callback(store);
+        try {
+            const callbackResult = callback(store);
+            
+            // Если callback вернул IDBRequest, ждём его завершения
+            if (callbackResult && typeof callbackResult.then === 'function') {
+                callbackResult.then(r => result = r).catch(reject);
+            } else if (callbackResult instanceof IDBRequest) {
+                callbackResult.onsuccess = () => result = callbackResult.result;
+                callbackResult.onerror = () => reject(callbackResult.error);
+            } else {
+                result = callbackResult;
+            }
+        } catch (error) {
+            reject(error);
+        }
     });
 }
 
@@ -99,7 +113,7 @@ export async function cacheSet(entity, id, data) {
     const timestamp = Date.now();
     
     await withTransaction(STORES.CACHE, 'readwrite', (store) => {
-        store.put({ key, entity, data, timestamp });
+        return store.put({ key, entity, data, timestamp });
     });
 }
 
@@ -130,7 +144,7 @@ export async function cacheDelete(entity, id) {
     const key = `${entity}:${id}`;
     
     await withTransaction(STORES.CACHE, 'readwrite', (store) => {
-        store.delete(key);
+        return store.delete(key);
     });
 }
 
@@ -142,15 +156,22 @@ export async function cacheClear(entity = null) {
         if (entity) {
             const index = store.index('entity');
             const range = IDBKeyRange.only(entity);
-            return index.openCursor(range).onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (cursor) {
-                    cursor.delete();
-                    cursor.continue();
-                }
-            };
+            const request = index.openCursor(range);
+            
+            return new Promise((resolve, reject) => {
+                request.onsuccess = (event) => {
+                    const cursor = event.target.result;
+                    if (cursor) {
+                        cursor.delete();
+                        cursor.continue();
+                    } else {
+                        resolve();
+                    }
+                };
+                request.onerror = () => reject(request.error);
+            });
         } else {
-            store.clear();
+            return store.clear();
         }
     });
 }
@@ -169,13 +190,13 @@ export function generateOperationId() {
  */
 export async function enqueueOperation(operation) {
     await withTransaction(STORES.OPERATIONS, 'readwrite', (store) => {
-        store.add(operation);
+        return store.add(operation);
     });
     return operation.id;
 }
 
 /**
- * Получает все ожидающие операции
+ * Получает все ожидающие операции (ИСПРАВЛЕНО)
  */
 export async function getPendingOperations() {
     const ops = await withTransaction(STORES.OPERATIONS, 'readonly', (store) => {
@@ -184,6 +205,13 @@ export async function getPendingOperations() {
         return index.getAll(range);
     });
     
+    // Проверяем что ops - массив
+    if (!Array.isArray(ops)) {
+        console.warn('[DB] getPendingOperations: ops is not an array, returning empty');
+        return [];
+    }
+    
+    // Сортируем по приоритету и времени
     return ops.sort((a, b) => {
         if (a.priority !== b.priority) {
             return a.priority - b.priority;
@@ -197,11 +225,16 @@ export async function getPendingOperations() {
  */
 export async function updateOperation(id, updates) {
     await withTransaction(STORES.OPERATIONS, 'readwrite', async (store) => {
-        const op = await store.get(id);
+        const op = await new Promise((resolve, reject) => {
+            const request = store.get(id);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        
         if (op) {
             Object.assign(op, updates);
             op.updatedAt = Date.now();
-            store.put(op);
+            return store.put(op);
         }
     });
 }
@@ -211,6 +244,6 @@ export async function updateOperation(id, updates) {
  */
 export async function removeOperation(id) {
     await withTransaction(STORES.OPERATIONS, 'readwrite', (store) => {
-        store.delete(id);
+        return store.delete(id);
     });
 }
