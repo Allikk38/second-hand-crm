@@ -5,12 +5,11 @@
  * Без анимаций строк, без градиентов.
  * 
  * @stylesheet tables
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны transform и анимированные тени у строк
- * - Убраны градиенты у заголовков
- * - Упрощены индикаторы сортировки
- * - Четкие, статичные состояния
+ * - Удалены дублирующиеся стили (status-badge).
+ * - Упрощены селекторы.
+ * - Добавлены комментарии.
  */
 
 /* ========== DATA TABLE ========== */
@@ -36,7 +35,7 @@
     letter-spacing: var(--letter-spacing-wide);
 }
 
-/* Сортируемые колонки */
+/* ========== СОРТИРУЕМЫЕ КОЛОНКИ ========== */
 .data-table th.sortable {
     cursor: pointer;
     user-select: none;
@@ -74,14 +73,14 @@
     color: var(--color-primary);
 }
 
-/* Ячейки */
+/* ========== ЯЧЕЙКИ ========== */
 .data-table td {
     padding: var(--spacing-3) var(--spacing-4);
     border-bottom: var(--border-width) solid var(--color-border-light);
     vertical-align: middle;
 }
 
-/* Строки */
+/* ========== СТРОКИ ========== */
 .data-table tbody tr {
     background: var(--color-white);
 }
@@ -94,7 +93,7 @@
     background: var(--color-primary-bg);
 }
 
-/* ========== TABLE VARIANTS ========== */
+/* ========== ВАРИАНТЫ ТАБЛИЦ ========== */
 
 /* Компактная таблица */
 .table-sm th,
@@ -126,7 +125,7 @@
     border-bottom-width: 2px;
 }
 
-/* ========== TABLE ALIGNMENT ========== */
+/* ========== ВЫРАВНИВАНИЕ ========== */
 .data-table .text-left { text-align: left; }
 .data-table .text-center { text-align: center; }
 .data-table .text-right { text-align: right; }
@@ -146,7 +145,7 @@
     color: var(--color-danger);
 }
 
-/* ========== TABLE ACTIONS ========== */
+/* ========== ДЕЙСТВИЯ В ТАБЛИЦЕ ========== */
 .table-actions {
     display: flex;
     gap: var(--spacing-2);
@@ -171,7 +170,7 @@
     color: var(--color-danger);
 }
 
-/* ========== TABLE CONTAINER ========== */
+/* ========== КОНТЕЙНЕР ТАБЛИЦЫ ========== */
 .table-container {
     overflow-x: auto;
     border-radius: var(--radius-lg);
@@ -183,7 +182,7 @@
     margin: 0;
 }
 
-/* ========== TABLE FOOTER ========== */
+/* ========== ПОДВАЛ ТАБЛИЦЫ ========== */
 .table-footer {
     display: flex;
     align-items: center;
@@ -198,7 +197,7 @@
     color: var(--color-text-secondary);
 }
 
-/* ========== PAGINATION ========== */
+/* ========== ПАГИНАЦИЯ ========== */
 .pagination {
     display: flex;
     align-items: center;
@@ -242,7 +241,45 @@
     color: var(--color-text-muted);
 }
 
-/* ========== SELLER INFO ========== */
+/* ========== СТАТУСЫ (для таблиц) ========== */
+.status-badge {
+    display: inline-block;
+    padding: var(--spacing-1) var(--spacing-3);
+    border-radius: var(--radius-full);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+}
+
+.status-badge.status-in_stock {
+    background: var(--color-success-bg);
+    color: var(--color-success-dark);
+}
+
+.status-badge.status-sold {
+    background: var(--color-danger-bg);
+    color: var(--color-danger-dark);
+}
+
+.status-badge.status-reserved {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
+}
+
+/* ========== ЧЕКБОКС В ТАБЛИЦЕ ========== */
+.data-table .checkbox-cell {
+    width: 40px;
+    text-align: center;
+}
+
+.table-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--color-primary);
+}
+
+/* ========== ДАННЫЕ ПРОДАВЦА (для отчётов) ========== */
 .seller-info {
     display: flex;
     flex-direction: column;
@@ -260,7 +297,7 @@
     color: var(--color-text-muted);
 }
 
-/* ========== TOP PRODUCTS LIST ========== */
+/* ========== ТОП ТОВАРОВ (для отчётов) ========== */
 .top-products-list {
     display: flex;
     flex-direction: column;
@@ -312,7 +349,7 @@
     font-family: var(--font-family-mono);
 }
 
-/* ========== EMPTY STATE ========== */
+/* ========== ПУСТОЕ СОСТОЯНИЕ ========== */
 .empty-state {
     display: flex;
     flex-direction: column;
@@ -336,44 +373,6 @@
     margin-bottom: var(--spacing-4);
     font-size: var(--font-size-base);
     color: var(--color-text-secondary);
-}
-
-/* ========== STATUS BADGES ========== */
-.status-badge {
-    display: inline-block;
-    padding: var(--spacing-1) var(--spacing-3);
-    border-radius: var(--radius-full);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-semibold);
-    text-transform: uppercase;
-}
-
-.status-badge.status-in_stock {
-    background: var(--color-success-bg);
-    color: var(--color-success-dark);
-}
-
-.status-badge.status-sold {
-    background: var(--color-danger-bg);
-    color: var(--color-danger-dark);
-}
-
-.status-badge.status-reserved {
-    background: var(--color-warning-bg);
-    color: var(--color-warning-dark);
-}
-
-/* ========== CHECKBOX IN TABLE ========== */
-.data-table .checkbox-cell {
-    width: 40px;
-    text-align: center;
-}
-
-.table-checkbox {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: var(--color-primary);
 }
 
 /* ========== АДАПТИВНОСТЬ ========== */
