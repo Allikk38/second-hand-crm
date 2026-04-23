@@ -5,13 +5,25 @@
  * Без анимаций, без градиентов.
  * 
  * @stylesheet app
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны анимации у вкладок
- * - Упрощен хедер
- * - Статичные вкладки без эффекта "поверх"
- * - Убран градиент из фона
+ * - Удалены дублирующиеся стили (skeleton, loading-spinner).
+ * - Добавлена переменная --product-card-width.
+ * - Удалены медиа-запросы (вынесены в responsive.css).
+ * - Упрощены селекторы.
  */
+
+/* ========== ПЕРЕМЕННЫЕ ========== */
+:root {
+    --product-card-width: 160px;
+    --product-card-image-height: 160px;
+    --product-card-padding: var(--spacing-3);
+    --table-header-bg: var(--color-gray-50);
+    --table-cell-padding: var(--spacing-3) var(--spacing-4);
+    --table-row-hover: var(--color-gray-50);
+    --skeleton-bg: var(--color-gray-200);
+    --skeleton-radius: var(--radius-sm);
+}
 
 /* ========== ROOT CONTAINERS ========== */
 html {
@@ -118,7 +130,6 @@ body {
     white-space: nowrap;
 }
 
-/* Иконки в кнопках навигации */
 .tab-icon {
     width: 18px;
     height: 18px;
@@ -137,7 +148,6 @@ body {
     opacity: 0.8;
 }
 
-/* Активная вкладка */
 .app-tab.active {
     color: var(--color-primary-dark);
     border-bottom-color: var(--color-primary);
@@ -165,41 +175,6 @@ body {
     flex-direction: column;
     padding: var(--spacing-4);
     background: var(--color-bg);
-}
-
-@media (min-width: 641px) {
-    .inventory-page,
-    .cashier-page,
-    .reports-page {
-        padding: var(--spacing-5);
-    }
-}
-
-@media (min-width: 1025px) {
-    .inventory-page,
-    .cashier-page,
-    .reports-page {
-        padding: var(--spacing-6);
-    }
-}
-
-/* Кастомный скроллбар для контента */
-.page-container::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-.page-container::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.page-container::-webkit-scrollbar-thumb {
-    background: var(--color-gray-300);
-    border-radius: var(--radius-full);
-}
-
-.page-container::-webkit-scrollbar-thumb:hover {
-    background: var(--color-gray-400);
 }
 
 /* ========== PAGE HEADER ========== */
@@ -356,65 +331,4 @@ body {
     font-size: 48px;
     margin-bottom: var(--spacing-4);
     opacity: 0.5;
-}
-
-/* ========== АДАПТИВНОСТЬ ========== */
-@media (max-width: 768px) {
-    .app-header {
-        padding: 0 var(--spacing-4);
-    }
-    
-    .app-header h1 {
-        font-size: var(--font-size-sm);
-    }
-    
-    .app-tabs {
-        padding: 0 var(--spacing-4);
-    }
-    
-    .app-tab {
-        padding: var(--spacing-2) var(--spacing-3);
-        font-size: var(--font-size-xs);
-    }
-    
-    .page-header {
-        flex-direction: column;
-        align-items: stretch;
-        gap: var(--spacing-3);
-    }
-    
-    .header-right {
-        justify-content: flex-end;
-    }
-    
-    .filters-panel {
-        flex-direction: column;
-        align-items: stretch;
-    }
-    
-    .bulk-actions-panel {
-        margin-left: 0;
-        justify-content: center;
-    }
-}
-
-/* ========== ПЕЧАТЬ ========== */
-@media print {
-    .app-header,
-    .app-tabs {
-        display: none !important;
-    }
-    
-    .page-container {
-        overflow: visible;
-        height: auto;
-        padding: 0 !important;
-    }
-    
-    .inventory-page,
-    .cashier-page,
-    .reports-page {
-        padding: 1cm !important;
-        background: white !important;
-    }
 }
