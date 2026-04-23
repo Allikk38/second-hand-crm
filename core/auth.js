@@ -173,24 +173,28 @@ export async function requireAuth(options = {}) {
     
     if (!isOnline()) {
         console.warn('[Auth] Offline mode - cannot verify auth');
-        alert('Нет подключения к интернету. Проверьте соединение и обновите страницу.');
-        return null;
+        return { user: null, offline: true };
     }
     
     try {
-        const { user, error } = await getCurrentUser();
+        const { user, error, errorType } = await getCurrentUser();
         
-        if (error || !user) {
-            console.log('[Auth] No active session, redirecting to login');
+        if (errorType === 'auth' || (!user && errorType !== 'network')) {
+            console.log('[Auth] Invalid session, redirecting to login');
             window.location.href = redirectTo;
-            return null;
+            return { user: null, authError: true };
         }
         
-        return user;
+        if (errorType === 'network') {
+            console.warn('[Auth] Network error, allowing offline mode');
+            return { user: null, networkError: true };
+        }
+        
+        return { user };
+        
     } catch (error) {
         console.error('[Auth] Require auth error:', error);
-        window.location.href = redirectTo;
-        return null;
+        return { user: null, networkError: true };
     }
 }
 // ========== ВХОД В СИСТЕМУ ==========
