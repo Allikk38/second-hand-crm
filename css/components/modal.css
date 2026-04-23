@@ -3,13 +3,17 @@
  * 
  * Строгие модальные окна для бизнес-приложений.
  * Без анимаций, без эффектов стекла.
+ * Включает полноценную форму добавления/редактирования товара.
  * 
  * @stylesheet modal
- * @version 5.0.0
+ * @version 5.1.0
  * @changes
- * - Упрощены селекторы.
- * - Добавлен стиль для .modal-backdrop.
- * - Удалены дублирующиеся правила.
+ * - Добавлены стили для .product-form-modal (полноценная форма товара).
+ * - Добавлены стили для загрузки фото (.photo-upload).
+ * - Добавлены стили для секции ценообразования (.pricing-section, .margin-indicator).
+ * - Добавлены стили для динамических полей категорий (.category-fields).
+ * - Добавлены стили для валидации в реальном времени (.field-error).
+ * - Улучшена адаптивность для мобильных устройств.
  */
 
 /* ========== MODAL OVERLAY ========== */
@@ -138,12 +142,211 @@
     max-width: 640px;
 }
 
-.product-form-modal .pricing-section {
+/* Загрузка фото */
+.photo-upload-section {
+    margin-bottom: var(--spacing-5);
+}
+
+.photo-upload-label {
+    display: block;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    margin-bottom: var(--spacing-2);
+    color: var(--color-text);
+}
+
+.photo-upload-container {
+    display: flex;
+    gap: var(--spacing-4);
+    align-items: flex-start;
+}
+
+.photo-preview {
+    width: 120px;
+    height: 120px;
+    background: var(--color-gray-100);
+    border-radius: var(--radius-md);
+    border: var(--border-width) dashed var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.photo-preview.has-image {
+    border-style: solid;
+    border-color: var(--color-border);
+}
+
+.photo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.photo-placeholder-icon {
+    font-size: 48px;
+    opacity: 0.3;
+    color: var(--color-text-muted);
+}
+
+.photo-upload-controls {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+.photo-upload-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-2);
+    padding: 0 var(--spacing-4);
+    height: 36px;
+    background: var(--color-white);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.photo-upload-btn:hover {
+    background: var(--color-gray-50);
+    border-color: var(--color-gray-400);
+}
+
+.photo-upload-hint {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+}
+
+.photo-remove-btn {
+    color: var(--color-danger);
+    border-color: var(--color-danger-light);
+}
+
+.photo-remove-btn:hover {
+    background: var(--color-danger-bg);
+    border-color: var(--color-danger);
+}
+
+/* Секция ценообразования */
+.pricing-section {
     background: var(--color-gray-50);
     padding: var(--spacing-4);
     border-radius: var(--radius-md);
     margin: var(--spacing-4) 0;
     border: var(--border-width) solid var(--color-border);
+}
+
+.pricing-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-3);
+}
+
+.pricing-row:last-child {
+    margin-bottom: 0;
+}
+
+.margin-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: var(--spacing-3);
+    margin-top: var(--spacing-3);
+    border-top: var(--border-width) dashed var(--color-border);
+}
+
+.margin-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.margin-value {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    font-family: var(--font-family-mono);
+}
+
+.margin-value.positive {
+    color: var(--color-success-dark);
+}
+
+.margin-value.negative {
+    color: var(--color-danger-dark);
+}
+
+.margin-value.warning {
+    color: var(--color-warning-dark);
+}
+
+/* Динамические поля категорий */
+.category-fields {
+    margin-top: var(--spacing-4);
+    padding-top: var(--spacing-4);
+    border-top: var(--border-width) solid var(--color-border);
+}
+
+.category-fields-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text);
+    margin-bottom: var(--spacing-3);
+}
+
+/* Валидация полей в реальном времени */
+.field-error {
+    margin-top: var(--spacing-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-danger);
+}
+
+.has-error input,
+.has-error select,
+.has-error textarea {
+    border-color: var(--color-danger);
+    background: var(--color-danger-bg);
+}
+
+.has-error input:focus,
+.has-error select:focus,
+.has-error textarea:focus {
+    border-color: var(--color-danger);
+}
+
+/* Индикатор загрузки внутри формы */
+.form-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    border-radius: var(--radius-lg);
+}
+
+.form-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }
 
 /* ========== QUICK VIEW MODAL ========== */
@@ -258,6 +461,30 @@
         max-height: 95vh;
     }
     
+    .product-form-modal {
+        max-width: 100%;
+    }
+    
+    .photo-upload-container {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    
+    .photo-preview {
+        width: 160px;
+        height: 160px;
+    }
+    
+    .photo-upload-controls {
+        width: 100%;
+    }
+    
+    .pricing-row {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-3);
+    }
+    
     .quick-view-content {
         flex-direction: column;
         max-height: 90vh;
@@ -286,6 +513,28 @@
         border: none;
     }
     
+    .modal-header {
+        padding: var(--spacing-3) var(--spacing-4);
+    }
+    
+    .modal-body {
+        padding: var(--spacing-4);
+    }
+    
+    .modal-footer {
+        padding: var(--spacing-3) var(--spacing-4);
+        flex-direction: column;
+    }
+    
+    .modal-footer .btn {
+        width: 100%;
+    }
+    
+    .photo-preview {
+        width: 140px;
+        height: 140px;
+    }
+    
     .quick-view-content {
         width: 100%;
         max-height: 100vh;
@@ -294,5 +543,14 @@
     
     .confirm-dialog .modal-footer {
         flex-direction: column;
+    }
+}
+
+/* ========== ПЕЧАТЬ ========== */
+@media print {
+    .modal-overlay,
+    .modal-backdrop,
+    .quick-view-modal {
+        display: none !important;
     }
 }
