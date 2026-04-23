@@ -1,7 +1,3 @@
-// ========================================
-// FILE: ./utils/logger.js
-// ========================================
-
 /**
  * Logger Utility
  * 
@@ -13,14 +9,14 @@
  * - Пространства имён для контекстного логирования
  * - Автоматическое отключение DEBUG в production
  * - Форматирование с временными метками
- * - Готовность к интеграции с внешними сервисами мониторинга
  * 
  * @module logger
- * @version 1.0.0
+ * @version 1.1.0
  * @changes
- * - Создан для диагностики проблем с открытием смены
- * - Добавлена поддержка namespace
- * - Реализовано автоматическое определение окружения
+ * - Убрана отправка логов на сервер (не требуется).
+ * - Упрощена буферизация ошибок.
+ * - Добавлена проверка console.group.
+ * - Улучшена обработка stack trace в throwError.
  */
 
 // ========== КОНФИГУРАЦИЯ ==========
@@ -55,12 +51,11 @@ const LOG_LEVELS = {
 const MIN_LEVEL = ENV === 'development' ? LOG_LEVELS.DEBUG : LOG_LEVELS.INFO;
 
 /**
- * Хранилище логов для отправки на сервер
+ * Хранилище логов для отладки
  * @type {Array<Object>}
  */
 const logBuffer = [];
-const MAX_BUFFER_SIZE = 100;
-const FLUSH_INTERVAL = 30000; // 30 секунд
+const MAX_BUFFER_SIZE = 50;
 
 // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
@@ -80,7 +75,7 @@ function formatTimestamp() {
 /**
  * Получает символ для уровня логирования
  * @param {number} level - Уровень логирования
- * @returns {string} Символ уровня
+ * @returns {string}
  */
 function getLevelSymbol(level) {
     switch (level) {
@@ -95,7 +90,7 @@ function getLevelSymbol(level) {
 /**
  * Получает текстовое название уровня
  * @param {number} level - Уровень логирования
- * @returns {string} Название уровня
+ * @returns {string}
  */
 function getLevelName(level) {
     switch (level) {
@@ -117,8 +112,6 @@ function getLevelName(level) {
 function formatLogMessage(namespace, level, args) {
     const timestamp = formatTimestamp();
     const symbol = getLevelSymbol(level);
-    const levelName = getLevelName(level);
-    
     const prefix = `[${timestamp}] ${symbol} [${namespace}]`;
     
     if (typeof args[0] === 'string') {
@@ -129,7 +122,7 @@ function formatLogMessage(namespace, level, args) {
 }
 
 /**
- * Сохраняет лог в буфер для возможной отправки на сервер
+ * Сохраняет лог в буфер для отладки
  * @param {string} namespace - Пространство имён
  * @param {number} level - Уровень логирования
  * @param {Array} args - Аргументы лога
@@ -167,24 +160,13 @@ function bufferLog(namespace, level, args) {
     }
 }
 
-/**
- * Отправляет накопленные логи на сервер
- */
-function flushLogs() {
-    if (logBuffer.length === 0) return;
-    
-    // TODO: Реализовать отправку на сервер при необходимости
-    // const logs = [...logBuffer];
-    // logBuffer.length = 0;
-    // fetch('/api/logs', { method: 'POST', body: JSON.stringify(logs) });
-}
-
 // ========== ПУБЛИЧНЫЙ API ==========
 
 /**
  * Создаёт логгер для указанного пространства имён
  * @param {string} namespace - Пространство имён (например, 'ShiftPanel', 'CashierApp')
  * @returns {Object} Объект с методами логирования
+ * @throws {Error} Если namespace не указан
  */
 export function createLogger(namespace) {
     if (!namespace || typeof namespace !== 'string') {
@@ -237,18 +219,18 @@ export function createLogger(namespace) {
         /**
          * Логирует и бросает ошибку
          * @param {string|Error} error - Сообщение об ошибке или объект Error
-         * @param {Object} context - Дополнительный контекст
+         * @param {Object} [context] - Дополнительный контекст
          * @throws {Error}
          */
         throwError(error, context = {}) {
             const errorObj = typeof error === 'string' ? new Error(error) : error;
             
-            this.error('Throwing error:', errorObj.message, context, errorObj.stack);
-            
             // Добавляем контекст к ошибке
             if (context && typeof context === 'object') {
                 errorObj.context = context;
             }
+            
+            this.error('Throwing error:', errorObj.message, context);
             
             throw errorObj;
         },
@@ -258,7 +240,7 @@ export function createLogger(namespace) {
          * @param {string} label - Метка для измерения
          */
         time(label) {
-            if (MIN_LEVEL <= LOG_LEVELS.DEBUG) {
+            if (MIN_LEVEL <= LOG_LEVELS.DEBUG && console.time) {
                 console.time(`[${namespace}] ${label}`);
             }
         },
@@ -268,7 +250,7 @@ export function createLogger(namespace) {
          * @param {string} label - Метка для измерения
          */
         timeEnd(label) {
-            if (MIN_LEVEL <= LOG_LEVELS.DEBUG) {
+            if (MIN_LEVEL <= LOG_LEVELS.DEBUG && console.timeEnd) {
                 console.timeEnd(`[${namespace}] ${label}`);
             }
         },
@@ -280,11 +262,23 @@ export function createLogger(namespace) {
          */
         group(label, fn) {
             if (MIN_LEVEL <= LOG_LEVELS.DEBUG) {
-                console.group(`[${namespace}] ${label}`);
+                const hasGroupCollapsed = typeof console.groupCollapsed === 'function';
+                const hasGroupEnd = typeof console.groupEnd === 'function';
+                
+                if (hasGroupCollapsed) {
+                    console.groupCollapsed(`[${namespace}] ${label}`);
+                } else if (hasGroupEnd) {
+                    console.group(`[${namespace}] ${label}`);
+                } else {
+                    console.log(`--- ${label} ---`);
+                }
+                
                 try {
                     fn();
                 } finally {
-                    console.groupEnd();
+                    if (hasGroupEnd) {
+                        console.groupEnd();
+                    }
                 }
             } else {
                 fn();
@@ -296,9 +290,9 @@ export function createLogger(namespace) {
          * @param {string} label - Описание состояния
          * @param {Object} state - Объект состояния
          */
-        state(label, state) {
+        state(label, stateObj) {
             if (MIN_LEVEL <= LOG_LEVELS.DEBUG) {
-                console.debug(...formatLogMessage(namespace, LOG_LEVELS.DEBUG, [`${label}:`, state]));
+                console.debug(...formatLogMessage(namespace, LOG_LEVELS.DEBUG, [`${label}:`, stateObj]));
             }
         }
     };
@@ -324,42 +318,37 @@ export function clearLogBuffer() {
     logBuffer.length = 0;
 }
 
-/**
- * Принудительно отправляет логи на сервер
- */
-export function flush() {
-    flushLogs();
+// ========== ГЛОБАЛЬНЫЕ ОБРАБОТЧИКИ ОШИБОК ==========
+
+// Перехват глобальных ошибок (только в development)
+if (ENV === 'development') {
+    window.addEventListener('error', (event) => {
+        const errorLogger = createLogger('Global');
+        errorLogger.error('Uncaught error:', {
+            message: event.message,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+            error: event.error
+        });
+    });
+    
+    window.addEventListener('unhandledrejection', (event) => {
+        const errorLogger = createLogger('Global');
+        errorLogger.error('Unhandled promise rejection:', {
+            reason: event.reason
+        });
+    });
 }
 
-// ========== ИНИЦИАЛИЗАЦИЯ ==========
-
-// Периодическая отправка логов
-setInterval(flushLogs, FLUSH_INTERVAL);
-
-// Перехват глобальных ошибок
-window.addEventListener('error', (event) => {
-    const errorLogger = createLogger('Global');
-    errorLogger.error('Uncaught error:', {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno,
-        error: event.error
-    });
-});
-
-// Перехват необработанных Promise rejection
-window.addEventListener('unhandledrejection', (event) => {
-    const errorLogger = createLogger('Global');
-    errorLogger.error('Unhandled promise rejection:', {
-        reason: event.reason,
-        promise: event.promise
-    });
-});
-
-// Экспорт для использования в консоли браузера
+// Экспорт для использования в консоли браузера (только development)
 if (ENV === 'development' && typeof window !== 'undefined') {
-    window.__logger = { createLogger, getBufferedLogs, clearLogBuffer, flush };
+    window.__logger = { 
+        createLogger, 
+        getBufferedLogs, 
+        clearLogBuffer,
+        LOG_LEVELS
+    };
 }
 
 export default logger;
