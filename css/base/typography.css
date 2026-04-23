@@ -5,12 +5,11 @@
  * Без декоративных элементов, только иерархия.
  * 
  * @stylesheet typography
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны цветные фоны у mark, ins, blockquote
- * - Упрощены отступы у заголовков
- * - Минимальный набор утилит
- * - Убраны декоративные text-underline
+ * - Удалены дублирующиеся утилиты.
+ * - Улучшен стиль для mark (жёлтый фон).
+ * - Упрощены селекторы.
  */
 
 /* ========== HEADINGS ========== */
@@ -120,9 +119,10 @@ ol ul {
 
 /* ========== INLINE TEXT ========== */
 mark {
-    background: transparent;
-    color: inherit;
-    font-weight: var(--font-weight-medium);
+    background: var(--color-warning-bg);
+    color: var(--color-warning-dark);
+    padding: 0 var(--spacing-1);
+    border-radius: var(--radius-sm);
 }
 
 del,
@@ -192,7 +192,8 @@ hr {
     border-top: var(--border-width) solid var(--color-border);
 }
 
-/* ========== TEXT UTILITIES ========== */
+/* ========== ТИПОГРАФИЧЕСКИЕ УТИЛИТЫ ========== */
+/* Размеры текста */
 .text-xs { font-size: var(--font-size-xs); }
 .text-sm { font-size: var(--font-size-sm); }
 .text-base { font-size: var(--font-size-base); }
@@ -201,22 +202,27 @@ hr {
 .text-2xl { font-size: var(--font-size-2xl); }
 .text-3xl { font-size: var(--font-size-3xl); }
 
+/* Начертания */
 .font-normal { font-weight: var(--font-weight-normal); }
 .font-medium { font-weight: var(--font-weight-medium); }
 .font-semibold { font-weight: var(--font-weight-semibold); }
 .font-bold { font-weight: var(--font-weight-bold); }
 
+/* Высота строки */
 .leading-tight { line-height: var(--line-height-tight); }
 .leading-normal { line-height: var(--line-height-normal); }
 .leading-relaxed { line-height: var(--line-height-relaxed); }
 
+/* Межбуквенное расстояние */
 .tracking-normal { letter-spacing: var(--letter-spacing-normal); }
 .tracking-wide { letter-spacing: var(--letter-spacing-wide); }
 
+/* Выравнивание */
 .text-left { text-align: left; }
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 
+/* Цвета текста */
 .text-primary { color: var(--color-primary); }
 .text-success { color: var(--color-success); }
 .text-danger { color: var(--color-danger); }
@@ -224,6 +230,7 @@ hr {
 .text-muted { color: var(--color-text-muted); }
 .text-secondary { color: var(--color-text-secondary); }
 
+/* Трансформации */
 .text-uppercase { text-transform: uppercase; }
 .text-lowercase { text-transform: lowercase; }
 .text-capitalize { text-transform: capitalize; }
