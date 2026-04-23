@@ -16,7 +16,11 @@
  * - Поддерживает загрузку фото через Supabase Storage.
  * 
  * @module product-form
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Удалена установка updated_at (отсутствует в схеме БД)
+ * - Удалена ручная установка created_at (используется default now() в БД)
+ * - Улучшена обработка ошибки PGRST204
  */
 
 import { getSupabase } from '../core/auth.js';
@@ -128,8 +132,10 @@ async function saveProduct(formData, mode, productId = null) {
         category: formData.category,
         price: parseFloat(formData.price) || 0,
         cost_price: parseFloat(formData.costPrice) || 0,
-        attributes: formData.attributes,
-        updated_at: new Date().toISOString()
+        attributes: formData.attributes
+        // ПРИМЕЧАНИЕ: Не устанавливаем updated_at и created_at вручную.
+        // Supabase автоматически управляет created_at через default now().
+        // Колонка updated_at отсутствует в схеме БД.
     };
     
     // Добавляем фото если есть
@@ -139,7 +145,6 @@ async function saveProduct(formData, mode, productId = null) {
     
     if (mode === 'create') {
         productData.status = 'in_stock';
-        productData.created_at = new Date().toISOString();
         productData.created_by = formData.userId;
         
         const { data, error } = await supabase
@@ -675,7 +680,17 @@ export async function openProductFormModal(options = {}) {
                 
             } catch (error) {
                 console.error('[ProductForm] Submit error:', error);
-                showNotification('Ошибка сохранения: ' + error.message, 'error');
+                
+                let errorMessage = 'Ошибка сохранения товара';
+                
+                // Обрабатываем известные коды ошибок Supabase
+                if (error.code === 'PGRST204') {
+                    errorMessage = 'Ошибка схемы базы данных. Обратитесь к администратору.';
+                } else if (error.message) {
+                    errorMessage = error.message;
+                }
+                
+                showNotification(errorMessage, 'error');
                 
                 if (submitBtn) submitBtn.disabled = false;
                 if (cancelBtn) cancelBtn.disabled = false;
