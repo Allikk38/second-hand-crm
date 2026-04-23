@@ -36,11 +36,14 @@ import {
 } from './sync.js';
 
 import {
-    logInfo,
-    logWarn,
-    logError,
-    logSyncOperation,
-    flushAllLogs
+    info as logInfo,
+    warn as logWarn,
+    error as logError,
+    logSyncEvent,
+    logPerformance,
+    logNetworkEvent,
+    flushAllLogs,
+    CATEGORIES
 } from './logger.js';
 
 // ========== КОНСТАНТЫ ==========
@@ -286,8 +289,24 @@ export async function initSyncEngine() {
 export { ENTITIES, OP_TYPES };
 export { cacheGet, cacheSet, cacheDelete, cacheClear } from './db.js';
 
-// Экспорт логгера
-export { logInfo, logWarn, logError, logSyncOperation, flushAllLogs } from './logger.js';
+export { 
+    logInfo, 
+    logWarn, 
+    logError, 
+    logSyncEvent, 
+    logPerformance, 
+    logNetworkEvent,
+    logUserAction,
+    logProductEvent,
+    logSaleEvent,
+    logShiftEvent,
+    logAnomaly,
+    measurePerformance,
+    flushAllLogs,
+    newSession,
+    CATEGORIES,
+    LOG_LEVELS
+} from './logger.js';
 
 export default {
     syncState,
