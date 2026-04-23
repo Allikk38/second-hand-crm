@@ -3,13 +3,12 @@
 // ========================================
 
 /**
- * Sync Logger Module
+ * Extended Logger Module
  * 
- * Логирование ошибок синхронизации в Supabase и консоль.
- * Используется для мониторинга проблем в production.
+ * Подробное логирование для аудита и выявления аномалий.
  * 
  * @module sync-engine/logger
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 import { getSupabase } from '../auth.js';
@@ -17,18 +16,35 @@ import { getSupabase } from '../auth.js';
 // ========== КОНСТАНТЫ ==========
 
 const LOG_LEVELS = {
+    DEBUG: 'debug',
     INFO: 'info',
     WARN: 'warn',
     ERROR: 'error'
 };
 
-// Буфер для накопления логов перед отправкой
+const CATEGORIES = {
+    USER: 'user',
+    PRODUCT: 'product',
+    SALE: 'sale',
+    SHIFT: 'shift',
+    SYNC: 'sync',
+    NETWORK: 'network',
+    PERFORMANCE: 'performance',
+    SYSTEM: 'system'
+};
+
+// Буфер логов
 let logBuffer = [];
-const BUFFER_SIZE = 10;
-const FLUSH_INTERVAL = 30000; // 30 секунд
+const BUFFER_SIZE = 20;
+const FLUSH_INTERVAL = 15000; // 15 секунд
 let flushTimer = null;
+let sessionId = generateSessionId();
 
 // ========== УТИЛИТЫ ==========
+
+function generateSessionId() {
+    return `sess-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
 
 function getDeviceId() {
     let deviceId = localStorage.getItem('sh_device_id');
@@ -41,18 +57,24 @@ function getDeviceId() {
 
 function getUserId() {
     try {
-        const user = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
-        return user?.user?.id || null;
+        const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+        return token?.user?.id || null;
     } catch {
         return null;
     }
 }
 
-// ========== ОТПРАВКА ЛОГОВ В SUPABASE ==========
+function getCurrentPage() {
+    const path = window.location.pathname;
+    if (path.includes('inventory')) return 'inventory';
+    if (path.includes('cashier')) return 'cashier';
+    if (path.includes('reports')) return 'reports';
+    if (path.includes('login')) return 'login';
+    return 'unknown';
+}
 
-/**
- * Отправляет накопленные логи в Supabase
- */
+// ========== ОТПРАВКА ЛОГОВ ==========
+
 async function flushLogs() {
     if (logBuffer.length === 0) return;
     
@@ -62,11 +84,12 @@ async function flushLogs() {
     try {
         const supabase = await getSupabase();
         
-        // Добавляем device_id и user_id
         const enrichedLogs = logs.map(log => ({
             ...log,
             device_id: getDeviceId(),
-            user_id: getUserId()
+            user_id: getUserId(),
+            session_id: sessionId,
+            page: getCurrentPage()
         }));
         
         const { error } = await supabase
@@ -74,126 +97,187 @@ async function flushLogs() {
             .insert(enrichedLogs);
         
         if (error) {
-            console.error('[Logger] Failed to send logs to Supabase:', error);
+            console.error('[Logger] Failed to send logs:', error);
         }
     } catch (error) {
         console.error('[Logger] Flush error:', error);
     }
 }
 
-/**
- * Планирует отправку логов
- */
 function scheduleFlush() {
     if (flushTimer) clearTimeout(flushTimer);
-    
     flushTimer = setTimeout(() => {
         flushLogs();
         flushTimer = null;
     }, FLUSH_INTERVAL);
 }
 
-/**
- * Добавляет лог в буфер
- */
-function addToBuffer(level, message, metadata = {}) {
+function addLog(level, category, event, options = {}) {
+    const {
+        entity,
+        entityId,
+        operationType,
+        duration,
+        error,
+        errorCode,
+        details = {},
+        metadata = {}
+    } = options;
+    
     const logEntry = {
         level,
-        message: String(message),
-        metadata,
+        category,
+        event,
+        entity: entity || null,
+        entity_id: entityId || null,
+        operation_type: operationType || null,
+        duration_ms: duration || null,
+        error_message: error?.message || null,
+        error_code: errorCode || error?.code || null,
+        error_stack: error?.stack?.split('\n').slice(0, 5).join('\n') || null,
+        details: JSON.stringify(details),
+        metadata: JSON.stringify(metadata),
         created_at: new Date().toISOString()
     };
     
     logBuffer.push(logEntry);
     
-    // Отправляем если буфер заполнен
+    // Консоль для отладки
+    const consoleMsg = `[${category}] ${event}`;
+    const consoleData = { ...details, ...metadata };
+    
+    if (level === 'error') console.error(consoleMsg, consoleData);
+    else if (level === 'warn') console.warn(consoleMsg, consoleData);
+    else if (level === 'info') console.info(consoleMsg, consoleData);
+    else console.log(consoleMsg, consoleData);
+    
     if (logBuffer.length >= BUFFER_SIZE) {
         flushLogs();
     } else {
         scheduleFlush();
     }
-    
-    // Всегда пишем в консоль для отладки
-    const consoleMethod = level === 'error' ? console.error : 
-                         level === 'warn' ? console.warn : console.log;
-    consoleMethod(`[SyncLogger][${level.toUpperCase()}]`, message, metadata);
 }
 
 // ========== ПУБЛИЧНЫЙ API ==========
 
-/**
- * Логирует информационное сообщение
- */
-export function logInfo(message, metadata = {}) {
-    addToBuffer(LOG_LEVELS.INFO, message, metadata);
+// Базовые методы
+export function debug(category, event, options = {}) {
+    addLog(LOG_LEVELS.DEBUG, category, event, options);
 }
 
-/**
- * Логирует предупреждение
- */
-export function logWarn(message, metadata = {}) {
-    addToBuffer(LOG_LEVELS.WARN, message, metadata);
+export function info(category, event, options = {}) {
+    addLog(LOG_LEVELS.INFO, category, event, options);
 }
 
-/**
- * Логирует ошибку (с автоматическим захватом стека)
- */
-export function logError(message, error = null, metadata = {}) {
-    const errorMetadata = {
-        ...metadata,
-        error_name: error?.name,
-        error_stack: error?.stack?.split('\n').slice(0, 5).join('\n')
-    };
-    
-    addToBuffer(LOG_LEVELS.ERROR, message, errorMetadata);
+export function warn(category, event, options = {}) {
+    addLog(LOG_LEVELS.WARN, category, event, options);
 }
 
-/**
- * Логирует операцию синхронизации
- */
-export function logSyncOperation(operationType, entity, status, metadata = {}) {
-    const level = status === 'success' ? LOG_LEVELS.INFO : 
-                  status === 'failed' ? LOG_LEVELS.ERROR : LOG_LEVELS.WARN;
-    
-    addToBuffer(level, `Sync ${operationType} ${entity}: ${status}`, {
-        operation_type: operationType,
-        entity,
-        sync_status: status,
-        ...metadata
+export function error(category, event, error, options = {}) {
+    addLog(LOG_LEVELS.ERROR, category, event, { ...options, error });
+}
+
+// Специализированные методы
+
+// Пользователь
+export function logUserAction(event, details = {}) {
+    info(CATEGORIES.USER, event, { details });
+}
+
+// Товары
+export function logProductEvent(event, productId, details = {}) {
+    info(CATEGORIES.PRODUCT, event, {
+        entity: 'product',
+        entityId: productId,
+        details
     });
 }
 
-/**
- * Принудительно отправляет все накопленные логи
- */
+// Продажи
+export function logSaleEvent(event, saleData = {}) {
+    info(CATEGORIES.SALE, event, {
+        entity: 'sale',
+        entityId: saleData.id,
+        details: saleData
+    });
+}
+
+// Смена
+export function logShiftEvent(event, shiftId, details = {}) {
+    info(CATEGORIES.SHIFT, event, {
+        entity: 'shift',
+        entityId: shiftId,
+        details
+    });
+}
+
+// Синхронизация
+export function logSyncEvent(event, operationType, entity, details = {}) {
+    info(CATEGORIES.SYNC, event, {
+        operationType,
+        entity,
+        details
+    });
+}
+
+// Производительность
+export function logPerformance(operation, duration, details = {}) {
+    const level = duration > 3000 ? LOG_LEVELS.WARN : LOG_LEVELS.INFO;
+    addLog(level, CATEGORIES.PERFORMANCE, operation, {
+        duration,
+        details: { ...details, slow: duration > 3000 }
+    });
+}
+
+// Сеть
+export function logNetworkEvent(event, details = {}) {
+    info(CATEGORIES.NETWORK, event, { details });
+}
+
+// Аномалии
+export function logAnomaly(event, details = {}) {
+    warn(CATEGORIES.SYSTEM, `anomaly_${event}`, { details });
+}
+
+// ========== УТИЛИТЫ ==========
+
+export function measurePerformance(name, fn) {
+    return async (...args) => {
+        const start = Date.now();
+        try {
+            return await fn(...args);
+        } finally {
+            logPerformance(name, Date.now() - start);
+        }
+    };
+}
+
 export async function flushAllLogs() {
     await flushLogs();
 }
 
-/**
- * Очищает буфер логов (при выходе)
- */
-export function clearLogBuffer() {
-    logBuffer = [];
-    if (flushTimer) {
-        clearTimeout(flushTimer);
-        flushTimer = null;
-    }
+export function newSession() {
+    sessionId = generateSessionId();
+    info(CATEGORIES.USER, 'session_start');
 }
-
-// ========== ОЧИСТКА ПРИ ВЫХОДЕ ==========
-
-window.addEventListener('beforeunload', () => {
-    flushLogs();
-});
 
 // ========== ЭКСПОРТ ==========
 
+export { CATEGORIES, LOG_LEVELS };
+
 export default {
-    logInfo,
-    logWarn,
-    logError,
-    logSyncOperation,
+    debug, info, warn, error,
+    logUserAction,
+    logProductEvent,
+    logSaleEvent,
+    logShiftEvent,
+    logSyncEvent,
+    logPerformance,
+    logNetworkEvent,
+    logAnomaly,
+    measurePerformance,
     flushAllLogs,
-    clearLogBuffer
+    newSession,
+    CATEGORIES,
+    LOG_LEVELS
 };
