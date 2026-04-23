@@ -1,3 +1,7 @@
+// ========================================
+// FILE: index.html
+// ========================================
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -5,22 +9,156 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SH CRM</title>
     
+    <!-- Базовый путь для GitHub Pages -->
+    <base href="/second-hand-crm/">
+    
     <style>
-        /* ... стили как раньше ... */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f1f5f9;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .splash-screen {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -2px rgba(0, 0, 0, 0.08);
+            max-width: 400px;
+            width: 90%;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .splash-logo {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .splash-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        
+        .splash-subtitle {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 32px;
+        }
+        
+        .loader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loader-text {
+            font-size: 14px;
+            color: #475569;
+        }
+        
+        .error-message {
+            display: none;
+            margin-top: 24px;
+            padding: 16px;
+            background: #fef2f2;
+            border-radius: 8px;
+            border-left: 3px solid #dc2626;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .error-title {
+            font-weight: 600;
+            color: #991b1b;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .error-text {
+            font-size: 13px;
+            color: #7f1d1d;
+            margin-bottom: 16px;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #475569;
+            cursor: pointer;
+            text-decoration: none;
+            margin: 4px;
+            transition: all 0.15s;
+        }
+        
+        .btn:hover {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+        }
+        
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+            border-color: #1d4ed8;
+        }
+        
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
     </style>
 </head>
 <body>
     <div class="splash-screen" id="splashScreen">
-        <!-- ... содержимое как раньше ... -->
+        <div class="splash-logo">🛍️</div>
+        <div class="splash-title">SH CRM</div>
+        <div class="splash-subtitle">Комиссионный магазин</div>
+        
+        <div class="loader" id="splashLoader">
+            <div class="spinner"></div>
+            <div class="loader-text">Загрузка...</div>
+        </div>
+        
+        <div class="error-message" id="splashError">
+            <div class="error-title">⚠️ Ошибка</div>
+            <div class="error-text" id="errorMessage">Не удалось загрузить приложение</div>
+            <button class="btn" id="retryBtn">Повторить</button>
+            <a href="pages/login.html" class="btn btn-primary" id="loginBtn">Войти</a>
+        </div>
     </div>
 
-    <!-- CDN УДАЛЁН — загружается через auth.js -->
-    
     <script>
-        // Конфигурация Supabase (синхронизирована с core/auth.js)
-        const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
-        const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
-        
         // Функция для динамической загрузки auth.js и проверки сессии
         async function init() {
             try {
@@ -50,7 +188,8 @@
             init();
         });
         
-        document.getElementById('loginBtn')?.addEventListener('click', () => {
+        document.getElementById('loginBtn')?.addEventListener('click', (e) => {
+            e.preventDefault();
             window.location.href = 'pages/login.html';
         });
         
