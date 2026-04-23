@@ -1,103 +1,176 @@
 // ========================================
-// FILE: js/reports-dashboard.js
+// FILE: js/reports-tables.js
 // ========================================
 
 /**
- * Reports Dashboard Module
+ * Reports Tables Module
  * 
- * Рендеринг дашборда: KPI-карточки, графики, топ товаров и категорий.
+ * Рендеринг табличных отчетов: продажи, товары, смены.
+ * Экспорт данных в CSV.
  * 
  * Архитектурные решения:
  * - Чистые функции, отсутствие глобального состояния.
- * - Ленивая загрузка Chart.js.
- * - Все данные приходят извне (через параметры).
+ * - Каждая таблица рендерится отдельно.
+ * - Экспорт через генерацию CSV.
  * - Использование централизованных форматтеров.
  * 
- * @module reports-dashboard
+ * @module reports-tables
  * @version 1.1.0
  * @changes
- * - Удалены локальные реализации getPaymentMethodName и getCategoryDisplayName.
- * - Добавлены импорты из formatters.js.
+ * - Удалена локальная реализация getPaymentMethodName.
+ * - Используется импортированная версия из formatters.js.
  */
 
-import { formatMoney, formatNumber, formatPercent, formatDate, escapeHtml, getPaymentMethodName, getCategoryName } from '../utils/formatters.js';
+import { formatMoney, formatNumber, formatDateTime, formatDate, escapeHtml, getPaymentMethodName, getCategoryName } from '../utils/formatters.js';
 
-// ========== КОНСТАНТЫ ==========
-
-const CHART_COLORS = {
-    primary: '#2563eb',
-    success: '#16a34a',
-    warning: '#ea580c',
-    danger: '#dc2626',
-    info: '#0284c7',
-    purple: '#7c3aed'
-};
-
-// ========== РЕНДЕРИНГ KPI ==========
+// ========== ТАБЛИЦА ПРОДАЖ ==========
 
 /**
- * Рендерит KPI-карточку
- * @param {Object} kpi - Данные KPI
- * @param {string} title - Заголовок
- * @param {string} value - Значение
- * @param {Object} trend - Тренд { direction, value }
- * @param {string} icon - Иконка
- * @returns {string} HTML карточки
+ * Рендерит сводку продаж (KPI над таблицей)
+ * @param {Object} summary - Сводка { count, revenue, profit, averageCheck }
+ * @returns {string} HTML сводки
  */
-function renderKpiCard({ title, value, trend, icon }) {
-    const trendHtml = trend ? `
-        <span class="kpi-trend trend-${trend.direction}">
-            ${trend.direction === 'up' ? '↑' : trend.direction === 'down' ? '↓' : '→'}
-            ${trend.value}%
-        </span>
-    ` : '';
-    
+function renderSalesSummary(summary) {
     return `
-        <div class="kpi-card">
-            <div class="kpi-header">
-                <span class="kpi-icon">${icon}</span>
-                <span class="kpi-title">${escapeHtml(title)}</span>
+        <div class="summary-cards">
+            <div class="summary-card">
+                <span class="label">Всего продаж</span>
+                <span class="value">${formatNumber(summary?.count || 0)}</span>
             </div>
-            <div class="kpi-value">${value}</div>
-            <div class="kpi-footer">${trendHtml}</div>
+            <div class="summary-card">
+                <span class="label">Выручка</span>
+                <span class="value">${formatMoney(summary?.revenue || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Прибыль</span>
+                <span class="value">${formatMoney(summary?.profit || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Средний чек</span>
+                <span class="value">${formatMoney(summary?.averageCheck || 0)}</span>
+            </div>
         </div>
     `;
 }
 
 /**
- * Рендерит все KPI карточки
- * @param {Object} overview - Данные обзора
- * @param {Object} trends - Тренды
- * @returns {string} HTML всех KPI
+ * Рендерит таблицу продаж
+ * @param {Object} data - Данные { summary, sales }
+ * @returns {string} HTML таблицы
  */
-function renderKpiGrid(overview, trends) {
-    const kpis = [
-        { title: '💰 Выручка', value: formatMoney(overview.revenue), trend: trends.revenue, icon: '💰' },
-        { title: '🎯 Прибыль', value: formatMoney(overview.profit), trend: trends.profit, icon: '🎯' },
-        { title: '📊 Маржа', value: formatPercent(overview.margin, { decimals: 1 }), trend: trends.margin, icon: '📊' },
-        { title: '🛒 Продаж', value: formatNumber(overview.salesCount), trend: trends.salesCount, icon: '🛒' },
-        { title: '💳 Средний чек', value: formatMoney(overview.averageCheck), trend: null, icon: '💳' },
-        { title: '📦 Стоимость склада', value: formatMoney(overview.stockValue), trend: null, icon: '📦' }
-    ];
+export function renderSalesTable(data) {
+    const { summary, sales } = data;
     
-    return `<div class="kpi-grid">${kpis.map(kpi => renderKpiCard(kpi)).join('')}</div>`;
+    if (!sales || sales.length === 0) {
+        return `
+            ${renderSalesSummary(summary)}
+            <div class="empty-state">
+                <div class="empty-state-icon">💰</div>
+                <p>Нет продаж за выбранный период</p>
+            </div>
+        `;
+    }
+    
+    return `
+        ${renderSalesSummary(summary)}
+        
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Продавец</th>
+                        <th>Товаров</th>
+                        <th>Сумма</th>
+                        <th>Прибыль</th>
+                        <th>Оплата</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${sales.slice(0, 50).map(sale => `
+                        <tr>
+                            <td>${formatDateTime(sale.created_at)}</td>
+                            <td>${escapeHtml(sale.seller_name || 'Система')}</td>
+                            <td>${sale.items?.length || 0} поз.</td>
+                            <td class="money">${formatMoney(sale.total)}</td>
+                            <td class="money">${formatMoney(sale.profit)}</td>
+                            <td>${getPaymentMethodName(sale.payment_method)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            ${sales.length > 50 ? '<div class="table-footer">Показаны первые 50 записей</div>' : ''}
+        </div>
+    `;
 }
 
-// ========== РЕНДЕРИНГ ТОПОВ ==========
+/**
+ * Экспорт таблицы продаж в CSV
+ * @param {Object} data - Данные { sales }
+ * @returns {string} CSV строка
+ */
+export function exportSalesData(data) {
+    const { sales } = data;
+    
+    if (!sales || sales.length === 0) return '';
+    
+    let csv = 'Дата,Продавец,Товаров,Сумма,Прибыль,Оплата\n';
+    
+    sales.forEach(sale => {
+        csv += `"${formatDateTime(sale.created_at)}",`;
+        csv += `"${escapeCsvValue(sale.seller_name || 'Система')}",`;
+        csv += `${sale.items?.length || 0},`;
+        csv += `${sale.total || 0},`;
+        csv += `${sale.profit || 0},`;
+        csv += `"${getPaymentMethodName(sale.payment_method)}"\n`;
+    });
+    
+    return csv;
+}
+
+// ========== ТАБЛИЦА ТОВАРОВ ==========
 
 /**
- * Рендерит топ товаров
+ * Рендерит сводку товаров
+ * @param {Object} data - Данные { inventoryValue, inventoryCost }
+ * @returns {string} HTML сводки
+ */
+function renderProductsSummary(data) {
+    const potentialProfit = (data.inventoryValue || 0) - (data.inventoryCost || 0);
+    
+    return `
+        <div class="summary-cards">
+            <div class="summary-card">
+                <span class="label">Стоимость склада</span>
+                <span class="value">${formatMoney(data.inventoryValue || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Себестоимость</span>
+                <span class="value">${formatMoney(data.inventoryCost || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Потенциальная прибыль</span>
+                <span class="value ${potentialProfit >= 0 ? 'text-success' : 'text-danger'}">
+                    ${formatMoney(potentialProfit)}
+                </span>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Рендерит топ продаваемых товаров
  * @param {Array} topProducts - Массив топ товаров
  * @returns {string} HTML списка
  */
-function renderTopProducts(topProducts) {
+function renderTopProductsTable(topProducts) {
     if (!topProducts || topProducts.length === 0) {
         return '<div class="empty-message">Нет данных</div>';
     }
     
     return `
         <div class="top-products-list">
-            ${topProducts.slice(0, 5).map((p, i) => `
+            ${topProducts.slice(0, 10).map((p, i) => `
                 <div class="top-product-item">
                     <span class="rank">#${i + 1}</span>
                     <div class="product-info">
@@ -112,268 +185,272 @@ function renderTopProducts(topProducts) {
 }
 
 /**
- * Рендерит топ категорий
- * @param {Array} topCategories - Массив топ категорий
+ * Рендерит залежавшиеся товары
+ * @param {Array} slowMoving - Массив залежавшихся товаров
  * @returns {string} HTML списка
  */
-function renderTopCategories(topCategories) {
-    if (!topCategories || topCategories.length === 0) {
-        return '<div class="empty-message">Нет данных</div>';
+function renderSlowMovingTable(slowMoving) {
+    if (!slowMoving || slowMoving.length === 0) {
+        return '<div class="empty-message">Нет залежавшихся товаров</div>';
     }
     
     return `
-        <div class="top-products-list">
-            ${topCategories.map((c, i) => `
-                <div class="top-product-item">
-                    <span class="rank">#${i + 1}</span>
-                    <div class="product-info">
-                        <div class="product-name">${escapeHtml(getCategoryName(c.category))}</div>
-                        <div class="product-stats">${c.quantity} шт.</div>
-                    </div>
-                    <span class="product-revenue">${formatMoney(c.revenue)}</span>
+        <div class="slow-list">
+            ${slowMoving.slice(0, 10).map(p => `
+                <div class="slow-item">
+                    <span class="product-name">${escapeHtml(p.name)}</span>
+                    <span class="days-badge">${p.daysInStock} дн.</span>
+                    <span class="product-price">${formatMoney(p.price)}</span>
                 </div>
             `).join('')}
         </div>
     `;
 }
 
-// ========== ГРАФИКИ ==========
-
-let chartsInstance = { sales: null, payment: null };
-
 /**
- * Уничтожает существующие графики
+ * Рендерит таблицу товаров (полная страница)
+ * @param {Object} data - Данные { topProducts, slowMoving, inventoryValue, inventoryCost }
+ * @returns {string} HTML таблицы
  */
-function destroyCharts() {
-    if (chartsInstance.sales) {
-        chartsInstance.sales.destroy();
-        chartsInstance.sales = null;
-    }
-    if (chartsInstance.payment) {
-        chartsInstance.payment.destroy();
-        chartsInstance.payment = null;
-    }
-}
-
-/**
- * Рендерит график продаж (линия)
- * @param {Array} daily - Данные по дням
- */
-function renderSalesChart(daily) {
-    const canvas = document.getElementById('salesChart');
-    if (!canvas || !window.Chart) return;
-    
-    if (chartsInstance.sales) {
-        chartsInstance.sales.destroy();
-    }
-    
-    chartsInstance.sales = new window.Chart(canvas, {
-        type: 'line',
-        data: {
-            labels: daily.map(d => formatDate(d.date, { short: true })),
-            datasets: [
-                {
-                    label: 'Выручка',
-                    data: daily.map(d => d.revenue),
-                    borderColor: CHART_COLORS.primary,
-                    backgroundColor: `rgba(37, 99, 235, 0.1)`,
-                    tension: 0.3,
-                    fill: true,
-                    yAxisID: 'y'
-                },
-                {
-                    label: 'Прибыль',
-                    data: daily.map(d => d.profit),
-                    borderColor: CHART_COLORS.success,
-                    backgroundColor: 'transparent',
-                    tension: 0.3,
-                    yAxisID: 'y'
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: (ctx) => `${ctx.dataset.label}: ${formatMoney(ctx.raw)}`
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    ticks: {
-                        callback: (val) => formatMoney(val, { showSymbol: false })
-                    }
-                }
-            }
-        }
-    });
-}
-
-/**
- * Рендерит круговую диаграмму способов оплаты
- * @param {Array} paymentMethods - Данные по способам оплаты
- */
-function renderPaymentChart(paymentMethods) {
-    const canvas = document.getElementById('paymentChart');
-    if (!canvas || !window.Chart) return;
-    
-    if (chartsInstance.payment) {
-        chartsInstance.payment.destroy();
-    }
-    
-    const totalRevenue = paymentMethods.reduce((sum, p) => sum + p.revenue, 0);
-    
-    chartsInstance.payment = new window.Chart(canvas, {
-        type: 'doughnut',
-        data: {
-            labels: paymentMethods.map(p => getPaymentMethodName(p.method)),
-            datasets: [{
-                data: paymentMethods.map(p => p.revenue),
-                backgroundColor: [
-                    CHART_COLORS.primary,
-                    CHART_COLORS.success,
-                    CHART_COLORS.warning,
-                    CHART_COLORS.purple
-                ],
-                borderWidth: 0
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom' },
-                tooltip: {
-                    callbacks: {
-                        label: (ctx) => {
-                            const item = paymentMethods[ctx.dataIndex];
-                            const percent = totalRevenue > 0 
-                                ? ((item.revenue / totalRevenue) * 100).toFixed(1) 
-                                : '0';
-                            return `${item.count} продаж (${percent}%) - ${formatMoney(item.revenue)}`;
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-/**
- * Загружает Chart.js если ещё не загружен
- * @returns {Promise<void>}
- */
-async function loadChartJs() {
-    if (window.Chart) return;
-    
-    return new Promise((resolve) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-        script.onload = () => resolve();
-        document.head.appendChild(script);
-    });
-}
-
-/**
- * Рендерит все графики (основная функция)
- * @param {Array} daily - Данные по дням
- * @param {Array} paymentMethods - Данные по оплате
- */
-async function renderCharts(daily, paymentMethods) {
-    await loadChartJs();
-    
-    if (!window.Chart) {
-        console.warn('[Dashboard] Chart.js not loaded');
-        return;
-    }
-    
-    destroyCharts();
-    
-    if (daily && daily.length > 0) {
-        renderSalesChart(daily);
-    }
-    
-    if (paymentMethods && paymentMethods.length > 0) {
-        renderPaymentChart(paymentMethods);
-    }
-}
-
-// ========== ОСНОВНАЯ ФУНКЦИЯ РЕНДЕРИНГА ==========
-
-/**
- * Рендерит полный дашборд
- * @param {Object} data - Данные дашборда
- * @param {string} period - Текущий период (для отображения)
- * @returns {string} HTML дашборда
- */
-export function renderDashboard(data, period) {
-    const { overview, trends, daily, topProducts, topCategories, paymentMethods } = data;
+export function renderProductsTable(data) {
+    const { topProducts, slowMoving, inventoryValue, inventoryCost } = data;
     
     return `
-        <div class="dashboard-view">
-            ${renderKpiGrid(overview, trends)}
-            
-            <div class="charts-row">
-                <div class="chart-card">
-                    <h3>Динамика продаж</h3>
-                    <div class="chart-container">
-                        <canvas id="salesChart" width="400" height="200"></canvas>
-                    </div>
-                </div>
-                
-                <div class="chart-card">
-                    <h3>Способы оплаты</h3>
-                    <div class="chart-container">
-                        <canvas id="paymentChart" width="200" height="200"></canvas>
-                    </div>
-                </div>
+        ${renderProductsSummary({ inventoryValue, inventoryCost })}
+        
+        <div class="two-columns">
+            <div class="card">
+                <h4>🏆 Самые продаваемые</h4>
+                ${renderTopProductsTable(topProducts)}
             </div>
             
-            <div class="charts-row">
-                <div class="chart-card">
-                    <h3>🔥 Топ-5 товаров</h3>
-                    ${renderTopProducts(topProducts)}
-                </div>
-                
-                <div class="chart-card">
-                    <h3>📂 Топ категорий</h3>
-                    ${renderTopCategories(topCategories)}
-                </div>
+            <div class="card">
+                <h4>🐌 Залежавшиеся товары (>30 дней)</h4>
+                ${renderSlowMovingTable(slowMoving)}
             </div>
         </div>
     `;
 }
 
 /**
- * Экспорт данных дашборда в CSV
- * @param {Object} data - Данные дашборда
+ * Экспорт данных о товарах в CSV
+ * @param {Object} data - Данные { topProducts, slowMoving }
  * @returns {string} CSV строка
  */
-export function exportDashboardData(data) {
-    const { overview, daily } = data;
+export function exportProductsData(data) {
+    const { topProducts, slowMoving } = data;
     
-    let csv = 'Дашборд\n\n';
-    csv += 'Показатель,Значение\n';
-    csv += `Выручка,${overview.revenue}\n`;
-    csv += `Прибыль,${overview.profit}\n`;
-    csv += `Маржа,${overview.margin.toFixed(1)}%\n`;
-    csv += `Продаж,${overview.salesCount}\n`;
-    csv += `Средний чек,${overview.averageCheck}\n`;
-    csv += `Товаров в наличии,${overview.inStock}\n`;
-    csv += `Стоимость склада,${overview.stockValue}\n`;
+    let csv = 'Топ продаваемых товаров\n';
+    csv += 'Название,Количество,Выручка\n';
     
-    csv += '\n\nДинамика по дням\n';
-    csv += 'Дата,Выручка,Прибыль,Продаж\n';
-    daily.forEach(d => {
-        csv += `${d.date},${d.revenue},${d.profit},${d.count}\n`;
+    (topProducts || []).forEach(p => {
+        csv += `"${escapeCsvValue(p.name)}",${p.quantity},${p.revenue}\n`;
+    });
+    
+    csv += '\n\nЗалежавшиеся товары\n';
+    csv += 'Название,Дней на складе,Цена\n';
+    
+    (slowMoving || []).forEach(p => {
+        csv += `"${escapeCsvValue(p.name)}",${p.daysInStock},${p.price}\n`;
     });
     
     return csv;
 }
 
-// Экспорт функций для динамического импорта
-export { renderCharts, destroyCharts };
+// ========== ТАБЛИЦА СМЕН ==========
+
+/**
+ * Рендерит сводку смен
+ * @param {Object} summary - Сводка { totalShifts, activeShifts, totalRevenue, totalProfit }
+ * @returns {string} HTML сводки
+ */
+function renderShiftsSummary(summary) {
+    return `
+        <div class="summary-cards">
+            <div class="summary-card">
+                <span class="label">Всего смен</span>
+                <span class="value">${formatNumber(summary?.totalShifts || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Активных смен</span>
+                <span class="value">${formatNumber(summary?.activeShifts || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Выручка за период</span>
+                <span class="value">${formatMoney(summary?.totalRevenue || 0)}</span>
+            </div>
+            <div class="summary-card">
+                <span class="label">Прибыль за период</span>
+                <span class="value">${formatMoney(summary?.totalProfit || 0)}</span>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Рендерит статистику по продавцам
+ * @param {Object} bySeller - Объект с данными по продавцам
+ * @returns {string} HTML таблицы
+ */
+function renderBySellerTable(bySeller) {
+    if (!bySeller || Object.keys(bySeller).length === 0) {
+        return '<div class="empty-message">Нет данных по продавцам</div>';
+    }
+    
+    return `
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Продавец</th>
+                        <th>Смен</th>
+                        <th>Продаж</th>
+                        <th>Выручка</th>
+                        <th>Прибыль</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${Object.entries(bySeller).map(([name, stats]) => `
+                        <tr>
+                            <td>${escapeHtml(name)}</td>
+                            <td>${stats.shifts}</td>
+                            <td>${stats.salesCount}</td>
+                            <td class="money">${formatMoney(stats.revenue)}</td>
+                            <td class="money">${formatMoney(stats.profit)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+/**
+ * Рендерит список смен
+ * @param {Array} shifts - Массив смен
+ * @returns {string} HTML таблицы
+ */
+function renderShiftsList(shifts) {
+    if (!shifts || shifts.length === 0) {
+        return '<div class="empty-message">Нет смен за период</div>';
+    }
+    
+    return `
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Открыта</th>
+                        <th>Закрыта</th>
+                        <th>Продавец</th>
+                        <th>Длительность</th>
+                        <th>Продаж</th>
+                        <th>Выручка</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${shifts.map(shift => `
+                        <tr>
+                            <td>${formatDateTime(shift.opened_at)}</td>
+                            <td>${shift.closed_at ? formatDateTime(shift.closed_at) : '—'}</td>
+                            <td>${escapeHtml(shift.seller_name)}</td>
+                            <td>${shift.duration}</td>
+                            <td>${shift.sales_count || 0}</td>
+                            <td class="money">${formatMoney(shift.total_revenue || 0)}</td>
+                            <td>
+                                <span class="status-badge ${shift.closed_at ? 'status-in_stock' : 'status-reserved'}">
+                                    ${shift.closed_at ? 'Закрыта' : 'Активна'}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+/**
+ * Рендерит таблицу смен (полная страница)
+ * @param {Object} data - Данные { shifts, bySeller, summary }
+ * @returns {string} HTML таблицы
+ */
+export function renderShiftsTable(data) {
+    const { shifts, bySeller, summary } = data;
+    
+    return `
+        ${renderShiftsSummary(summary)}
+        
+        <div class="card" style="margin-bottom: 24px;">
+            <h4>👥 Статистика по продавцам</h4>
+            ${renderBySellerTable(bySeller)}
+        </div>
+        
+        <div class="card">
+            <h4>📋 Список смен</h4>
+            ${renderShiftsList(shifts)}
+        </div>
+    `;
+}
+
+/**
+ * Экспорт данных о сменах в CSV
+ * @param {Object} data - Данные { shifts }
+ * @returns {string} CSV строка
+ */
+export function exportShiftsData(data) {
+    const { shifts } = data;
+    
+    if (!shifts || shifts.length === 0) return '';
+    
+    let csv = 'Открыта,Закрыта,Продавец,Длительность,Продаж,Выручка,Прибыль,Статус\n';
+    
+    shifts.forEach(shift => {
+        csv += `"${formatDateTime(shift.opened_at)}",`;
+        csv += `"${shift.closed_at ? formatDateTime(shift.closed_at) : ''}",`;
+        csv += `"${escapeCsvValue(shift.seller_name)}",`;
+        csv += `"${shift.duration}",`;
+        csv += `${shift.sales_count || 0},`;
+        csv += `${shift.total_revenue || 0},`;
+        csv += `${shift.total_profit || 0},`;
+        csv += `"${shift.closed_at ? 'Закрыта' : 'Активна'}"\n`;
+    });
+    
+    return csv;
+}
+
+// ========== ОБЩИЕ УТИЛИТЫ ==========
+
+/**
+ * Экранирует значение для CSV (оборачивает в кавычки если нужно)
+ * @param {string} value - Значение
+ * @returns {string}
+ */
+function escapeCsvValue(value) {
+    if (!value) return '';
+    const str = String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+}
+
+/**
+ * Основная функция экспорта (вызывается из reports.js)
+ * @param {Object} data - Данные текущего отчета
+ * @param {string} tab - Активная вкладка (sales, products, shifts)
+ * @returns {string} CSV строка
+ */
+export function exportData(data, tab) {
+    switch (tab) {
+        case 'sales':
+            return exportSalesData(data);
+        case 'products':
+            return exportProductsData(data);
+        case 'shifts':
+            return exportShiftsData(data);
+        default:
+            return '';
+    }
+}
