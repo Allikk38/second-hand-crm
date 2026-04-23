@@ -6,19 +6,24 @@
  * Inventory Page Module - Index
  * 
  * Точка входа для страницы управления складом.
- * Связывает подмодули (products, operations), управляет рендерингом
- * и обработчиками событий.
+ * Использует единый движок синхронизации sync-engine.js.
  * 
  * Архитектурные решения:
- * - Делегирование бизнес-логики подмодулям (products.js, operations.js).
- * - Централизованный рендеринг с реактивностью через колбэки.
- * - Поддержка офлайн-режима с отображением статуса синхронизации.
+ * - Sync Engine для всех операций с данными (Cache First, Sync Later)
+ * - Оптимистичное обновление UI без ожидания ответа сервера
+ * - Единая очередь операций для всех изменений
+ * - Подписка на события синхронизации для обновления UI
  * 
  * @module inventory/index
- * @version 1.0.0
+ * @version 2.0.0
+ * @changes
+ * - Полная интеграция с sync-engine.js
+ * - Удалены отдельные модули products.js и operations.js
+ * - Оптимистичные CRUD операции через saveChange()
+ * - Мгновенная загрузка из IndexedDB
  */
 
-import { requireAuth, logout, isOnline } from '../../core/auth.js';
+import { requireAuth, logout, isOnline, getSupabase } from '../../core/auth.js';
 import { 
     formatMoney, 
     escapeHtml, 
@@ -28,80 +33,59 @@ import {
 } from '../../utils/formatters.js';
 import { showNotification, showConfirmDialog } from '../../utils/ui.js';
 import { openProductFormModal } from '../../utils/product-form.js';
-
-// Подмодули
-import {
-    productsState,
-    setProductsChangeCallback,
-    loadProducts,
-    refreshProductsList,
-    setSearchQuery,
-    setStatusFilter,
-    setCategoryFilter,
-    setSortBy,
-    addProductToState,
-    updateProductInState,
-    removeProductFromState,
-    getFilteredProducts,
-    getCategories,
-    getStats,
-    getProductById,
-    isLoading,
-    isOffline,
-    getSearchQuery,
-    getSelectedStatus,
-    getSelectedCategory,
-    getSortBy
-} from './products.js';
-
-import {
-    operationsState,
-    setOperationsChangeCallback,
-    loadPendingOperations,
-    addPendingOperation,
-    getPendingCount,
-    hasPendingOperations,
-    syncPendingOperations,
-    startBackgroundSync,
-    stopBackgroundSync,
-    getOperationsStats
-} from './operations.js';
+import { 
+    initSyncEngine,
+    subscribeToSync,
+    loadData,
+    saveChange,
+    syncNow,
+    syncState,
+    ENTITIES,
+    OP_TYPES
+} from '../../core/sync-engine.js';
 
 // ========== СОСТОЯНИЕ СТРАНИЦЫ ==========
 
 const state = {
     user: null,
+    products: [],
+    filteredProducts: [],
+    categories: [],
+    isLoading: false,
     isDeleting: false,
-    selectedIds: new Set()
+    searchQuery: '',
+    selectedStatus: '',
+    selectedCategory: '',
+    sortBy: 'created_at-desc',
+    selectedIds: new Set(),
+    stats: {
+        total: 0,
+        inStock: 0,
+        sold: 0,
+        reserved: 0,
+        stockValue: 0
+    }
 };
 
 // ========== DOM ЭЛЕМЕНТЫ ==========
 
 const DOM = {
-    // Контейнеры
     tableBody: null,
     statsBar: null,
     categoryFilter: null,
-    
-    // Элементы управления
     searchInput: null,
     statusFilter: null,
     sortSelect: null,
     addProductBtn: null,
     refreshBtn: null,
-    
-    // Баннеры и уведомления
     errorBanner: null,
     errorMessage: null,
     offlineBanner: null,
     offlineRetryBtn: null,
     syncBadge: null,
-    
-    // Пользователь
+    syncStatus: null,
     userEmail: null,
     logoutBtn: null,
-    
-    // Загрузка
     moduleLoading: null
 };
 
@@ -113,6 +97,31 @@ function showOfflineBanner() {
 
 function hideOfflineBanner() {
     if (DOM.offlineBanner) DOM.offlineBanner.style.display = 'none';
+}
+
+function updateSyncIndicator() {
+    const pendingCount = syncState.pendingCount;
+    
+    if (DOM.syncBadge) {
+        if (pendingCount > 0) {
+            DOM.syncBadge.textContent = pendingCount;
+            DOM.syncBadge.style.display = 'inline-block';
+        } else {
+            DOM.syncBadge.style.display = 'none';
+        }
+    }
+    
+    if (DOM.syncStatus) {
+        if (syncState.isSyncing) {
+            DOM.syncStatus.textContent = 'Синхронизация...';
+            DOM.syncStatus.style.display = 'inline';
+        } else if (pendingCount > 0) {
+            DOM.syncStatus.textContent = `Ожидает: ${pendingCount}`;
+            DOM.syncStatus.style.display = 'inline';
+        } else {
+            DOM.syncStatus.style.display = 'none';
+        }
+    }
 }
 
 function showError(message, type = 'error') {
@@ -133,53 +142,179 @@ function hideError() {
     if (DOM.errorBanner) DOM.errorBanner.style.display = 'none';
 }
 
-// ========== ИНДИКАТОР СИНХРОНИЗАЦИИ ==========
-
-function updateSyncIndicator() {
-    const pendingCount = getPendingCount();
-    
-    if (DOM.syncBadge) {
-        if (pendingCount > 0) {
-            DOM.syncBadge.textContent = pendingCount;
-            DOM.syncBadge.style.display = 'inline-block';
-        } else {
-            DOM.syncBadge.style.display = 'none';
-        }
-    }
-    
-    // Обновляем информацию в офлайн-баннере
-    const lastSyncSpan = document.getElementById('lastSyncTime');
-    if (lastSyncSpan) {
-        const stats = getOperationsStats();
-        if (stats.lastSyncTime) {
-            const timeStr = new Date(stats.lastSyncTime).toLocaleString('ru-RU');
-            lastSyncSpan.textContent = `Последняя синхронизация: ${timeStr}`;
-        } else {
-            lastSyncSpan.textContent = '';
-        }
-    }
-}
-
-// ========== ОТМЕТКА ЗАГРУЗКИ МОДУЛЯ ==========
-
-function markModuleLoaded() {
-    if (DOM.moduleLoading) {
-        DOM.moduleLoading.style.display = 'none';
-    }
-    if (window.markInventoryModuleLoaded) {
-        window.markInventoryModuleLoaded();
-    }
-}
-
-// ========== CRUD ОПЕРАЦИИ ==========
+// ========== РАБОТА С ТОВАРАМИ ==========
 
 /**
- * Удаляет товар (оптимистично, через очередь)
+ * Загрузка товаров через Sync Engine (Cache First)
+ */
+async function loadProductsData(forceRefresh = false) {
+    state.isLoading = true;
+    render();
+    
+    try {
+        const result = await loadData(ENTITIES.PRODUCTS, {
+            id: 'all',
+            maxAge: forceRefresh ? 0 : 5 * 60 * 1000,
+            fetcher: async () => {
+                const supabase = await getSupabase();
+                const { data, error } = await supabase
+                    .from('products')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                return data || [];
+            }
+        });
+        
+        state.products = result.data || [];
+        
+        if (result.fromCache) {
+            console.log('[Inventory] Loaded from cache:', state.products.length);
+        } else {
+            console.log('[Inventory] Loaded from server:', state.products.length);
+        }
+        
+        updateCategories();
+        applyFilters();
+        updateStats();
+        
+    } catch (error) {
+        console.error('[Inventory] Load error:', error);
+        if (state.products.length === 0) {
+            showError('Не удалось загрузить товары', 'error');
+        }
+    } finally {
+        state.isLoading = false;
+        render();
+        markModuleLoaded();
+    }
+}
+
+function updateCategories() {
+    const counts = new Map();
+    
+    state.products.forEach(p => {
+        const cat = p.category || 'other';
+        counts.set(cat, (counts.get(cat) || 0) + 1);
+    });
+    
+    state.categories = Array.from(counts.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => b.count - a.count);
+}
+
+function applyFilters() {
+    let filtered = [...state.products];
+    
+    // Убираем оптимистично удалённые (помеченные _deleted)
+    filtered = filtered.filter(p => !p._deleted);
+    
+    if (state.searchQuery) {
+        const q = state.searchQuery.toLowerCase();
+        filtered = filtered.filter(p => 
+            p.name?.toLowerCase().includes(q) ||
+            p.id?.toLowerCase().includes(q)
+        );
+    }
+    
+    if (state.selectedStatus) {
+        filtered = filtered.filter(p => p.status === state.selectedStatus);
+    }
+    
+    if (state.selectedCategory) {
+        filtered = filtered.filter(p => p.category === state.selectedCategory);
+    }
+    
+    filtered = sortProducts(filtered, state.sortBy);
+    state.filteredProducts = filtered;
+}
+
+function sortProducts(products, sortBy) {
+    const sorted = [...products];
+    
+    switch (sortBy) {
+        case 'price-asc':
+            return sorted.sort((a, b) => (a.price || 0) - (b.price || 0));
+        case 'price-desc':
+            return sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+        case 'name-asc':
+            return sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        case 'created_at-desc':
+        default:
+            return sorted.sort((a, b) => {
+                const dateA = a.created_at ? new Date(a.created_at) : new Date(0);
+                const dateB = b.created_at ? new Date(b.created_at) : new Date(0);
+                return dateB - dateA;
+            });
+    }
+}
+
+function updateStats() {
+    const filtered = state.products.filter(p => !p._deleted);
+    const inStock = filtered.filter(p => p.status === 'in_stock');
+    
+    state.stats = {
+        total: filtered.length,
+        inStock: inStock.length,
+        sold: filtered.filter(p => p.status === 'sold').length,
+        reserved: filtered.filter(p => p.status === 'reserved').length,
+        stockValue: inStock.reduce((sum, p) => sum + (p.price || 0), 0)
+    };
+}
+
+// ========== ОПТИМИСТИЧНЫЕ CRUD ОПЕРАЦИИ ==========
+
+/**
+ * Оптимистично добавляет товар в локальный стейт
+ */
+function optimisticAdd(product) {
+    product._optimistic = true;
+    state.products.unshift(product);
+    updateCategories();
+    applyFilters();
+    updateStats();
+    render();
+}
+
+/**
+ * Оптимистично обновляет товар в локальном стейте
+ */
+function optimisticUpdate(productId, updates) {
+    const index = state.products.findIndex(p => p.id === productId);
+    if (index !== -1) {
+        state.products[index] = { ...state.products[index], ...updates, _optimistic: true };
+        updateCategories();
+        applyFilters();
+        updateStats();
+        render();
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Оптимистично удаляет товар из локального стейта
+ */
+function optimisticDelete(productId) {
+    const index = state.products.findIndex(p => p.id === productId);
+    if (index !== -1) {
+        state.products[index]._deleted = true;
+        applyFilters();
+        updateStats();
+        render();
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Удаление товара через Sync Engine
  */
 async function deleteProduct(id) {
     if (state.isDeleting) return;
     
-    const product = getProductById(id);
+    const product = state.products.find(p => p.id === id);
     if (!product) {
         showNotification('Товар не найден', 'error');
         return;
@@ -194,70 +329,37 @@ async function deleteProduct(id) {
     
     if (!confirmed) return;
     
-    // ОПТИМИСТИЧНОЕ УДАЛЕНИЕ: НЕМЕДЛЕННО удаляем из локального стейта
-    // Товар НЕ восстанавливается при ошибке синхронизации
-    const removed = removeProductFromState(id);
-    if (!removed) return;
+    // Оптимистичное удаление
+    optimisticDelete(id);
     
-    // Если офлайн или сервер недоступен — добавляем в очередь
-    if (!isOnline() || isOffline()) {
-        addPendingOperation({
-            type: 'delete',
-            productId: id,
-            product: product
-        });
-        
-        updateSyncIndicator();
-        showNotification(
-            `Товар "${product.name}" будет удалён при восстановлении сети`,
-            'warning'
-        );
-        return;
-    }
-    
-    // Онлайн — удаляем через очередь (для единообразия)
-    state.isDeleting = true;
-    render();
-    
+    // Сохраняем изменение через Sync Engine
     try {
-        // Добавляем в очередь и сразу синхронизируем
-        addPendingOperation({
-            type: 'delete',
-            productId: id,
-            product: product
-        });
+        await saveChange(
+            ENTITIES.PRODUCTS,
+            OP_TYPES.DELETE,
+            { id, name: product.name },
+            product
+        );
         
-        const result = await syncPendingOperations();
-        
-        if (result.synced > 0) {
-            showNotification(`Товар "${product.name}" удалён`, 'success');
-        } else {
-            showNotification(
-                `Товар "${product.name}" будет удалён при восстановлении сети`,
-                'warning'
-            );
-        }
-        
-        updateSyncIndicator();
+        showNotification(
+            syncState.isOnline 
+                ? `Товар "${product.name}" удалён`
+                : `Товар "${product.name}" будет удалён при восстановлении сети`,
+            'success'
+        );
         
     } catch (error) {
         console.error('[Inventory] Delete error:', error);
         showError('Ошибка удаления: ' + error.message);
-    } finally {
-        state.isDeleting = false;
-        render();
     }
+    
+    updateSyncIndicator();
 }
 
 /**
- * Открывает форму добавления товара
+ * Открытие формы добавления товара
  */
 async function openAddProductForm() {
-    if (!isOnline()) {
-        showError('Добавление товара недоступно в офлайн-режиме', 'warning');
-        return;
-    }
-    
     if (!state.user?.id) {
         showError('Не удалось определить пользователя', 'error');
         return;
@@ -267,38 +369,45 @@ async function openAddProductForm() {
         const newProduct = await openProductFormModal({
             mode: 'create',
             userId: state.user.id,
-            onSuccess: (product) => {
-                addProductToState(product);
-                showNotification(`Товар "${product.name}" добавлен`, 'success');
+            onSuccess: async (product) => {
+                // Оптимистично добавляем
+                optimisticAdd(product);
+                
+                // Сохраняем через Sync Engine
+                await saveChange(
+                    ENTITIES.PRODUCTS,
+                    OP_TYPES.CREATE,
+                    product
+                );
+                
+                showNotification(
+                    syncState.isOnline
+                        ? `Товар "${product.name}" добавлен`
+                        : `Товар "${product.name}" сохранён локально`,
+                    'success'
+                );
+                
+                updateSyncIndicator();
             }
         });
         
-        if (newProduct && !getProductById(newProduct.id)) {
-            addProductToState(newProduct);
-            showNotification(`Товар "${newProduct.name}" добавлен`, 'success');
+        if (newProduct) {
+            optimisticAdd(newProduct);
+            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.CREATE, newProduct);
+            updateSyncIndicator();
         }
         
     } catch (error) {
-        console.error('[Inventory] Add product error:', error);
-        
-        if (!isOnline() || isOffline()) {
-            showError('Сервер недоступен. Добавьте товар позже.', 'warning');
-        } else {
-            showError('Не удалось открыть форму добавления', 'error');
-        }
+        console.error('[Inventory] Add error:', error);
+        showError('Не удалось открыть форму добавления', 'error');
     }
 }
 
 /**
- * Открывает форму редактирования товара
+ * Открытие формы редактирования товара
  */
 async function openEditProductForm(id) {
-    if (!isOnline() || isOffline()) {
-        showError('Редактирование товара недоступно в офлайн-режиме', 'warning');
-        return;
-    }
-    
-    const product = getProductById(id);
+    const product = state.products.find(p => p.id === id);
     if (!product) {
         showNotification('Товар не найден', 'error');
         return;
@@ -309,19 +418,29 @@ async function openEditProductForm(id) {
             mode: 'edit',
             initialData: product,
             userId: state.user?.id,
-            onSuccess: (product) => {
-                updateProductInState(id, product);
+            onSuccess: async (product) => {
+                optimisticUpdate(id, product);
+                
+                await saveChange(
+                    ENTITIES.PRODUCTS,
+                    OP_TYPES.UPDATE,
+                    product,
+                    product
+                );
+                
                 showNotification(`Товар "${product.name}" обновлён`, 'success');
+                updateSyncIndicator();
             }
         });
         
         if (updatedProduct) {
-            updateProductInState(id, updatedProduct);
-            showNotification(`Товар "${updatedProduct.name}" обновлён`, 'success');
+            optimisticUpdate(id, updatedProduct);
+            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.UPDATE, updatedProduct, product);
+            updateSyncIndicator();
         }
         
     } catch (error) {
-        console.error('[Inventory] Edit product error:', error);
+        console.error('[Inventory] Edit error:', error);
         showError('Не удалось открыть форму редактирования', 'error');
     }
 }
@@ -339,9 +458,9 @@ function getStatusClass(status) {
 }
 
 function renderStats() {
-    const stats = getStats();
-    
     if (!DOM.statsBar) return;
+    
+    const stats = state.stats;
     
     DOM.statsBar.innerHTML = `
         <div class="stat-card-inline">
@@ -385,18 +504,17 @@ function renderStats() {
 function updateCategorySelect() {
     if (!DOM.categoryFilter) return;
     
-    const categories = getCategories();
-    const selectedCategory = getSelectedCategory();
+    const selectedCategory = state.selectedCategory;
     const currentValue = DOM.categoryFilter.value;
     
     while (DOM.categoryFilter.options.length > 1) {
         DOM.categoryFilter.remove(1);
     }
     
-    categories.forEach(cat => {
+    state.categories.forEach(cat => {
         const option = document.createElement('option');
-        option.value = cat;
-        option.textContent = getCategoryName(cat);
+        option.value = cat.value;
+        option.textContent = `${getCategoryName(cat.value)} (${cat.count})`;
         DOM.categoryFilter.appendChild(option);
     });
     
@@ -412,11 +530,8 @@ function render() {
     updateCategorySelect();
     
     const productsTable = document.getElementById('productsTable');
-    const filteredProducts = getFilteredProducts();
-    const loading = isLoading();
     
-    // Состояние загрузки
-    if (loading && productsState.all.length === 0) {
+    if (state.isLoading && state.products.length === 0) {
         DOM.tableBody.innerHTML = `
             <tr>
                 <td colspan="7" style="text-align: center; padding: 40px;">
@@ -429,14 +544,9 @@ function render() {
         return;
     }
     
-    // Пустое состояние
-    if (filteredProducts.length === 0) {
+    if (state.filteredProducts.length === 0) {
         let message = 'Товары не найдены';
-        const searchQuery = getSearchQuery();
-        const selectedStatus = getSelectedStatus();
-        const selectedCategory = getSelectedCategory();
-        
-        if (searchQuery || selectedStatus || selectedCategory) {
+        if (state.searchQuery || state.selectedStatus || state.selectedCategory) {
             message = 'По вашему запросу ничего не найдено';
         }
         
@@ -454,16 +564,17 @@ function render() {
     
     if (productsTable) productsTable.style.display = 'table';
     
-    DOM.tableBody.innerHTML = filteredProducts.map(product => {
+    DOM.tableBody.innerHTML = state.filteredProducts.map(product => {
         const statusText = getStatusText(product.status);
         const statusClass = getStatusClass(product.status);
         const safeName = escapeHtml(product.name || 'Без названия');
         const safeId = escapeHtml(product.id?.slice(0, 8) || '—');
         const safePhotoUrl = product.photo_url ? escapeHtml(product.photo_url) : null;
         const isSelected = state.selectedIds.has(product.id);
+        const isOptimistic = product._optimistic ? 'optimistic' : '';
         
         return `
-            <tr class="product-row ${isSelected ? 'selected' : ''}" data-id="${product.id}">
+            <tr class="product-row ${isSelected ? 'selected' : ''} ${isOptimistic}" data-id="${product.id}">
                 <td class="checkbox-cell">
                     <input type="checkbox" class="table-checkbox" data-id="${product.id}" 
                         ${state.isDeleting ? 'disabled' : ''} ${isSelected ? 'checked' : ''}>
@@ -477,7 +588,10 @@ function render() {
                     </div>
                 </td>
                 <td class="name-cell">
-                    <div class="product-name">${safeName}</div>
+                    <div class="product-name">
+                        ${safeName}
+                        ${product._optimistic ? '<span class="optimistic-badge" title="Ожидает синхронизации">⏳</span>' : ''}
+                    </div>
                     <div class="product-id">ID: ${safeId}</div>
                 </td>
                 <td class="category-cell">${getCategoryName(product.category)}</td>
@@ -540,25 +654,6 @@ function attachRowEvents() {
             updateSelectAllCheckbox();
         });
     });
-    
-    DOM.tableBody.querySelectorAll('.product-row').forEach(row => {
-        row.addEventListener('click', (e) => {
-            if (e.target.type === 'checkbox' || e.target.tagName === 'BUTTON') return;
-            
-            const checkbox = row.querySelector('.table-checkbox');
-            if (checkbox) {
-                checkbox.checked = !checkbox.checked;
-                const id = checkbox.dataset.id;
-                if (checkbox.checked) {
-                    state.selectedIds.add(id);
-                } else {
-                    state.selectedIds.delete(id);
-                }
-                updateSelectAllCheckbox();
-                row.classList.toggle('selected', checkbox.checked);
-            }
-        });
-    });
 }
 
 function updateSelectAllCheckbox() {
@@ -595,6 +690,7 @@ function cacheElements() {
     DOM.offlineBanner = document.getElementById('offlineBanner');
     DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
     DOM.syncBadge = document.getElementById('syncBadge');
+    DOM.syncStatus = document.getElementById('syncStatus');
     DOM.userEmail = document.getElementById('userEmail');
     DOM.logoutBtn = document.getElementById('logoutBtn');
     DOM.moduleLoading = document.getElementById('moduleLoading');
@@ -606,8 +702,17 @@ function displayUserInfo() {
             const name = state.user.email?.split('@')[0] || 'Пользователь';
             DOM.userEmail.textContent = name;
         } else {
-            DOM.userEmail.textContent = 'Офлайн-режим';
+            DOM.userEmail.textContent = 'Гость';
         }
+    }
+}
+
+function markModuleLoaded() {
+    if (DOM.moduleLoading) {
+        DOM.moduleLoading.style.display = 'none';
+    }
+    if (window.markInventoryModuleLoaded) {
+        window.markInventoryModuleLoaded();
     }
 }
 
@@ -619,7 +724,10 @@ function attachEvents() {
     if (DOM.refreshBtn) {
         DOM.refreshBtn.addEventListener('click', () => {
             hideError();
-            loadProducts(true);
+            loadProductsData(true);
+            if (syncState.isOnline) {
+                syncNow();
+            }
         });
     }
     
@@ -628,31 +736,44 @@ function attachEvents() {
     }
     
     if (DOM.offlineRetryBtn) {
-        DOM.offlineRetryBtn.addEventListener('click', () => loadProducts(true));
+        DOM.offlineRetryBtn.addEventListener('click', () => {
+            if (syncState.isOnline) {
+                syncNow();
+            }
+            loadProductsData(true);
+        });
     }
     
     if (DOM.searchInput) {
         const debouncedSearch = debounce(() => {
-            setSearchQuery(DOM.searchInput.value);
+            state.searchQuery = DOM.searchInput.value.trim().toLowerCase();
+            applyFilters();
+            render();
         }, 300);
         DOM.searchInput.addEventListener('input', debouncedSearch);
     }
     
     if (DOM.statusFilter) {
         DOM.statusFilter.addEventListener('change', (e) => {
-            setStatusFilter(e.target.value);
+            state.selectedStatus = e.target.value;
+            applyFilters();
+            render();
         });
     }
     
     if (DOM.categoryFilter) {
         DOM.categoryFilter.addEventListener('change', (e) => {
-            setCategoryFilter(e.target.value);
+            state.selectedCategory = e.target.value;
+            applyFilters();
+            render();
         });
     }
     
     if (DOM.sortSelect) {
         DOM.sortSelect.addEventListener('change', (e) => {
-            setSortBy(e.target.value);
+            state.sortBy = e.target.value;
+            applyFilters();
+            render();
         });
     }
     
@@ -677,56 +798,56 @@ function attachEvents() {
         });
     }
     
+    // События сети
     window.addEventListener('online', () => {
-        if (isOffline()) {
-            hideOfflineBanner();
-            showNotification('Соединение восстановлено', 'success');
-            syncPendingOperations().then(() => loadProducts(true));
-        }
+        hideOfflineBanner();
+        showNotification('Соединение восстановлено', 'success');
+        updateSyncIndicator();
     });
     
     window.addEventListener('offline', () => {
         showOfflineBanner();
-        showNotification('Отсутствует подключение к интернету', 'warning');
+        showNotification('Отсутствует подключение к интернету. Работа в офлайн-режиме.', 'warning');
+        updateSyncIndicator();
     });
 }
 
-function setupReactivity() {
-    setProductsChangeCallback(() => {
-        render();
-        updateSyncIndicator();
-    });
-    
-    setOperationsChangeCallback(() => {
+function setupSyncSubscription() {
+    subscribeToSync((syncState, event) => {
         updateSyncIndicator();
         
-        // Если пришёл сигнал о необходимости обновления данных
-        const callback = (data) => {
-            if (data?.needsRefresh) {
-                loadProducts(true);
-            }
-        };
+        if (!syncState.isOnline) {
+            showOfflineBanner();
+        } else {
+            hideOfflineBanner();
+        }
         
-        // Переопределяем колбэк
-        setOperationsChangeCallback((data) => {
-            updateSyncIndicator();
-            callback(data);
-        });
+        // При завершении синхронизации обновляем данные
+        if (event?.type === 'sync-completed' && event.synced > 0) {
+            loadProductsData(true);
+            showNotification(`Синхронизировано операций: ${event.synced}`, 'success');
+        }
     });
 }
 
 async function init() {
-    console.log('[Inventory] Initializing MPA page...');
+    console.log('[Inventory] Initializing...');
     
     cacheElements();
-    loadPendingOperations();
-    setupReactivity();
     
-    // Проверяем офлайн-статус
-    if (!isOnline()) {
+    // Инициализируем Sync Engine
+    await initSyncEngine();
+    setupSyncSubscription();
+    
+    // Проверяем сеть
+    if (!syncState.isOnline) {
         showOfflineBanner();
+    } else {
+        hideOfflineBanner();
     }
+    updateSyncIndicator();
     
+    // Проверяем авторизацию
     const authResult = await requireAuth();
     
     if (authResult.user) {
@@ -742,24 +863,13 @@ async function init() {
     displayUserInfo();
     attachEvents();
     
-    // Загружаем товары
-    await loadProducts();
-    
-    // Запускаем фоновую синхронизацию
-    startBackgroundSync();
-    
-    // Обновляем индикатор синхронизации
-    updateSyncIndicator();
+    // Загружаем товары (мгновенно из кэша)
+    await loadProductsData();
     
     markModuleLoaded();
     
-    console.log('[Inventory] Page initialized');
+    console.log('[Inventory] Initialized');
 }
-
-// Очистка при уходе со страницы
-window.addEventListener('beforeunload', () => {
-    stopBackgroundSync();
-});
 
 // ========== ЗАПУСК ==========
 
