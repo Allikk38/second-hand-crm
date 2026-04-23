@@ -5,12 +5,11 @@
  * Без анимаций, только необходимая нормализация.
  * 
  * @stylesheet reset
- * @version 4.0.0
+ * @version 5.0.0
  * @changes
- * - Убраны все анимации (scroll-behavior, transitions)
- * - Упрощен скроллбар (без анимаций)
- * - Убраны декоративные эффекты (selection, focus-visible)
- * - Оставлена только базовая нормализация
+ * - Добавлены стили для fieldset и legend.
+ * - Добавлен базовый стиль для :focus.
+ * - Упрощены комментарии.
  */
 
 /* ========== BOX SIZING ========== */
@@ -142,6 +141,7 @@ button:disabled,
     cursor: not-allowed;
 }
 
+/* Фокус для кнопок (без агрессивных outline) */
 button:focus,
 [type='button']:focus,
 [type='reset']:focus,
@@ -188,6 +188,14 @@ progress {
 ::-webkit-file-upload-button {
     -webkit-appearance: button;
     font: inherit;
+}
+
+/* ========== FIELDSET ========== */
+fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
 }
 
 /* ========== INTERACTIVE ========== */
@@ -274,17 +282,12 @@ dialog:not([open]) {
     display: none;
 }
 
-/* ========== ADDITIONAL RESETS ========== */
-fieldset {
-    border: none;
-    padding: 0;
-    margin: 0;
-}
-
+/* ========== TEXTAREA ========== */
 textarea {
     resize: vertical;
 }
 
+/* ========== VISIBILITY ========== */
 [hidden] {
     display: none !important;
 }
@@ -294,7 +297,25 @@ textarea {
     pointer-events: none;
 }
 
-/* ========== SCROLLBAR ========== */
+/* ========== ФОКУС ДЛЯ ДОСТУПНОСТИ ========== */
+/* Базовый стиль для всех фокусов */
+:focus {
+    outline: none;
+}
+
+/* Стиль только для клавиатурной навигации */
+:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+}
+
+/* ========== ПЛЕЙСХОЛДЕРЫ ========== */
+::placeholder {
+    color: var(--color-text-muted);
+    opacity: 1;
+}
+
+/* ========== СКРОЛЛБАР ========== */
 /* Минимальный, статичный скроллбар без анимаций */
 ::-webkit-scrollbar {
     width: 8px;
@@ -312,17 +333,4 @@ textarea {
 
 ::-webkit-scrollbar-corner {
     background: transparent;
-}
-
-/* ========== БАЗОВАЯ ДОСТУПНОСТЬ ========== */
-/* Только для клавиатурной навигации, без анимаций */
-:focus-visible {
-    outline: var(--focus-ring-width) solid var(--focus-ring-color);
-    outline-offset: var(--focus-ring-offset);
-}
-
-/* ========== ПЛЕЙСХОЛДЕРЫ ========== */
-::placeholder {
-    color: var(--color-text-muted);
-    opacity: 1;
 }
