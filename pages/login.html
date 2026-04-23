@@ -1,3 +1,7 @@
+// ========================================
+// FILE: pages/login.html
+// ========================================
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -5,10 +9,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Вход | SH CRM</title>
     
+    <!-- Базовый путь для GitHub Pages -->
+    <base href="/second-hand-crm/">
+    
     <!-- Основные стили -->
-    <link rel="stylesheet" href="../css/styles.css">
-    <link rel="stylesheet" href="../css/components/forms.css">
-    <link rel="stylesheet" href="../css/components/buttons.css">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components/forms.css">
+    <link rel="stylesheet" href="css/components/buttons.css">
     
     <style>
         /* Стили только для страницы входа */
@@ -180,7 +187,7 @@
     <div id="notificationContainer"></div>
     
     <!-- Основной скрипт страницы -->
-    <script type="module" src="../js/login.js"></script>
+    <script type="module" src="js/login.js"></script>
     
     <!-- Fallback на случай ошибки -->
     <script>
@@ -201,9 +208,6 @@
             window.addEventListener('offline', function() {
                 if (offlineBanner) offlineBanner.classList.add('show');
             });
-            
-            // Убираем таймаут, так как модуль загрузился
-            // (таймаут был в старой версии, теперь не нужен)
         })();
     </script>
 </body>
