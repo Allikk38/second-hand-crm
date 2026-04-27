@@ -10,13 +10,14 @@
  * кэширование и быстрое добавление новых товаров.
  * 
  * @module cashier/products
- * @version 1.0.1
+ * @version 1.0.2
  * @changes
+ * - v1.0.2: Убран неиспользуемый импорт debounce.
  * - v1.0.1: getSupabase() теперь с await (официальный SDK)
  */
 
 import { getSupabase, isOnline } from '../../core/auth.js';
-import { debounce, getCategoryName } from '../../utils/formatters.js';
+import { getCategoryName } from '../../utils/formatters.js';
 import { showNotification } from '../../utils/ui.js';
 import { openProductFormModal } from '../../utils/product-form.js';
 import { addToCart } from './cart.js';
@@ -181,16 +182,27 @@ export function findProductByCode(code) {
     return null;
 }
 
+/**
+ * Создаёт обработчик сканера с дебаунсом.
+ * @param {Function} onFind - Колбэк при нахождении товара
+ * @param {Function} [onNotFound] - Колбэк если товар не найден
+ * @returns {Function}
+ */
 export function createScannerHandler(onFind, onNotFound) {
-    return debounce((code) => {
+    let timer = null;
+    
+    return function(code) {
         if (!code) return;
-        const product = findProductByCode(code);
-        if (product) {
-            onFind(product);
-        } else {
-            onNotFound?.(code);
-        }
-    }, SCANNER_DEBOUNCE_MS);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            const product = findProductByCode(code);
+            if (product) {
+                onFind(product);
+            } else {
+                onNotFound?.(code);
+            }
+        }, SCANNER_DEBOUNCE_MS);
+    };
 }
 
 export async function openQuickAddProductForm(userId) {
