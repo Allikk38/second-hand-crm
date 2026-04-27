@@ -9,30 +9,18 @@
  * Отвечает за открытие/закрытие смены, загрузку статистики,
  * кэширование данных смены и интеграцию с Supabase.
  * 
- * Архитектурные решения:
- * - Кэширование смены в localStorage с TTL 24 часа.
- * - Автоматическая загрузка статистики при открытии смены.
- * - Экспорт объекта shiftState и функций для работы с ним.
- * - Интеграция с ui.js для диалогов подтверждения.
- * 
  * @module cashier/shift
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - v1.0.1: getSupabase() теперь с await (официальный SDK)
  */
 
 import { getSupabase } from '../../core/auth.js';
 import { showConfirmDialog } from '../../utils/ui.js';
 
-// ========== КОНСТАНТЫ ==========
-
 const SHIFT_STORAGE_KEY = 'sh_cashier_shift';
-const SHIFT_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 часа
+const SHIFT_CACHE_TTL = 24 * 60 * 60 * 1000;
 
-// ========== СОСТОЯНИЕ СМЕНЫ ==========
-
-/**
- * Состояние смены
- * @type {Object}
- */
 export const shiftState = {
     currentShift: null,
     stats: {
@@ -44,51 +32,24 @@ export const shiftState = {
     isActionPending: false
 };
 
-// ========== ПОДПИСЧИКИ НА ИЗМЕНЕНИЯ ==========
-
-/** @type {Function|null} */
 let onChangeCallback = null;
 
-/**
- * Устанавливает колбэк для вызова при изменении смены
- * @param {Function} callback - Функция для вызова
- */
 export function setShiftChangeCallback(callback) {
     onChangeCallback = callback;
 }
 
-/**
- * Вызывает колбэк изменения смены
- */
 function notifyShiftChanged() {
-    if (onChangeCallback) {
-        onChangeCallback();
-    }
+    if (onChangeCallback) onChangeCallback();
 }
 
-// ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-
-/**
- * Проверяет, открыта ли смена
- * @returns {boolean}
- */
 export function isShiftOpen() {
     return !!shiftState.currentShift;
 }
 
-/**
- * Получает ID текущей смены
- * @returns {string|null}
- */
 export function getCurrentShiftId() {
     return shiftState.currentShift?.id || null;
 }
 
-// ========== КЭШИРОВАНИЕ ==========
-
-/**
- * Сохраняет смену в localStorage
- */
 export function saveShiftToCache() {
     if (shiftState.currentShift) {
         try {
@@ -103,10 +64,6 @@ export function saveShiftToCache() {
     }
 }
 
-/**
- * Загружает смену из localStorage
- * @returns {boolean} true если смена загружена
- */
 export function loadShiftFromCache() {
     try {
         const cached = localStorage.getItem(SHIFT_STORAGE_KEY);
@@ -132,9 +89,6 @@ export function loadShiftFromCache() {
     return false;
 }
 
-/**
- * Очищает кэш смены
- */
 export function clearShiftCache() {
     try {
         localStorage.removeItem(SHIFT_STORAGE_KEY);
@@ -143,12 +97,6 @@ export function clearShiftCache() {
     }
 }
 
-// ========== ЗАГРУЗКА СТАТИСТИКИ ==========
-
-/**
- * Загружает статистику текущей смены
- * @returns {Promise<boolean>} true если статистика загружена
- */
 export async function loadShiftStats() {
     if (!shiftState.currentShift) return false;
     
@@ -182,13 +130,6 @@ export async function loadShiftStats() {
     }
 }
 
-// ========== ПРОВЕРКА ОТКРЫТОЙ СМЕНЫ ==========
-
-/**
- * Проверяет наличие открытой смены на сервере
- * @param {string} userId - ID пользователя
- * @returns {Promise<boolean>} true если смена найдена
- */
 export async function checkOpenShift(userId) {
     if (!userId) return false;
     
@@ -221,13 +162,6 @@ export async function checkOpenShift(userId) {
     }
 }
 
-// ========== ОПЕРАЦИИ СО СМЕНОЙ ==========
-
-/**
- * Открывает новую смену
- * @param {string} userId - ID пользователя
- * @returns {Promise<boolean>} true если смена открыта
- */
 export async function openShift(userId) {
     if (shiftState.isActionPending) return false;
     if (!userId) {
@@ -269,12 +203,16 @@ export async function openShift(userId) {
     }
 }
 
-/**
- * Закрывает текущую смену
- * @returns {Promise<boolean>} true если смена закрыта
- */
 export async function closeShift() {
     if (!shiftState.currentShift || shiftState.isActionPending) return false;
+    
+    const formatMoney = (amount) => {
+        return new Intl.NumberFormat('ru-RU', {
+            style: 'currency',
+            currency: 'RUB',
+            minimumFractionDigits: 0
+        }).format(amount).replace('RUB', '₽').trim();
+    };
     
     const confirmed = await showConfirmDialog({
         title: 'Закрытие смены',
@@ -321,40 +259,14 @@ export async function closeShift() {
     }
 }
 
-// ========== ФОРМАТИРОВАНИЕ ==========
-
-/**
- * Форматирует сумму (временная функция, будет заменена на formatters.js)
- * @param {number} amount - Сумма
- * @returns {string}
- */
-function formatMoney(amount) {
-    return new Intl.NumberFormat('ru-RU', {
-        style: 'currency',
-        currency: 'RUB',
-        minimumFractionDigits: 0
-    }).format(amount).replace('RUB', '₽').trim();
-}
-
-// ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
-
 export default {
-    // Состояние
     shiftState,
-    
-    // Колбэки
     setShiftChangeCallback,
-    
-    // Проверки
     isShiftOpen,
     getCurrentShiftId,
-    
-    // Кэширование
     saveShiftToCache,
     loadShiftFromCache,
     clearShiftCache,
-    
-    // Операции
     checkOpenShift,
     loadShiftStats,
     openShift,
