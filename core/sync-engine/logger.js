@@ -6,16 +6,20 @@
  * Extended Logger Module
  * 
  * Подробное логирование для аудита и выявления аномалий.
- * Логи отправляются в Supabase таблицу sync_logs.
+ * Логи отправляются в Supabase таблицу sync_logs асинхронно.
  * При недоступности сервера логи сохраняются локально в localStorage.
  * 
+ * ВАЖНО: отправка логов НЕ блокирует основной поток.
+ * Все запросы к Supabase выполняются через setTimeout.
+ * 
  * @module sync-engine/logger
- * @version 2.1.1
+ * @version 2.2.0
  * @changes
- * - Добавлены явные алиасы экспорта: logInfo, logWarn, logError
- * - Исправлена проблема импорта в sync-engine/index.js
- * - Добавлена проверка существования таблицы sync_logs
- * - Локальное сохранение логов в localStorage при ошибке отправки
+ * - Асинхронная отправка логов через setTimeout (не блокирует UI)
+ * - Добавлен флаг isFlushing для предотвращения наложения запросов
+ * - Увеличен BUFFER_SIZE до 50 для снижения частоты отправок
+ * - Увеличен FLUSH_INTERVAL до 30 секунд
+ * - Исправлена синхронная блокировка при инициализации
  */
 
 import { getSupabase } from '../auth.js';
@@ -44,11 +48,12 @@ const CATEGORIES = {
 const LOCAL_LOG_STORE = 'sync_logs_local';
 const MAX_LOCAL_LOGS = 500;
 
-// Буфер логов для отправки на сервер
+// Буфер логов
 let logBuffer = [];
-const BUFFER_SIZE = 20;
-const FLUSH_INTERVAL = 15000;
+const BUFFER_SIZE = 50;
+const FLUSH_INTERVAL = 30000; // 30 секунд
 let flushTimer = null;
+let isFlushing = false;
 let sessionId = generateSessionId();
 
 // Флаги состояния
@@ -149,44 +154,10 @@ async function checkTableAvailability() {
         
         if (error) {
             if (error.code === '42P01') {
-                console.error('[Logger] Table sync_logs does not exist. Run SQL:');
-                console.error(`
-CREATE TABLE IF NOT EXISTS public.sync_logs (
-    id BIGSERIAL PRIMARY KEY,
-    level TEXT,
-    category TEXT,
-    event TEXT,
-    entity TEXT,
-    entity_id TEXT,
-    operation_type TEXT,
-    duration_ms INTEGER,
-    error_message TEXT,
-    error_code TEXT,
-    error_stack TEXT,
-    details JSONB DEFAULT '{}',
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    device_id TEXT,
-    user_id UUID,
-    session_id TEXT,
-    page TEXT
-);
-
-ALTER TABLE public.sync_logs ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow insert for all" 
-ON public.sync_logs FOR INSERT 
-TO anon, authenticated 
-USING (true);
-
-CREATE POLICY "Allow select for all" 
-ON public.sync_logs FOR SELECT 
-TO anon, authenticated 
-USING (true);
-                `.trim());
+                console.error('[Logger] Table sync_logs does not exist');
                 isTableAvailable = false;
             } else if (error.code === '42501') {
-                console.error('[Logger] Permission denied for sync_logs. Check RLS policies.');
+                console.error('[Logger] Permission denied for sync_logs');
                 isTableAvailable = false;
             } else {
                 console.error('[Logger] Unknown error checking table:', error.message, error.code);
@@ -207,10 +178,26 @@ USING (true);
     return false;
 }
 
-// ========== ОТПРАВКА ЛОГОВ ==========
+// ========== ОТПРАВКА ЛОГОВ (АСИНХРОННАЯ) ==========
+
+/**
+ * Отправляет накопленные логи в Supabase.
+ * Выполняется АСИНХРОННО через setTimeout, не блокирует UI.
+ */
+function scheduleAsyncFlush() {
+    if (flushTimer) return;
+    
+    flushTimer = setTimeout(async () => {
+        flushTimer = null;
+        await flushLogs();
+    }, FLUSH_INTERVAL);
+}
 
 async function flushLogs() {
+    if (isFlushing) return;
     if (logBuffer.length === 0) return;
+    
+    isFlushing = true;
     
     const logs = [...logBuffer];
     logBuffer = [];
@@ -219,6 +206,7 @@ async function flushLogs() {
     
     if (!available) {
         saveLogsLocally(logs);
+        isFlushing = false;
         return;
     }
     
@@ -243,30 +231,25 @@ async function flushLogs() {
             saveLogsLocally(enrichedLogs);
         } else {
             lastFlushError = null;
-            console.log('[Logger] Successfully sent', enrichedLogs.length, 'logs');
             
             // Пытаемся отправить локальные логи
             const localLogs = getLocalLogs();
             if (localLogs.length > 0) {
                 logBuffer = [...localLogs, ...logBuffer];
-                scheduleFlush();
             }
         }
     } catch (error) {
         console.error('[Logger] Flush error:', error.message);
         lastFlushError = { message: error.message, code: 'NETWORK', time: Date.now() };
         saveLogsLocally(logs);
+    } finally {
+        isFlushing = false;
     }
 }
 
-function scheduleFlush() {
-    if (flushTimer) clearTimeout(flushTimer);
-    flushTimer = setTimeout(() => {
-        flushLogs();
-        flushTimer = null;
-    }, FLUSH_INTERVAL);
-}
-
+/**
+ * Добавляет лог в буфер. Отправка асинхронная, не блокирует UI.
+ */
 function addLog(level, category, event, options = {}) {
     const {
         entity,
@@ -290,34 +273,34 @@ function addLog(level, category, event, options = {}) {
         error_message: error?.message || null,
         error_code: errorCode || error?.code || null,
         error_stack: error?.stack?.split('\n').slice(0, 5).join('\n') || null,
-        details: JSON.stringify(details),
-        metadata: JSON.stringify(metadata),
+        details: typeof details === 'string' ? details : JSON.stringify(details),
+        metadata: typeof metadata === 'string' ? metadata : JSON.stringify(metadata),
         created_at: new Date().toISOString()
     };
     
+    // Пишем в буфер
     logBuffer.push(logEntry);
     
+    // Консоль для отладки
     const consoleMsg = `[${category}] ${event}`;
-    const consoleData = { ...details, ...metadata };
+    const consoleData = typeof details === 'object' ? details : {};
     
     if (level === 'error') console.error(consoleMsg, consoleData);
     else if (level === 'warn') console.warn(consoleMsg, consoleData);
     else if (level === 'info') console.info(consoleMsg, consoleData);
     else console.log(consoleMsg, consoleData);
     
-    if (logBuffer.length >= BUFFER_SIZE) {
-        flushLogs();
+    // Отправляем только если буфер заполнен или это ошибка
+    if (logBuffer.length >= BUFFER_SIZE || level === 'error') {
+        // Асинхронная отправка без await — не блокирует
+        setTimeout(() => flushLogs(), 0);
     } else {
-        scheduleFlush();
+        scheduleAsyncFlush();
     }
 }
 
 // ========== ПУБЛИЧНЫЙ API ==========
 
-/**
- * Проверяет работоспособность логгера
- * @returns {Promise<{available: boolean, lastError: Object|null}>}
- */
 export async function testLoggerConnection() {
     const available = await checkTableAvailability();
     
@@ -325,7 +308,6 @@ export async function testLoggerConnection() {
         info(CATEGORIES.SYSTEM, 'logger_test_passed', {
             details: { message: 'Logger connection test passed' }
         });
-        await flushLogs();
     }
     
     return {
@@ -334,21 +316,18 @@ export async function testLoggerConnection() {
     };
 }
 
-/**
- * Получает статус логгера
- * @returns {Object}
- */
 export function getLoggerStatus() {
     return {
         initialized: isLoggerInitialized,
         tableAvailable: isTableAvailable,
         bufferSize: logBuffer.length,
+        isFlushing,
         lastFlushError: lastFlushError,
         localLogsCount: JSON.parse(localStorage.getItem(LOCAL_LOG_STORE) || '[]').length
     };
 }
 
-// Базовые методы с явными алиасами для экспорта
+// Базовые методы
 export function debug(category, event, options = {}) {
     addLog(LOG_LEVELS.DEBUG, category, event, options);
 }
@@ -365,7 +344,6 @@ function errorLog(category, event, errorObj, options = {}) {
     addLog(LOG_LEVELS.ERROR, category, event, { ...options, error: errorObj });
 }
 
-// Экспорт с алиасами для совместимости с sync-engine/index.js
 export { info as logInfo };
 export { warnLog as logWarn };
 export { errorLog as logError };
@@ -463,7 +441,8 @@ export async function initLogger() {
         if (localLogs.length > 0) {
             console.log('[Logger] Found', localLogs.length, 'locally saved logs, retrying');
             logBuffer = [...localLogs, ...logBuffer];
-            await flushLogs();
+            // Асинхронная отправка, не блокирует
+            setTimeout(() => flushLogs(), 100);
         }
     }
     
