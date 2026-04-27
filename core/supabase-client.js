@@ -9,7 +9,7 @@
  * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
  * 
  * @module supabase-client
- * @version 1.7.0
+ * @version 1.7.1
  * @changes
  * - v1.4.0: getUser() с отложенным рефрешем
  * - v1.5.0: Полный рефакторинг from() — поддержка method chaining
@@ -20,7 +20,8 @@
  * - v1.7.0: Таймаут 30с для signInWithPassword и refreshSession (холодный старт Supabase)
  * - v1.7.0: Автоматический повтор при первой ошибке таймаута
  * - v1.7.0: Понятные сообщения об ошибках на русском
- * - v1.7.0: Сигнал таймаута передаётся во все вызовы apiFetch
+ * - v1.7.1: ИСПРАВЛЕНО двойное URL-кодирование в фильтрах (убрал encodeURIComponent)
+ * - v1.7.1: URLSearchParams сам кодирует значения, повторное кодирование давало %253A
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
@@ -28,7 +29,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const STORAGE_KEY = 'sb-bhdwniiyrrujeoubrvle-auth-token';
 
 // Таймауты
-const AUTH_TIMEOUT_MS = 30000; // 30 секунд для auth-запросов (холодный старт Supabase)
+const AUTH_TIMEOUT_MS = 30000;
 
 // ========== ПОЛИФИЛЛ ==========
 
@@ -71,7 +72,6 @@ async function apiFetch(path, options = {}) {
     try {
         return await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
     } catch (error) {
-        // Прокидываем ошибку с понятным сообщением
         if (error.name === 'TimeoutError' || error.name === 'AbortError') {
             const timeoutError = new Error('Сервер не отвечает. Попробуйте ещё раз.');
             timeoutError.code = 'TIMEOUT';
@@ -112,13 +112,7 @@ function getAccessToken() {
 
 // ========== АУТЕНТИФИКАЦИЯ ==========
 
-/**
- * Выполняет вход с паролем.
- * Включает таймаут 30с для холодного старта Supabase.
- * При первой ошибке таймаута делает автоматический повтор.
- */
 async function signInWithPassword(email, password) {
-    // Пытаемся выполнить вход, с одним автоматическим повтором при таймауте
     let lastError = null;
     
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -162,17 +156,14 @@ async function signInWithPassword(email, password) {
         } catch (error) {
             lastError = error;
             
-            // При таймауте пробуем ещё раз (холодный старт Supabase)
             if (error.code === 'TIMEOUT' && attempt === 0) {
                 continue;
             }
             
-            // На второй попытке или другой ошибке — возвращаем результат
             break;
         }
     }
     
-    // Формируем понятное сообщение об ошибке
     let message = 'Не удалось подключиться к серверу.';
     
     if (lastError) {
@@ -188,9 +179,6 @@ async function signInWithPassword(email, password) {
     return { data: null, error: new Error(message) };
 }
 
-/**
- * Обновляет сессию с таймаутом и автоматическим повтором.
- */
 async function refreshSession() {
     const session = getSession();
     if (!session?.refresh_token) {
@@ -235,7 +223,6 @@ async function refreshSession() {
         } catch (error) {
             lastError = error;
             
-            // При таймауте пробуем ещё раз
             if (error.code === 'TIMEOUT' && attempt === 0) {
                 continue;
             }
@@ -244,7 +231,6 @@ async function refreshSession() {
         }
     }
     
-    // Если после всех попыток ошибка — пробрасываем
     if (lastError) {
         if (lastError.code === 'TIMEOUT') {
             throw { status: 0, message: 'Сервер не отвечает. Проверьте подключение к интернету.' };
@@ -334,6 +320,9 @@ async function signOut() {
  * Строитель запросов с поддержкой method chaining.
  * Накопляет фильтры, выполняет запрос при await.
  * 
+ * ВАЖНО: значения НЕ кодируются через encodeURIComponent — 
+ * URLSearchParams.append() делает это автоматически.
+ * 
  * Поддерживаемые операторы PostgREST:
  * - eq (equals)
  * - neq (not equals)
@@ -414,12 +403,13 @@ class QueryBuilder {
     
     /**
      * Добавляет фильтр равенства.
+     * Значение НЕ кодируется — URLSearchParams сделает это сам.
      * @param {string} column
      * @param {any} value
      * @returns {QueryBuilder}
      */
     eq(column, value) {
-        this._filters.push(`${column}=eq.${encodeURIComponent(value)}`);
+        this._filters.push({ column, op: 'eq', value: String(value) });
         return this;
     }
     
@@ -430,7 +420,7 @@ class QueryBuilder {
      * @returns {QueryBuilder}
      */
     neq(column, value) {
-        this._filters.push(`${column}=neq.${encodeURIComponent(value)}`);
+        this._filters.push({ column, op: 'neq', value: String(value) });
         return this;
     }
     
@@ -442,13 +432,13 @@ class QueryBuilder {
      */
     is(column, value) {
         if (value === null) {
-            this._filters.push(`${column}=is.null`);
+            this._filters.push({ column, op: 'is', value: 'null' });
         } else if (value === true) {
-            this._filters.push(`${column}=is.true`);
+            this._filters.push({ column, op: 'is', value: 'true' });
         } else if (value === false) {
-            this._filters.push(`${column}=is.false`);
+            this._filters.push({ column, op: 'is', value: 'false' });
         } else {
-            this._filters.push(`${column}=eq.${encodeURIComponent(value)}`);
+            this._filters.push({ column, op: 'eq', value: String(value) });
         }
         return this;
     }
@@ -460,7 +450,7 @@ class QueryBuilder {
      * @returns {QueryBuilder}
      */
     gte(column, value) {
-        this._filters.push(`${column}=gte.${encodeURIComponent(value)}`);
+        this._filters.push({ column, op: 'gte', value: String(value) });
         return this;
     }
     
@@ -471,7 +461,7 @@ class QueryBuilder {
      * @returns {QueryBuilder}
      */
     lte(column, value) {
-        this._filters.push(`${column}=lte.${encodeURIComponent(value)}`);
+        this._filters.push({ column, op: 'lte', value: String(value) });
         return this;
     }
     
@@ -482,7 +472,7 @@ class QueryBuilder {
      * @returns {QueryBuilder}
      */
     gt(column, value) {
-        this._filters.push(`${column}=gt.${encodeURIComponent(value)}`);
+        this._filters.push({ column, op: 'gt', value: String(value) });
         return this;
     }
     
@@ -493,7 +483,7 @@ class QueryBuilder {
      * @returns {QueryBuilder}
      */
     lt(column, value) {
-        this._filters.push(`${column}=lt.${encodeURIComponent(value)}`);
+        this._filters.push({ column, op: 'lt', value: String(value) });
         return this;
     }
     
@@ -553,14 +543,11 @@ class QueryBuilder {
             params.append('select', this._selectStr);
         }
         
-        // filters
+        // filters — URLSearchParams сам кодирует значения
         this._filters.forEach(f => {
-            const eqIndex = f.indexOf('=');
-            if (eqIndex !== -1) {
-                const key = f.substring(0, eqIndex);
-                const value = f.substring(eqIndex + 1);
-                params.append(key, value);
-            }
+            const key = f.column;
+            const value = f.op + '.' + f.value;
+            params.append(key, value);
         });
         
         // order
