@@ -8,12 +8,18 @@
     <!-- Базовый путь для GitHub Pages -->
     <base href="/second-hand-crm/">
     
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
     <!-- Основные стили -->
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/layouts/reports.css">
     
     <style>
-        /* Стили только для этой страницы (переопределения) */
         .reports-page {
             display: flex;
             flex-direction: column;
@@ -281,6 +287,15 @@
     
     <!-- Основной скрипт страницы -->
     <script type="module" src="js/reports.js"></script>
+    
+    <!-- PWA: Регистрация Service Worker -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/second-hand-crm/sw.js', { scope: '/second-hand-crm/' })
+                .then(reg => console.log('[PWA] SW registered:', reg.scope))
+                .catch(err => console.warn('[PWA] SW failed:', err));
+        }
+    </script>
     
     <!-- Fallback на случай ошибки загрузки модуля -->
     <script>
