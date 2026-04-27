@@ -9,12 +9,16 @@
  * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
  * 
  * @module supabase-client
- * @version 1.5.0
+ * @version 1.6.0
  * @changes
  * - v1.4.0: getUser() с отложенным рефрешем
  * - v1.5.0: Полный рефакторинг from() — поддержка method chaining
  * - v1.5.0: .select().eq().order().limit() работают как в оригинальном SDK
  * - v1.5.0: .insert(), .update().eq(), .delete().eq() возвращают { data, error }
+ * - v1.6.0: Добавлен метод .is() для проверки IS NULL/TRUE/FALSE
+ * - v1.6.0: Добавлен метод .neq() для проверки неравенства
+ * - v1.6.0: Добавлен метод .gte() и .lte() для диапазонов
+ * - v1.6.0: Полифилл AbortSignal.timeout вынесен в начало файла
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
@@ -213,6 +217,15 @@ async function signOut() {
 /**
  * Строитель запросов с поддержкой method chaining.
  * Накопляет фильтры, выполняет запрос при await.
+ * 
+ * Поддерживаемые операторы PostgREST:
+ * - eq (equals)
+ * - neq (not equals)
+ * - is (null, true, false)
+ * - gte (greater than or equal)
+ * - lte (less than or equal)
+ * - gt (greater than)
+ * - lt (less than)
  */
 class QueryBuilder {
     constructor(table) {
@@ -295,6 +308,81 @@ class QueryBuilder {
     }
     
     /**
+     * Добавляет фильтр неравенства.
+     * @param {string} column
+     * @param {any} value
+     * @returns {QueryBuilder}
+     */
+    neq(column, value) {
+        this._filters.push(`${column}=neq.${encodeURIComponent(value)}`);
+        return this;
+    }
+    
+    /**
+     * Добавляет фильтр IS NULL, IS TRUE, IS FALSE.
+     * @param {string} column
+     * @param {string|null|boolean} value - null, true, false
+     * @returns {QueryBuilder}
+     */
+    is(column, value) {
+        if (value === null) {
+            this._filters.push(`${column}=is.null`);
+        } else if (value === true) {
+            this._filters.push(`${column}=is.true`);
+        } else if (value === false) {
+            this._filters.push(`${column}=is.false`);
+        } else {
+            // Если передано что-то другое, используем eq как fallback
+            this._filters.push(`${column}=eq.${encodeURIComponent(value)}`);
+        }
+        return this;
+    }
+    
+    /**
+     * Добавляет фильтр "больше или равно".
+     * @param {string} column
+     * @param {any} value
+     * @returns {QueryBuilder}
+     */
+    gte(column, value) {
+        this._filters.push(`${column}=gte.${encodeURIComponent(value)}`);
+        return this;
+    }
+    
+    /**
+     * Добавляет фильтр "меньше или равно".
+     * @param {string} column
+     * @param {any} value
+     * @returns {QueryBuilder}
+     */
+    lte(column, value) {
+        this._filters.push(`${column}=lte.${encodeURIComponent(value)}`);
+        return this;
+    }
+    
+    /**
+     * Добавляет фильтр "больше".
+     * @param {string} column
+     * @param {any} value
+     * @returns {QueryBuilder}
+     */
+    gt(column, value) {
+        this._filters.push(`${column}=gt.${encodeURIComponent(value)}`);
+        return this;
+    }
+    
+    /**
+     * Добавляет фильтр "меньше".
+     * @param {string} column
+     * @param {any} value
+     * @returns {QueryBuilder}
+     */
+    lt(column, value) {
+        this._filters.push(`${column}=lt.${encodeURIComponent(value)}`);
+        return this;
+    }
+    
+    /**
      * Добавляет сортировку.
      * @param {string} column
      * @param {{ascending?: boolean}} options
@@ -352,8 +440,13 @@ class QueryBuilder {
         
         // filters
         this._filters.forEach(f => {
-            const [key, value] = f.split('=');
-            params.append(key, value);
+            // Каждый фильтр уже в формате "column=operator.value"
+            const eqIndex = f.indexOf('=');
+            if (eqIndex !== -1) {
+                const key = f.substring(0, eqIndex);
+                const value = f.substring(eqIndex + 1);
+                params.append(key, value);
+            }
         });
         
         // order
