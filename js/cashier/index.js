@@ -10,8 +10,9 @@
  * Работает напрямую через Supabase (core/db.js + core/auth.js).
  * 
  * @module cashier/index
- * @version 3.0.1
+ * @version 3.1.0
  * @changes
+ * - v3.1.0: Исправлены вызовы calculateCartCount/calculateCartTotal (теперь без аргументов).
  * - v3.0.1: getSupabase() теперь с await (официальный SDK)
  * - v3.0.0: Убран Sync Engine, убрано дублирование кода.
  */
