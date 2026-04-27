@@ -3,702 +3,181 @@
 // ========================================
 
 /**
- * Локальный Supabase Client
+ * Supabase Client — обёртка над официальным SDK
  * 
- * Собственная реализация клиента Supabase без внешних зависимостей.
- * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
+ * Загружает @supabase/supabase-js через CDN и создаёт клиент.
+ * Больше никакой самописной реализации HTTP-запросов.
  * 
  * @module supabase-client
- * @version 1.9.0
- * @changes
- * - v1.9.0: getUser() обрабатывает 403 наравне с 401 (refreshSession + retry)
- * - v1.9.0: apiFetch() делает retry при 403 для мутирующих запросов
- * - v1.8.0: Все запросы теперь с AbortController и таймаутом
- * - v1.8.0: GET-запросы: таймаут 12с, мутирующие: 15с, auth: 10с
- * - v1.8.0: getUser() с таймаутом 10с
- * - v1.8.0: refreshSession с таймаутом 10с
- * - v1.8.0: signInWithPassword — retry при abort
- * - v1.8.0: Убрано двойное URL-кодирование в фильтрах
+ * @version 2.0.0
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
-const STORAGE_KEY = 'sb-bhdwniiyrrujeoubrvle-auth-token';
 
-// Таймауты
-const DEFAULT_GET_TIMEOUT = 12000;    // 12 секунд для GET
-const DEFAULT_MUTATE_TIMEOUT = 15000; // 15 секунд для POST/PATCH/DELETE
-const AUTH_TIMEOUT_MS = 10000;        // 10 секунд для auth-запросов
-const STORAGE_TIMEOUT = 15000;        // 15 секунд для storage
-
-// ========== ПОЛИФИЛЛ ==========
-
-function createTimeoutSignal(ms) {
-    if (typeof AbortSignal.timeout === 'function') {
-        return AbortSignal.timeout(ms);
-    }
-    const controller = new AbortController();
-    setTimeout(() => {
-        try { controller.abort(new DOMException('TimeoutError', 'TimeoutError')); } catch {}
-    }, ms);
-    return controller.signal;
-}
-
-// ========== HTTP FETCH ==========
+let supabaseClient = null;
+let initPromise = null;
 
 /**
- * Выполняет HTTP-запрос к Supabase API.
- * Всегда имеет таймаут через AbortController.
- * При 403 для мутирующих запросов пробует обновить токен и повторить.
- * 
- * @param {string} path - Путь API
- * @param {Object} options - Опции запроса
- * @param {number} [options.timeoutMs] - Таймаут в мс (по умолчанию зависит от метода)
- * @returns {Promise<Response>}
+ * Загружает официальный Supabase SDK через CDN
+ * @returns {Promise<void>}
  */
-async function apiFetch(path, options = {}) {
-    const { 
-        method = 'GET', 
-        body, 
-        headers = {}, 
-        signal: externalSignal,
-        timeoutMs 
-    } = options;
-    
-    const token = getAccessToken();
-    
-    // Определяем таймаут
-    let effectiveTimeout = timeoutMs;
-    if (!effectiveTimeout) {
-        if (path.startsWith('/auth/')) {
-            effectiveTimeout = AUTH_TIMEOUT_MS;
-        } else if (method === 'GET') {
-            effectiveTimeout = DEFAULT_GET_TIMEOUT;
-        } else {
-            effectiveTimeout = DEFAULT_MUTATE_TIMEOUT;
-        }
+async function loadSDK() {
+    if (window.supabase && window.supabase.createClient) {
+        return;
     }
     
-    // Создаём AbortController с таймаутом
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => {
-        try { timeoutController.abort(new DOMException('TimeoutError', 'TimeoutError')); } catch {}
-    }, effectiveTimeout);
-    
-    // Комбинируем с внешним сигналом если есть
-    let combinedSignal = timeoutController.signal;
-    if (externalSignal) {
-        externalSignal.addEventListener('abort', () => {
-            clearTimeout(timeoutId);
-            try { timeoutController.abort(externalSignal.reason); } catch {}
-        }, { once: true });
-    }
-    
-    /**
-     * Строит fetchOptions с указанным токеном
-     */
-    const buildFetchOptions = (authToken) => {
-        const opts = {
-            method,
-            headers: {
-                'apikey': SUPABASE_ANON_KEY,
-                'Content-Type': 'application/json',
-                ...headers
-            },
-            signal: combinedSignal
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+        script.onload = () => {
+            console.log('[Supabase] Official SDK loaded');
+            resolve();
         };
-        
-        if (authToken && !path.startsWith('/auth/v1/token')) {
-            opts.headers['Authorization'] = `Bearer ${authToken}`;
-        }
-        
-        if (body && method !== 'GET') {
-            opts.body = JSON.stringify(body);
-        }
-        
-        return opts;
-    };
-    
-    /**
-     * Выполняет fetch с указанным токеном
-     */
-    const doFetch = async (authToken) => {
-        const fetchOptions = buildFetchOptions(authToken);
-        return await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
-    };
-    
-    try {
-        let response = await doFetch(token);
-        clearTimeout(timeoutId);
-        
-        // Если мутирующий запрос вернул 403 — пробуем обновить токен и повторить ОДИН раз
-        if (response.status === 403 && method !== 'GET' && !path.startsWith('/auth/')) {
-            try {
-                await refreshSession();
-                const newToken = getAccessToken();
-                if (newToken) {
-                    // Создаём новый AbortController для повторного запроса
-                    const retryController = new AbortController();
-                    const retryTimeoutId = setTimeout(() => {
-                        try { retryController.abort(new DOMException('TimeoutError', 'TimeoutError')); } catch {}
-                    }, effectiveTimeout);
-                    
-                    const retryFetchOptions = buildFetchOptions(newToken);
-                    retryFetchOptions.signal = retryController.signal;
-                    
-                    response = await fetch(`${SUPABASE_URL}${path}`, retryFetchOptions);
-                    clearTimeout(retryTimeoutId);
-                }
-            } catch {
-                // Если не удалось обновить — возвращаем исходный 403
-            }
-        }
-        
-        return response;
-    } catch (error) {
-        clearTimeout(timeoutId);
-        
-        if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-            const timeoutError = new Error('Сервер не отвечает. Попробуйте обновить страницу.');
-            timeoutError.code = 'TIMEOUT';
-            timeoutError.originalError = error;
-            throw timeoutError;
-        }
-        if (error.message === 'Failed to fetch' || error.message?.includes('NetworkError')) {
-            const networkError = new Error('Нет подключения к интернету. Проверьте соединение.');
-            networkError.code = 'NETWORK_ERROR';
-            networkError.originalError = error;
-            throw networkError;
-        }
-        throw error;
-    }
+        script.onerror = () => reject(new Error('Не удалось загрузить Supabase SDK. Проверьте подключение к интернету.'));
+        document.head.appendChild(script);
+    });
 }
-
-// ========== УПРАВЛЕНИЕ ТОКЕНОМ ==========
-
-function saveSession(session) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(session)); } catch {}
-}
-
-function getSession() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
-}
-
-function clearSession() {
-    try { localStorage.removeItem(STORAGE_KEY); } catch {}
-}
-
-function getAccessToken() {
-    const session = getSession();
-    return session?.access_token || null;
-}
-
-// ========== АУТЕНТИФИКАЦИЯ ==========
-
-async function signInWithPassword(email, password) {
-    let lastError = null;
-    
-    for (let attempt = 0; attempt < 3; attempt++) {
-        if (attempt > 0) {
-            const delay = 2000 * attempt; // 2с, 4с
-            console.log('[Supabase] Retrying signInWithPassword (attempt ' + (attempt + 1) + ') in ' + delay + 'ms...');
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-        
-        try {
-            const response = await apiFetch('/auth/v1/token?grant_type=password', {
-                method: 'POST',
-                body: { email, password },
-                headers: { 'Content-Type': 'application/json' },
-                timeoutMs: AUTH_TIMEOUT_MS
-            });
-            
-            let data;
-            try { data = await response.json(); } catch {
-                lastError = new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.');
-                continue;
-            }
-            
-            if (!response.ok) {
-                const msg = data.error_description || data.error || data.msg || '';
-                
-                if (msg.includes('Invalid login credentials')) {
-                    return { data: null, error: new Error('Неверный email или пароль') };
-                }
-                
-                lastError = new Error(msg || `Ошибка сервера (${response.status}). Попробуйте позже.`);
-                continue;
-            }
-            
-            if (!data.user || !data.access_token) {
-                lastError = new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.');
-                continue;
-            }
-            
-            saveSession(data);
-            console.log('[Supabase] Login successful');
-            return { data: { user: data.user, session: data }, error: null };
-            
-        } catch (error) {
-            lastError = error;
-            
-            // При таймауте — пробуем ещё раз
-            if (error.code === 'TIMEOUT' && attempt < 2) {
-                console.log('[Supabase] Timeout, will retry...');
-                continue;
-            }
-            
-            // При сетевой ошибке — тоже пробуем
-            if (error.code === 'NETWORK_ERROR' && attempt < 2) {
-                console.log('[Supabase] Network error, will retry...');
-                continue;
-            }
-            
-            break;
-        }
-    }
-    
-    let message = 'Не удалось подключиться к серверу.';
-    
-    if (lastError) {
-        if (lastError.code === 'TIMEOUT') {
-            message = 'Сервер не отвечает. Возможно, он "просыпается" после долгого бездействия. Попробуйте ещё раз через несколько секунд.';
-        } else if (lastError.code === 'NETWORK_ERROR') {
-            message = lastError.message;
-        } else if (lastError.message) {
-            message = 'Ошибка входа: ' + lastError.message;
-        }
-    }
-    
-    return { data: null, error: new Error(message) };
-}
-
-async function refreshSession() {
-    const session = getSession();
-    if (!session?.refresh_token) {
-        clearSession();
-        throw { status: 401, message: 'Сессия истекла. Войдите заново.' };
-    }
-    
-    let lastError = null;
-    
-    for (let attempt = 0; attempt < 2; attempt++) {
-        if (attempt > 0) {
-            console.log('[Supabase] Retrying refreshSession...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-        
-        try {
-            const response = await apiFetch('/auth/v1/token?grant_type=refresh_token', {
-                method: 'POST',
-                body: { refresh_token: session.refresh_token },
-                headers: { 'Content-Type': 'application/json' },
-                timeoutMs: AUTH_TIMEOUT_MS
-            });
-            
-            let data;
-            try { data = await response.json(); } catch {
-                throw { status: response.status, message: 'Некорректный ответ сервера' };
-            }
-            
-            if (!response.ok || data.error) {
-                clearSession();
-                throw { status: 401, message: 'Сессия истекла. Войдите заново.' };
-            }
-            
-            if (!data.access_token) {
-                throw { status: response.status, message: 'Сервер не вернул токен' };
-            }
-            
-            saveSession(data);
-            return data;
-            
-        } catch (error) {
-            lastError = error;
-            
-            if (error.code === 'TIMEOUT' && attempt < 1) {
-                continue;
-            }
-            
-            break;
-        }
-    }
-    
-    if (lastError) {
-        if (lastError.code === 'TIMEOUT') {
-            throw { status: 0, message: 'Сервер не отвечает. Проверьте подключение к интернету.' };
-        }
-        throw lastError;
-    }
-}
-
-async function getUser() {
-    const token = getAccessToken();
-    if (!token) {
-        return { user: null, error: { status: 401, message: 'No session' } };
-    }
-    
-    let response;
-    try {
-        response = await apiFetch('/auth/v1/user', { timeoutMs: AUTH_TIMEOUT_MS });
-    } catch (error) {
-        return { 
-            user: null, 
-            error: { 
-                status: error.code === 'TIMEOUT' ? 0 : 500, 
-                message: error.message || 'Сервер недоступен' 
-            } 
-        };
-    }
-    
-    if (response.status === 401 || response.status === 403) {
-        try { 
-            await refreshSession(); 
-        } catch (refreshError) {
-            return { 
-                user: null, 
-                error: refreshError 
-            };
-        }
-        try { 
-            response = await apiFetch('/auth/v1/user', { timeoutMs: AUTH_TIMEOUT_MS }); 
-        } catch (error) {
-            return { 
-                user: null, 
-                error: { 
-                    status: error.code === 'TIMEOUT' ? 0 : 500, 
-                    message: error.message || 'Сервер недоступен' 
-                } 
-            };
-        }
-    }
-    
-    if (!response.ok) {
-        let errorData;
-        try { errorData = await response.json(); } catch { errorData = {}; }
-        return {
-            user: null,
-            error: {
-                status: response.status,
-                message: errorData.error_description || errorData.error || 'Ошибка авторизации'
-            }
-        };
-    }
-    
-    const user = await response.json();
-    return { user, error: null };
-}
-
-function getCurrentSession() {
-    return { data: { session: getSession() } };
-}
-
-async function signOut() {
-    const token = getAccessToken();
-    if (token) {
-        try {
-            await apiFetch('/auth/v1/logout', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                timeoutMs: 5000
-            });
-        } catch {}
-    }
-    clearSession();
-}
-
-// ========== QUERY BUILDER (METHOD CHAINING) ==========
 
 /**
- * Строитель запросов с поддержкой method chaining.
- * Накопляет фильтры, выполняет запрос при await.
+ * Создаёт и возвращает клиент Supabase.
+ * При первом вызове загружает SDK.
  * 
- * ВАЖНО: значения НЕ кодируются через encodeURIComponent — 
- * URLSearchParams.append() делает это автоматически.
+ * @returns {Promise<Object>} Supabase-клиент
  */
-class QueryBuilder {
-    constructor(table) {
-        this._table = table;
-        this._method = 'GET';
-        this._selectStr = '*';
-        this._filters = [];
-        this._orderStr = null;
-        this._limitNum = null;
-        this._single = false;
-        this._body = null;
-        this._headers = {};
-        this._hasExecuted = false;
-        this._resultPromise = null;
+async function getClient() {
+    if (supabaseClient) return supabaseClient;
+    
+    if (!initPromise) {
+        initPromise = (async () => {
+            await loadSDK();
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            console.log('[Supabase] Client created');
+        })();
     }
     
-    /**
-     * Делает билдер thenable — можно использовать с await.
-     */
-    then(resolve, reject) {
-        if (!this._resultPromise) {
-            this._resultPromise = this._execute();
-        }
-        return this._resultPromise.then(resolve, reject);
-    }
-    
-    select(columns = '*') {
-        this._method = 'GET';
-        this._selectStr = columns;
-        return this;
-    }
-    
-    insert(rows) {
-        this._method = 'POST';
-        this._body = rows;
-        this._headers['Prefer'] = 'return=representation';
-        return this;
-    }
-    
-    update(updates) {
-        this._method = 'PATCH';
-        this._body = updates;
-        this._headers['Prefer'] = 'return=representation';
-        return this;
-    }
-    
-    delete() {
-        this._method = 'DELETE';
-        return this;
-    }
-    
-    eq(column, value) {
-        this._filters.push({ column, op: 'eq', value: String(value) });
-        return this;
-    }
-    
-    neq(column, value) {
-        this._filters.push({ column, op: 'neq', value: String(value) });
-        return this;
-    }
-    
-    is(column, value) {
-        if (value === null) {
-            this._filters.push({ column, op: 'is', value: 'null' });
-        } else if (value === true) {
-            this._filters.push({ column, op: 'is', value: 'true' });
-        } else if (value === false) {
-            this._filters.push({ column, op: 'is', value: 'false' });
-        } else {
-            this._filters.push({ column, op: 'eq', value: String(value) });
-        }
-        return this;
-    }
-    
-    gte(column, value) {
-        this._filters.push({ column, op: 'gte', value: String(value) });
-        return this;
-    }
-    
-    lte(column, value) {
-        this._filters.push({ column, op: 'lte', value: String(value) });
-        return this;
-    }
-    
-    gt(column, value) {
-        this._filters.push({ column, op: 'gt', value: String(value) });
-        return this;
-    }
-    
-    lt(column, value) {
-        this._filters.push({ column, op: 'lt', value: String(value) });
-        return this;
-    }
-    
-    order(column, options = {}) {
-        const direction = options.ascending === false ? 'desc' : 'asc';
-        this._orderStr = `${column}.${direction}`;
-        return this;
-    }
-    
-    limit(n) {
-        this._limitNum = n;
-        return this;
-    }
-    
-    single() {
-        this._single = true;
-        return this;
-    }
-    
-    maybeSingle() {
-        this._single = true;
-        this._headers['Accept'] = 'application/vnd.pgrst.object+json';
-        return this;
-    }
-    
-    /**
-     * Добавляет поддержку AbortSignal.
-     * @param {AbortSignal} signal
-     * @returns {QueryBuilder}
-     */
-    abortSignal(signal) {
-        this._abortSignal = signal;
-        return this;
-    }
-    
-    /**
-     * Выполняет запрос к API.
-     * @returns {Promise<{data: any, error: Error|null}>}
-     */
-    async _execute() {
-        if (this._hasExecuted) return this._resultPromise;
-        this._hasExecuted = true;
-        
-        const params = new URLSearchParams();
-        
-        if (this._method === 'GET' && this._selectStr) {
-            params.append('select', this._selectStr);
-        }
-        
-        this._filters.forEach(f => {
-            const key = f.column;
-            const value = f.op + '.' + f.value;
-            params.append(key, value);
-        });
-        
-        if (this._orderStr) {
-            params.append('order', this._orderStr);
-        }
-        
-        if (this._limitNum) {
-            params.append('limit', String(this._limitNum));
-        }
-        
-        const queryString = params.toString();
-        const path = `/rest/v1/${this._table}${queryString ? '?' + queryString : ''}`;
-        
-        try {
-            const fetchOptions = {
-                method: this._method,
-                headers: { ...this._headers }
-            };
-            
-            if (this._abortSignal) {
-                fetchOptions.signal = this._abortSignal;
-            }
-            
-            if (this._body) {
-                fetchOptions.body = this._body;
-            }
-            
-            const response = await apiFetch(path, fetchOptions);
-            
-            if (!response.ok) {
-                if (response.status === 406 && this._single) {
-                    return { data: null, error: null };
-                }
-                
-                const error = new Error(`Supabase API error: ${response.status}`);
-                error.status = response.status;
-                error.code = response.headers.get('x-sb-error-code') || null;
-                try { error.details = await response.json(); } catch {}
-                return { data: null, error };
-            }
-            
-            if (this._method === 'DELETE') {
-                return { data: null, error: null };
-            }
-            
-            const responseData = await response.json();
-            
-            if (this._single && Array.isArray(responseData)) {
-                return { data: responseData[0] || null, error: null };
-            }
-            
-            return { data: responseData, error: null };
-            
-        } catch (error) {
-            if (error.code === 'TIMEOUT') {
-                error.message = 'Сервер не отвечает. Попробуйте обновить страницу.';
-            }
-            return { data: null, error };
-        }
-    }
+    await initPromise;
+    return supabaseClient;
 }
 
-function from(table) {
-    return new QueryBuilder(table);
+/**
+ * Синхронная версия — для обратной совместимости.
+ * Возвращает клиент если он уже создан, иначе null.
+ * Используй ТОЛЬКО если уверен что init уже вызван.
+ */
+function getClientSync() {
+    return supabaseClient;
 }
 
-// ========== STORAGE ==========
-
-const storage = {
-    from: (bucket) => ({
-        upload: async (path, file) => {
-            try {
-                const formData = new FormData();
-                formData.append('file', file);
-                const response = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${getAccessToken() || ''}`
-                    },
-                    body: formData,
-                    signal: createTimeoutSignal(STORAGE_TIMEOUT)
-                });
-                if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
-                return { error: null };
-            } catch (error) {
-                if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-                    return { error: new Error('Таймаут загрузки. Попробуйте снова.') };
-                }
-                return { error };
-            }
-        },
-        getPublicUrl: (path) => ({
-            data: { publicUrl: `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}` }
-        }),
-        remove: async (paths) => {
-            try {
-                await apiFetch(`/storage/v1/object/${bucket}`, {
-                    method: 'DELETE',
-                    body: { prefixes: paths },
-                    headers: { 'Content-Type': 'application/json' },
-                    timeoutMs: STORAGE_TIMEOUT
-                });
-                return { error: null };
-            } catch (error) {
-                return { error };
-            }
-        }
-    })
-};
-
-// ========== ПУБЛИЧНЫЙ API ==========
-
+/**
+ * Создаёт клиент (синхронно возвращает заглушку с методами, которые делегируют асинхронному клиенту).
+ * Нужно для обратной совместимости с кодом, который вызывает createClient() не await-я.
+ * 
+ * @param {string} url
+ * @param {string} key
+ * @returns {Object}
+ */
 function createClient(url, key) {
+    // Возвращаем объект с теми же методами, что и официальный SDK,
+    // но auth-методы работают асинхронно через getClient()
     return {
         auth: {
-            signInWithPassword: (creds) => signInWithPassword(creds.email, creds.password),
-            signOut: () => signOut(),
-            getUser: () => getUser(),
-            getSession: () => getCurrentSession(),
-            refreshSession: () => refreshSession(),
+            signInWithPassword: async (credentials) => {
+                const client = await getClient();
+                return client.auth.signInWithPassword(credentials);
+            },
+            signOut: async () => {
+                const client = await getClient();
+                return client.auth.signOut();
+            },
+            getUser: async () => {
+                const client = await getClient();
+                return client.auth.getUser();
+            },
+            getSession: async () => {
+                const client = await getClient();
+                return client.auth.getSession();
+            },
+            refreshSession: async () => {
+                const client = await getClient();
+                return client.auth.refreshSession();
+            },
             onAuthStateChange: (callback) => {
-                window.addEventListener('storage', (e) => {
-                    if (e.key === STORAGE_KEY) {
-                        const session = e.newValue ? JSON.parse(e.newValue) : null;
-                        callback(session ? 'SIGNED_IN' : 'SIGNED_OUT', session);
-                    }
+                getClient().then(client => {
+                    client.auth.onAuthStateChange(callback);
                 });
                 return { data: { subscription: { unsubscribe: () => {} } } };
             }
         },
-        from: (table) => from(table),
-        storage,
+        from: (table) => {
+            // Прокси, который резолвит реальный from() при await
+            return createTableProxy(table);
+        },
+        storage: {
+            from: (bucket) => ({
+                upload: async (path, file) => {
+                    const client = await getClient();
+                    return client.storage.from(bucket).upload(path, file);
+                },
+                getPublicUrl: (path) => {
+                    return { data: { publicUrl: `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}` } };
+                },
+                remove: async (paths) => {
+                    const client = await getClient();
+                    return client.storage.from(bucket).remove(paths);
+                }
+            })
+        },
         rest: { url, key }
     };
 }
 
-window.supabase = { createClient };
+/**
+ * Создаёт прокси для цепочки .from('table').select().eq() итд.
+ * Все методы просто накапливаются и выполняются при await.
+ */
+function createTableProxy(table) {
+    const chain = [];
+    let singleFlag = false;
+    
+    const builder = {
+        select: (columns = '*') => { chain.push({ method: 'select', args: [columns] }); return builder; },
+        insert: (rows) => { chain.push({ method: 'insert', args: [rows] }); return builder; },
+        update: (updates) => { chain.push({ method: 'update', args: [updates] }); return builder; },
+        delete: () => { chain.push({ method: 'delete', args: [] }); return builder; },
+        eq: (col, val) => { chain.push({ method: 'eq', args: [col, val] }); return builder; },
+        neq: (col, val) => { chain.push({ method: 'neq', args: [col, val] }); return builder; },
+        is: (col, val) => { chain.push({ method: 'is', args: [col, val] }); return builder; },
+        gte: (col, val) => { chain.push({ method: 'gte', args: [col, val] }); return builder; },
+        lte: (col, val) => { chain.push({ method: 'lte', args: [col, val] }); return builder; },
+        gt: (col, val) => { chain.push({ method: 'gt', args: [col, val] }); return builder; },
+        lt: (col, val) => { chain.push({ method: 'lt', args: [col, val] }); return builder; },
+        order: (col, opts) => { chain.push({ method: 'order', args: [col, opts] }); return builder; },
+        limit: (n) => { chain.push({ method: 'limit', args: [n] }); return builder; },
+        single: () => { chain.push({ method: 'single', args: [] }); return builder; },
+        maybeSingle: () => { chain.push({ method: 'maybeSingle', args: [] }); return builder; },
+        
+        then: async (resolve, reject) => {
+            try {
+                const client = await getClient();
+                let query = client.from(table);
+                
+                for (const step of chain) {
+                    if (typeof query[step.method] === 'function') {
+                        query = query[step.method](...step.args);
+                    }
+                }
+                
+                const { data, error } = await query;
+                resolve({ data, error: error ? { status: error.code, message: error.message, details: error.details } : null });
+            } catch (err) {
+                resolve({ data: null, error: err });
+            }
+        }
+    };
+    
+    return builder;
+}
 
-export { createClient };
+// Экспорт
+export { createClient, getClient, getClientSync };
