@@ -10,11 +10,10 @@
  * Работает напрямую через Supabase (core/db.js + core/auth.js).
  * 
  * @module cashier/index
- * @version 3.0.0
+ * @version 3.0.1
  * @changes
+ * - v3.0.1: getSupabase() теперь с await (официальный SDK)
  * - v3.0.0: Убран Sync Engine, убрано дублирование кода.
- * - Импортируются cart.js, shift.js, products.js.
- * - Все запросы к Supabase идут через getSupabase() напрямую.
  */
 
 import { requireAuth, logout, isOnline, getSupabase } from '../../core/auth.js';
@@ -142,7 +141,7 @@ async function checkout() {
     resetCart();
     
     try {
-        const supabase = getSupabase();
+        const supabase = await getSupabase();
         
         // Сохраняем продажу в Supabase
         const { error: saleError } = await supabase
@@ -438,7 +437,6 @@ function renderClosedShift() {
 }
 
 function attachRenderEvents() {
-    // Закрытие смены
     document.getElementById('closeShiftBtn')?.addEventListener('click', async () => {
         const success = await closeShift();
         if (success) {
@@ -448,16 +446,13 @@ function attachRenderEvents() {
         render();
     });
     
-    // Очистка корзины
     document.getElementById('clearCartBtn')?.addEventListener('click', async () => {
         await clearCart();
         render();
     });
     
-    // Оформление продажи
     document.getElementById('checkoutBtn')?.addEventListener('click', checkout);
     
-    // Быстрое добавление товара
     document.getElementById('quickAddProductBtn')?.addEventListener('click', async () => {
         const newProduct = await openQuickAddProductForm(state.user?.id);
         if (newProduct) {
@@ -465,13 +460,11 @@ function attachRenderEvents() {
         }
     });
     
-    // Сброс фильтров
     document.getElementById('resetFiltersBtn')?.addEventListener('click', () => {
         resetFilters();
         render();
     });
     
-    // Поиск/сканер
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         const scannerHandler = debounce((value) => {
@@ -497,7 +490,6 @@ function attachRenderEvents() {
         searchInput.focus();
     }
     
-    // Фильтры по категориям
     document.querySelectorAll('[data-category]').forEach(btn => {
         btn.addEventListener('click', () => {
             setSelectedCategory(btn.dataset.category || null);
@@ -505,7 +497,6 @@ function attachRenderEvents() {
         });
     });
     
-    // Добавление товара в корзину по клику
     document.querySelectorAll('.product-card').forEach(card => {
         card.addEventListener('click', () => {
             const product = productsState.all.find(p => p.id === card.dataset.id);
@@ -516,7 +507,6 @@ function attachRenderEvents() {
         });
     });
     
-    // Действия с товарами в корзине
     document.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -589,14 +579,12 @@ async function init() {
     
     cacheElements();
     
-    // Проверяем сеть
     if (!isOnline()) {
         showOfflineBanner();
     } else {
         hideOfflineBanner();
     }
     
-    // Проверяем авторизацию
     const authResult = await requireAuth();
     
     if (authResult.user) {
@@ -612,20 +600,16 @@ async function init() {
     displayUserInfo();
     attachGlobalEvents();
     
-    // Загружаем кэшированные данные
     loadCartFromCache();
     loadShiftFromCache();
     
-    // Проверяем смену
     const hasShift = await checkOpenShift(state.user?.id);
     if (!hasShift && isOnline()) {
         console.log('[Cashier] No open shift found');
     }
     
-    // Загружаем товары
     await loadProducts();
     
-    // Сообщаем HTML-обёртке, что модуль загружен
     if (window.markCashierModuleLoaded) {
         window.markCashierModuleLoaded();
     }
@@ -634,8 +618,6 @@ async function init() {
     
     console.log('[Cashier] Initialized');
 }
-
-// ========== ЗАПУСК ==========
 
 document.addEventListener('DOMContentLoaded', init);
 
