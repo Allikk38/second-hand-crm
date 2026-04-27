@@ -8,14 +8,20 @@
  * Логика синхронизации операций с сервером Supabase.
  * 
  * @module sync-engine/sync
- * @version 1.1.0
+ * @version 1.2.0
  * @changes
+ * - Исправлен импорт: error → logError, info → logInfo
  * - Добавлено логирование операций синхронизации
  */
 
 import { getSupabase } from '../auth.js';
 import { cacheGet, cacheSet } from './db.js';
-import { logSyncEvent, error as logError, info as logInfo } from './logger.js';
+import { 
+    logSyncEvent, 
+    logError, 
+    logInfo 
+} from './logger.js';
+
 // ========== КОНСТАНТЫ ==========
 
 export const ENTITIES = {
@@ -56,10 +62,12 @@ async function syncCreate(supabase, op) {
                 if (error) throw error;
                 await updateLocalCache(entity, product);
                 
-                logSyncOperation('create', entity, 'success', {
-                    opId,
-                    productId: product.id,
-                    duration: Date.now() - startTime
+                logSyncEvent('create', 'create', entity, {
+                    entityId: opId,
+                    details: {
+                        productId: product.id,
+                        duration: Date.now() - startTime
+                    }
                 });
                 return true;
                 
@@ -69,10 +77,12 @@ async function syncCreate(supabase, op) {
                     .insert(data);
                 if (saleError) throw saleError;
                 
-                logSyncOperation('create', entity, 'success', {
-                    opId,
-                    saleTotal: data.total,
-                    duration: Date.now() - startTime
+                logSyncEvent('create', 'create', entity, {
+                    entityId: opId,
+                    details: {
+                        saleTotal: data.total,
+                        duration: Date.now() - startTime
+                    }
                 });
                 return true;
                 
@@ -82,21 +92,28 @@ async function syncCreate(supabase, op) {
                     .insert(data);
                 if (shiftError) throw shiftError;
                 
-                logSyncOperation('create', entity, 'success', {
-                    opId,
-                    duration: Date.now() - startTime
+                logSyncEvent('create', 'create', entity, {
+                    entityId: opId,
+                    details: {
+                        duration: Date.now() - startTime
+                    }
                 });
                 return true;
                 
             default:
-                logSyncOperation('create', entity, 'skipped', { opId, reason: 'unknown entity' });
+                logInfo(`Sync create skipped: unknown entity ${entity}`, {
+                    entity,
+                    entityId: opId
+                });
                 return true;
         }
     } catch (error) {
         logError(`Sync create ${entity} failed`, error, {
-            opId,
             entity,
-            duration: Date.now() - startTime
+            entityId: opId,
+            details: {
+                duration: Date.now() - startTime
+            }
         });
         throw error;
     }
@@ -111,7 +128,10 @@ async function syncUpdate(supabase, op) {
     const startTime = Date.now();
     
     if (!itemId) {
-        logSyncOperation('update', entity, 'skipped', { opId, reason: 'no id' });
+        logInfo(`Sync update skipped: no id for ${entity}`, {
+            entity,
+            entityId: opId
+        });
         return true;
     }
     
@@ -127,23 +147,30 @@ async function syncUpdate(supabase, op) {
                 if (error) throw error;
                 await updateLocalCache(entity, product);
                 
-                logSyncOperation('update', entity, 'success', {
-                    opId,
-                    productId: itemId,
-                    duration: Date.now() - startTime
+                logSyncEvent('update', 'update', entity, {
+                    entityId: opId,
+                    details: {
+                        productId: itemId,
+                        duration: Date.now() - startTime
+                    }
                 });
                 return true;
                 
             default:
-                logSyncOperation('update', entity, 'skipped', { opId, reason: 'unknown entity' });
+                logInfo(`Sync update skipped: unknown entity ${entity}`, {
+                    entity,
+                    entityId: opId
+                });
                 return true;
         }
     } catch (error) {
         logError(`Sync update ${entity} failed`, error, {
-            opId,
             entity,
-            itemId,
-            duration: Date.now() - startTime
+            entityId: opId,
+            details: {
+                itemId,
+                duration: Date.now() - startTime
+            }
         });
         throw error;
     }
@@ -158,7 +185,10 @@ async function syncDelete(supabase, op) {
     const startTime = Date.now();
     
     if (!itemId) {
-        logSyncOperation('delete', entity, 'skipped', { opId, reason: 'no id' });
+        logInfo(`Sync delete skipped: no id for ${entity}`, {
+            entity,
+            entityId: opId
+        });
         return true;
     }
     
@@ -173,10 +203,13 @@ async function syncDelete(supabase, op) {
                 
                 if (checkError && checkError.code !== 'PGRST116') throw checkError;
                 if (!existing || existing.status === 'sold') {
-                    logSyncOperation('delete', entity, 'skipped', {
-                        opId,
-                        productId: itemId,
-                        reason: existing ? 'already sold' : 'not found'
+                    logInfo(`Sync delete skipped: product ${itemId} not found or already sold`, {
+                        entity,
+                        entityId: opId,
+                        details: {
+                            productId: itemId,
+                            reason: existing ? 'already sold' : 'not found'
+                        }
                     });
                     return true;
                 }
@@ -198,23 +231,30 @@ async function syncDelete(supabase, op) {
                 if (error) throw error;
                 await removeFromLocalCache(entity, itemId);
                 
-                logSyncOperation('delete', entity, 'success', {
-                    opId,
-                    productId: itemId,
-                    duration: Date.now() - startTime
+                logSyncEvent('delete', 'delete', entity, {
+                    entityId: opId,
+                    details: {
+                        productId: itemId,
+                        duration: Date.now() - startTime
+                    }
                 });
                 return true;
                 
             default:
-                logSyncOperation('delete', entity, 'skipped', { opId, reason: 'unknown entity' });
+                logInfo(`Sync delete skipped: unknown entity ${entity}`, {
+                    entity,
+                    entityId: opId
+                });
                 return true;
         }
     } catch (error) {
         logError(`Sync delete ${entity} failed`, error, {
-            opId,
             entity,
-            itemId,
-            duration: Date.now() - startTime
+            entityId: opId,
+            details: {
+                itemId,
+                duration: Date.now() - startTime
+            }
         });
         throw error;
     }
@@ -232,14 +272,19 @@ export async function syncOperation(op) {
             case OP_TYPES.UPDATE: return await syncUpdate(supabase, op);
             case OP_TYPES.DELETE: return await syncDelete(supabase, op);
             default:
-                logSyncOperation(op.type, op.entity, 'skipped', { opId: op.id, reason: 'unknown type' });
+                logInfo(`Sync operation skipped: unknown type ${op.type}`, {
+                    entity: op.entity,
+                    entityId: op.id
+                });
                 return true;
         }
     } catch (error) {
         logError(`Sync operation ${op.type} ${op.entity} failed`, error, {
-            opId: op.id,
-            operationType: op.type,
-            entity: op.entity
+            entity: op.entity,
+            entityId: op.id,
+            details: {
+                operationType: op.type
+            }
         });
         throw error;
     }
