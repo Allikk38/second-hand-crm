@@ -12,6 +12,13 @@
     <!-- Базовый путь для GitHub Pages -->
     <base href="/second-hand-crm/">
     
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
     <!-- Основные стили -->
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/layouts/cashier.css">
@@ -206,6 +213,15 @@
     <!-- Основной скрипт страницы -->
     <script type="module" src="js/cashier.js"></script>
     
+    <!-- PWA: Регистрация Service Worker -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/second-hand-crm/sw.js', { scope: '/second-hand-crm/' })
+                .then(reg => console.log('[PWA] SW registered:', reg.scope))
+                .catch(err => console.warn('[PWA] SW failed:', err));
+        }
+    </script>
+    
     <!-- Отслеживание загрузки модуля с таймаутом 60 секунд -->
     <script>
         (function() {
@@ -218,16 +234,14 @@
             let loadStartTime = Date.now();
             let checkInterval = null;
             let errorShown = false;
-            const LOAD_TIMEOUT_MS = 60000; // 60 секунд — как на складе
+            const LOAD_TIMEOUT_MS = 60000;
             
-            // Функция обновления статуса
             function updateLoadingStatus(message) {
                 if (loadingStatus) {
                     loadingStatus.textContent = message;
                 }
             }
             
-            // Функция показа ошибки
             function showModuleError(message) {
                 errorShown = true;
                 if (moduleLoading) moduleLoading.style.display = 'none';
@@ -237,7 +251,6 @@
                 }
             }
             
-            // Функция скрытия ошибки
             function hideModuleError() {
                 errorShown = false;
                 if (errorBlock) {
@@ -245,7 +258,6 @@
                 }
             }
             
-            // Экспорт функции для JS-модуля
             window.markCashierModuleLoaded = function() {
                 if (!window.__cashierModuleLoaded) {
                     window.__cashierModuleLoaded = true;
@@ -257,11 +269,9 @@
                 }
             };
             
-            // Периодическая проверка статуса с обновлением сообщений
             checkInterval = setInterval(function() {
                 const elapsed = Math.floor((Date.now() - loadStartTime) / 1000);
                 
-                // Если модуль уже загрузился
                 if (window.__cashierModuleLoaded) {
                     clearInterval(checkInterval);
                     if (moduleLoading) moduleLoading.style.display = 'none';
@@ -269,7 +279,6 @@
                     return;
                 }
                 
-                // Обновляем сообщение о статусе
                 if (elapsed < 5) {
                     updateLoadingStatus('Загрузка модуля...');
                 } else if (elapsed < 15) {
@@ -281,7 +290,6 @@
                 } else if (elapsed < LOAD_TIMEOUT_MS / 1000) {
                     updateLoadingStatus('Восстановление соединения. Ожидайте...');
                 } else {
-                    // Таймаут
                     clearInterval(checkInterval);
                     console.warn('[Cashier] Module load timeout after ' + LOAD_TIMEOUT_MS / 1000 + 's');
                     showModuleError(
@@ -291,7 +299,6 @@
                 }
             }, 3000);
             
-            // Кнопка повтора
             if (retryBtn) {
                 retryBtn.addEventListener('click', function() {
                     window.__cashierModuleLoaded = false;
@@ -304,7 +311,6 @@
                 });
             }
             
-            // Перехват ошибки загрузки скрипта
             window.addEventListener('error', function(e) {
                 if (e.target && e.target.tagName === 'SCRIPT' && 
                     e.target.src && e.target.src.includes('cashier.js')) {
