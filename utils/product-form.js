@@ -9,11 +9,14 @@
  * Восстановлена работа через Supabase.
  * 
  * @module product-form
- * @version 2.0.0
+ * @version 3.0.0
+ * @changes
+ * - v3.0.0: Прямой импорт supabase из supabase-client.js (ES-модули).
+ * - v2.0.0: Предыдущая версия с createClient.
  */
 
 import { products as productsDb } from '../core/db.js';
-import { createClient } from '../core/supabase-client.js';
+import { supabase } from '../core/supabase-client.js';
 import { formatMoney, escapeHtml } from './formatters.js';
 import { showNotification } from './ui.js';
 import { 
@@ -23,12 +26,6 @@ import {
     createEmptyAttributes,
     CATEGORY_KEYS 
 } from './categorySchema.js';
-
-// Создаём клиент для работы со Storage
-const supabase = createClient(
-    'https://bhdwniiyrrujeoubrvle.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM'
-);
 
 // ========== КОНСТАНТЫ ==========
 
