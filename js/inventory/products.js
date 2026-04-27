@@ -9,10 +9,14 @@
  * Восстановлена работа через Supabase через db.js.
  * 
  * @module inventory/products
- * @version 3.0.0
+ * @version 3.0.1
+ * @changes
+ * - v3.0.1: В функции getCategoryName используется categorySchema (единый источник).
+ * - Убрана лишняя заглушка в sortProducts.
  */
 
 import { products as productsDb } from '../../core/db.js';
+import { getCategoryName } from '../../utils/formatters.js';
 
 // ========== КОНСТАНТЫ ==========
 
