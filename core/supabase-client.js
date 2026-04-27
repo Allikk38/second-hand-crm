@@ -17,11 +17,14 @@
  * - Встроенный полифилл для AbortSignal.timeout()
  * 
  * @module supabase-client
- * @version 1.0.1
+ * @version 1.1.0
  * @changes
  * - Добавлен полифилл createTimeoutSignal() для поддержки старых браузеров.
  * - Заменены все AbortSignal.timeout() на createTimeoutSignal().
- * - Это исправляет вход в Firefox < 88, Chrome < 103, Safari < 16.
+ * - Исправлена signInWithPassword: теперь проверяет data.user и data.error.
+ * - Исправлена getUser: теперь проверяет структуру ответа.
+ * - Исправлена refreshSession: теперь проверяет результат.
+ * - Это исправляет ошибку "Cannot read properties of undefined (reading 'user')".
  */
 
 // ========== КОНСТАНТЫ ==========
@@ -180,21 +183,54 @@ function isTokenExpired() {
 // ========== АУТЕНТИФИКАЦИЯ ==========
 
 /**
- * Вход по email и паролю
+ * Вход по email и паролю.
+ * Проверяет ответ от Supabase и выбрасывает ошибку при неудаче.
+ * 
  * @param {string} email
  * @param {string} password
  * @returns {Promise<{user: Object, session: Object}>}
+ * @throws {Error} При неверных учётных данных или ошибке сервера
  */
 async function signInWithPassword(email, password) {
-    const response = await apiFetch('/auth/v1/token?grant_type=password', {
-        method: 'POST',
-        body: { email, password },
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
+    let response;
     
-    const data = await response.json();
+    try {
+        response = await apiFetch('/auth/v1/token?grant_type=password', {
+            method: 'POST',
+            body: { email, password },
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+    } catch (fetchError) {
+        // Ошибка сети или таймаут
+        throw new Error('Сервер недоступен. Проверьте подключение к интернету.');
+    }
+    
+    let data;
+    try {
+        data = await response.json();
+    } catch (parseError) {
+        throw new Error('Некорректный ответ сервера.');
+    }
+    
+    // Supabase возвращает ошибку в теле ответа даже при HTTP 200
+    if (data.error) {
+        const message = data.error_description || data.error;
+        if (message?.includes('Invalid login credentials')) {
+            throw new Error('Неверный email или пароль');
+        }
+        if (message?.includes('Email not confirmed')) {
+            throw new Error('Email не подтверждён. Проверьте почту.');
+        }
+        throw new Error(message || 'Ошибка аутентификации');
+    }
+    
+    // Проверяем, что ответ содержит пользователя
+    if (!data.user || !data.access_token) {
+        console.error('[SupabaseClient] Unexpected auth response:', data);
+        throw new Error('Сервер вернул некорректный ответ. Попробуйте позже.');
+    }
     
     saveSession(data);
     
@@ -205,8 +241,11 @@ async function signInWithPassword(email, password) {
 }
 
 /**
- * Рефреш токена
+ * Рефреш токена.
+ * Проверяет ответ и выбрасывает ошибку при неудаче.
+ * 
  * @returns {Promise<Object>} Новая сессия
+ * @throws {Error} Если нет refresh_token или он истёк
  */
 async function refreshSession() {
     const session = getSession();
@@ -214,15 +253,34 @@ async function refreshSession() {
         throw new Error('No refresh token available');
     }
     
-    const response = await apiFetch('/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST',
-        body: { refresh_token: session.refresh_token },
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
+    let response;
+    try {
+        response = await apiFetch('/auth/v1/token?grant_type=refresh_token', {
+            method: 'POST',
+            body: { refresh_token: session.refresh_token },
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+    } catch (fetchError) {
+        throw new Error('Не удалось обновить сессию. Сервер недоступен.');
+    }
     
-    const data = await response.json();
+    let data;
+    try {
+        data = await response.json();
+    } catch (parseError) {
+        throw new Error('Некорректный ответ сервера при обновлении сессии.');
+    }
+    
+    if (data.error) {
+        clearSession();
+        throw new Error('Сессия истекла. Пожалуйста, войдите заново.');
+    }
+    
+    if (!data.access_token) {
+        throw new Error('Сервер не вернул токен при обновлении сессии.');
+    }
     
     saveSession(data);
     
@@ -230,8 +288,10 @@ async function refreshSession() {
 }
 
 /**
- * Получает текущего пользователя
+ * Получает текущего пользователя.
+ * 
  * @returns {Promise<Object>} { user }
+ * @throws {Object} Объект ошибки со статусом
  */
 async function getUser() {
     // Проверяем токен
@@ -241,7 +301,11 @@ async function getUser() {
     
     // Рефрешим если протух
     if (isTokenExpired()) {
-        await refreshSession();
+        try {
+            await refreshSession();
+        } catch (refreshError) {
+            throw { status: 401, message: refreshError.message };
+        }
     }
     
     const response = await apiFetch('/auth/v1/user');
