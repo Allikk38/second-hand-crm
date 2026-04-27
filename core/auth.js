@@ -17,19 +17,16 @@
  * - Отсутствие роутинга — редиректы только через window.location.
  * 
  * @module auth
- * @version 3.5.0
+ * @version 3.5.1
  * @changes
- * - Добавлен автоматический рефреш сессии при ошибках 401
- * - Добавлен retry с экспоненциальной задержкой для сетевых ошибок
- * - Улучшена обработка протухших токенов
- * - Добавлена проверка валидности сессии перед запросами
- * - Добавлено логирование для диагностики проблем соединения
+ * - Заменён SUPABASE_ANON_KEY с sb_publishable_ на анонимный JWT-ключ
+ * - Это исправляет ERR_CONNECTION_TIMED_OUT на GitHub Pages
  */
 
 // ========== КОНСТАНТЫ ==========
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_EZ_RGBwpdbz9O2N8hX_wXw_NjbslvTP';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
 const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
 const RETRY_CONFIG = {
@@ -41,7 +38,6 @@ const RETRY_CONFIG = {
 // Состояние загрузки
 let loadingPromise = null;
 let isLoaded = false;
-let sessionCheckPromise = null;
 
 // ========== ЗАГРУЗКА SUPABASE SDK ==========
 
@@ -398,20 +394,7 @@ export async function signIn(email, password) {
         });
         
         if (error) {
-            console.error('[Auth] Sign in error:', error);
-            
-            let errorMessage = 'Ошибка входа';
-            if (error.message.includes('Invalid login credentials')) {
-                errorMessage = 'Неверный email или пароль';
-            } else if (error.message.includes('Email not confirmed')) {
-                errorMessage = 'Email не подтвержден. Проверьте почту.';
-            } else if (error.message.includes('rate limit')) {
-                errorMessage = 'Слишком много попыток. Попробуйте позже.';
-            } else {
-                errorMessage = error.message;
-            }
-            
-            return { success: false, user: null, error: errorMessage };
+            return { success: false, user: null, error: error.message };
         }
         
         console.log('[Auth] Sign in successful:', data.user.email);
@@ -441,7 +424,6 @@ export async function logout(options = {}) {
     console.log('[Auth] Logging out...');
     
     try {
-        // Очищаем локальные данные
         try {
             localStorage.removeItem('sh_device_id');
             localStorage.removeItem('sb-bhdwniiyrrujeoubrvle-auth-token');
@@ -462,7 +444,6 @@ export async function logout(options = {}) {
             console.log('[Auth] Logout in offline mode (local only)');
         }
         
-        // Сбрасываем клиент
         window.__supabaseClient = null;
         
     } catch (error) {
