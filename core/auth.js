@@ -5,22 +5,17 @@
 /**
  * Authentication Module — официальный Supabase SDK
  * 
- * Использует @supabase/supabase-js через CDN.
- * Больше никакого самописного HTTP-клиента.
+ * Использует @supabase/supabase-js через ES-модули.
+ * Больше никакого самописного HTTP-клиента и прокси.
  * 
  * @module auth
- * @version 7.0.0
+ * @version 8.0.0
  * @changes
+ * - v8.0.0: Прямой импорт supabase из supabase-client.js (ES-модули).
  * - v7.0.0: Переход на официальный Supabase SDK
  */
 
-import { createClient, getClient } from './supabase-client.js';
-
-// Создаём клиент через обёртку (SDK загрузится асинхронно при первом вызове)
-const supabaseClient = createClient(
-    'https://bhdwniiyrrujeoubrvle.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM'
-);
+import { supabase } from './supabase-client.js';
 
 let currentUser = null;
 
@@ -34,14 +29,14 @@ export async function initAuth() {
     log('InitAuth started...');
     
     try {
-        const { data, error } = await supabaseClient.auth.getUser();
+        const { data, error } = await supabase.auth.getUser();
         
         if (error) {
             logError('InitAuth error', error);
             if (error.status === 401 || error.code === 'unexpected_failure') {
                 log('No valid session found, trying to refresh...');
                 try {
-                    const { data: refreshData, error: refreshError } = await supabaseClient.auth.refreshSession();
+                    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
                     if (refreshError) throw refreshError;
                     if (refreshData?.user) {
                         currentUser = refreshData.user;
@@ -66,13 +61,13 @@ export async function initAuth() {
 }
 
 /**
- * Возвращает экземпляр Supabase-клиента (асинхронно).
+ * Возвращает экземпляр Supabase-клиента.
  * Используется другими модулями для прямых запросов к БД.
  * 
- * @returns {Promise<Object>} Supabase-клиент
+ * @returns {Object} Supabase-клиент
  */
-export async function getSupabase() {
-    return await getClient();
+export function getSupabase() {
+    return supabase;
 }
 
 /**
@@ -83,7 +78,7 @@ export async function signIn(email, password) {
     const startTime = Date.now();
     
     try {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
             email: email.trim().toLowerCase(),
             password
         });
@@ -117,7 +112,7 @@ export function getCurrentUser() {
     }
     
     // Если нет в памяти, пробуем проверить сессию асинхронно
-    supabaseClient.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({ data }) => {
         if (data?.user) {
             currentUser = data.user;
         }
@@ -147,12 +142,12 @@ export async function requireAuth() {
     }
     
     try {
-        const { data, error } = await supabaseClient.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
         
         if (data?.session) {
             log('Found session in storage, loading user...');
             try {
-                const { data: userData } = await supabaseClient.auth.getUser();
+                const { data: userData } = await supabase.auth.getUser();
                 if (userData?.user) {
                     currentUser = userData.user;
                     return { user: currentUser, offline: false, authError: false };
@@ -176,7 +171,7 @@ export async function logout() {
     log('Logging out...');
     currentUser = null;
     try {
-        await supabaseClient.auth.signOut();
+        await supabase.auth.signOut();
         log('SignOut completed');
     } catch (err) {
         logError('SignOut error', err);
@@ -211,4 +206,4 @@ export default {
     getSupabase
 };
 
-console.log('[Auth] Module loaded (Supabase SDK Version)');
+console.log('[Auth] Module loaded (Supabase SDK ES Modules)');
