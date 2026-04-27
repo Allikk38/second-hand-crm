@@ -11,15 +11,15 @@
  * Архитектурные решения:
  * - Динамический импорт supabase-client.js с try/catch.
  * - Клиент создаётся один раз и кэшируется (синглтон).
- * - signIn корректно обрабатывает отсутствие data в ответе.
+ * - Все функции безопасно обрабатывают отсутствие данных.
+ * - getCurrentUser использует новый формат ответа getUser() (v1.4.0+).
  * 
  * @module auth
- * @version 4.2.0
+ * @version 4.3.0
  * @changes
- * - v4.1.0: Динамический импорт supabase-client с try/catch.
- * - v4.2.0: Исправлена обработка ответа в signIn (ошибка "Cannot read properties of undefined").
- * - v4.2.0: Добавлена проверка наличия data перед обращением к data.user.
- * - v4.2.0: Улучшена диагностика — логируется тело ответа при ошибке.
+ * - v4.2.0: Исправлена обработка ответа в signIn.
+ * - v4.3.0: getCurrentUser адаптирован под новый формат getUser() (без обёртки data).
+ * - v4.3.0: isAuthenticated адаптирован под новый формат getSession().
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
@@ -97,6 +97,12 @@ export function isOnline() {
 
 // ========== АУТЕНТИФИКАЦИЯ ==========
 
+/**
+ * Получает текущего пользователя.
+ * Использует новый формат getUser() — { user, error } без обёртки data.
+ * 
+ * @returns {Promise<{user: Object|null, error: string|null, errorType: string|null}>}
+ */
 export async function getCurrentUser() {
     if (!isOnline()) {
         return { user: null, error: 'Нет подключения к интернету', errorType: 'network' };
@@ -104,34 +110,64 @@ export async function getCurrentUser() {
     
     try {
         const supabase = await getSupabase();
-        const { data: { user }, error } = await supabase.auth.getUser();
+        const { user, error } = await supabase.auth.getUser();
         
-        if (error) throw error;
+        if (error) {
+            console.warn('[Auth] getUser returned error:', error);
+            
+            // 401 — сессия истекла или отсутствует
+            if (error.status === 401) {
+                return { user: null, error: error.message || 'Сессия истекла', errorType: 'auth' };
+            }
+            
+            // Другие ошибки — проблема с сетью или сервером
+            return { user: null, error: error.message || 'Ошибка сервера', errorType: 'network' };
+        }
+        
+        if (!user) {
+            return { user: null, error: 'Пользователь не найден', errorType: 'auth' };
+        }
         
         return { user, error: null, errorType: null };
         
     } catch (error) {
-        console.error('[Auth] getCurrentUser error:', error);
+        console.error('[Auth] getCurrentUser exception:', error);
+        
         const errorType = error?.status === 401 ? 'auth' : 'network';
         return { user: null, error: error.message || 'Неизвестная ошибка', errorType };
     }
 }
 
+/**
+ * Проверяет, аутентифицирован ли пользователь.
+ * 
+ * @returns {Promise<boolean>}
+ */
 export async function isAuthenticated() {
     if (!isOnline()) return false;
+    
     try {
         const supabase = await getSupabase();
-        const { data: { session } } = await supabase.auth.getSession();
-        return !!session?.user;
+        const { data } = await supabase.auth.getSession();
+        return !!(data?.session?.user);
     } catch {
         return false;
     }
 }
 
+/**
+ * Требует аутентификацию для доступа к странице.
+ * 
+ * @param {Object} options
+ * @param {string} [options.redirectTo='pages/login.html']
+ * @returns {Promise<{user: Object|null, offline?: boolean, authError?: boolean, networkError?: boolean}>}
+ */
 export async function requireAuth(options = {}) {
     const { redirectTo = 'pages/login.html' } = options;
     
-    if (!isOnline()) return { user: null, offline: true };
+    if (!isOnline()) {
+        return { user: null, offline: true };
+    }
     
     try {
         const { user, errorType } = await getCurrentUser();
@@ -142,7 +178,7 @@ export async function requireAuth(options = {}) {
                 ? `${basePath}${redirectTo}` 
                 : `${basePath}/${redirectTo}`;
             
-            console.log('[Auth] Redirecting to:', fullPath);
+            console.log('[Auth] No session, redirecting to:', fullPath);
             window.location.href = fullPath;
             return { user: null, authError: true };
         }
@@ -163,7 +199,6 @@ export async function requireAuth(options = {}) {
 
 /**
  * Выполняет вход по email и паролю.
- * Корректно обрабатывает случаи, когда ответ не содержит data.
  * 
  * @param {string} email
  * @param {string} password
@@ -178,25 +213,24 @@ export async function signIn(email, password) {
         const supabase = await getSupabase();
         const result = await supabase.auth.signInWithPassword({ email, password });
         
-        // Проверяем, что ответ содержит ожидаемые данные
         if (!result) {
             console.error('[Auth] signIn: empty result from signInWithPassword');
             return { success: false, user: null, error: 'Пустой ответ от сервера' };
         }
         
         if (result.error) {
-            console.error('[Auth] signIn: error in result:', result.error);
+            console.warn('[Auth] signIn: error in result:', result.error.message);
             return { success: false, user: null, error: result.error.message || 'Ошибка входа' };
         }
         
-        // Безопасно извлекаем user
-        const user = result.data?.user || result.user || null;
+        const user = result.data?.user || null;
         
         if (!user) {
-            console.error('[Auth] signIn: no user in response:', result);
+            console.error('[Auth] signIn: no user in response');
             return { success: false, user: null, error: 'Сервер не вернул данные пользователя' };
         }
         
+        console.log('[Auth] Login successful:', user.email);
         return { success: true, user, error: null };
         
     } catch (error) {
@@ -205,11 +239,7 @@ export async function signIn(email, password) {
         let message = 'Ошибка входа';
         
         if (error.code === 'SUPABASE_CLIENT_LOAD_FAILED') {
-            message = 'Не удалось загрузить модуль авторизации. Попробуйте обновить страницу.';
-        } else if (error.message?.includes('Invalid login credentials')) {
-            message = 'Неверный email или пароль';
-        } else if (error.message?.includes('Email not confirmed')) {
-            message = 'Email не подтверждён. Проверьте почту.';
+            message = 'Не удалось загрузить модуль авторизации.';
         } else if (error.message) {
             message = error.message;
         }
