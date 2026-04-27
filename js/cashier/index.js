@@ -3,23 +3,18 @@
 // ========================================
 
 /**
- * Cashier Page Module - Index
+ * Cashier Page Module - Index (Supabase Version)
  * 
  * Точка входа для страницы кассового модуля.
- * Использует единый движок синхронизации sync-engine.js.
- * 
- * Архитектурные решения:
- * - Sync Engine для всех операций с данными (Cache First, Sync Later)
- * - Корзина в localStorage (быстрый доступ, не требует синхронизации)
- * - Оптимистичное оформление продаж без ожидания ответа сервера
- * - Единая очередь для продаж и управления сменой
+ * Использует подмодули cart.js, shift.js, products.js.
+ * Работает напрямую через Supabase (core/db.js + core/auth.js).
  * 
  * @module cashier/index
- * @version 2.0.2
+ * @version 3.0.0
  * @changes
- * - v2.0.2: checkOpenShift() при ошибке сети загружает кэшированную смену
- * - v2.0.1: Добавлен вызов window.markCashierModuleLoaded() в конце init()
- * - v2.0.0: Полная интеграция с sync-engine.js
+ * - v3.0.0: Убран Sync Engine, убрано дублирование кода.
+ * - Импортируются cart.js, shift.js, products.js.
+ * - Все запросы к Supabase идут через getSupabase() напрямую.
  */
 
 import { requireAuth, logout, isOnline, getSupabase } from '../../core/auth.js';
@@ -32,46 +27,48 @@ import {
 } from '../../utils/formatters.js';
 import { showNotification, showPaymentModal, showConfirmDialog } from '../../utils/ui.js';
 import { openProductFormModal } from '../../utils/product-form.js';
+
+// Подмодули кассы
 import { 
-    initSyncEngine,
-    subscribeToSync,
-    loadData,
-    saveChange,
-    syncNow,
-    syncState,
-    ENTITIES,
-    OP_TYPES
-} from '../../core/sync-engine.js';
+    cartState,
+    addToCart,
+    updateQuantity,
+    removeFromCart,
+    clearCart,
+    resetCart,
+    calculateCartCount,
+    calculateItemTotal,
+    calculateCartTotal,
+    loadCartFromCache,
+    saveCartToCache
+} from './cart.js';
 
-// ========== КОНСТАНТЫ ==========
+import {
+    shiftState,
+    isShiftOpen,
+    getCurrentShiftId,
+    checkOpenShift,
+    loadShiftStats,
+    openShift,
+    closeShift,
+    loadShiftFromCache,
+    saveShiftToCache
+} from './shift.js';
 
-const CART_STORAGE_KEY = 'sh_cashier_cart';
-const SHIFT_STORAGE_KEY = 'sh_cashier_shift';
-const CART_CACHE_TTL = 60 * 60 * 1000; // 60 минут
+import {
+    productsState,
+    loadProducts,
+    setSearchQuery,
+    setSelectedCategory,
+    resetFilters,
+    findProductByCode,
+    openQuickAddProductForm
+} from './products.js';
 
 // ========== СОСТОЯНИЕ СТРАНИЦЫ ==========
 
 const state = {
     user: null,
-    
-    // Товары
-    products: [],
-    filteredProducts: [],
-    categories: [],
-    searchQuery: '',
-    selectedCategory: null,
-    isLoadingProducts: false,
-    
-    // Смена
-    currentShift: null,
-    shiftStats: { revenue: 0, salesCount: 0, profit: 0, itemsCount: 0 },
-    isShiftActionPending: false,
-    
-    // Корзина
-    cartItems: [],
-    cartTotalDiscount: 0,
-    
-    // UI
     errorMessage: null
 };
 
@@ -82,12 +79,10 @@ const DOM = {
     userEmail: null,
     logoutBtn: null,
     offlineBanner: null,
-    offlineRetryBtn: null,
-    syncBadge: null,
-    syncStatus: null
+    offlineRetryBtn: null
 };
 
-// ========== ОФЛАЙН-БАННЕР И СИНХРОНИЗАЦИЯ ==========
+// ========== ОФЛАЙН-БАННЕР ==========
 
 function showOfflineBanner() {
     if (DOM.offlineBanner) DOM.offlineBanner.style.display = 'flex';
@@ -97,484 +92,15 @@ function hideOfflineBanner() {
     if (DOM.offlineBanner) DOM.offlineBanner.style.display = 'none';
 }
 
-function updateSyncIndicator() {
-    const pendingCount = syncState.pendingCount;
-    
-    if (DOM.syncBadge) {
-        if (pendingCount > 0) {
-            DOM.syncBadge.textContent = pendingCount;
-            DOM.syncBadge.style.display = 'inline-block';
-        } else {
-            DOM.syncBadge.style.display = 'none';
-        }
-    }
-    
-    if (DOM.syncStatus) {
-        if (syncState.isSyncing) {
-            DOM.syncStatus.textContent = 'Синхронизация...';
-            DOM.syncStatus.style.display = 'inline';
-        } else if (pendingCount > 0) {
-            DOM.syncStatus.textContent = `Ожидает: ${pendingCount}`;
-            DOM.syncStatus.style.display = 'inline';
-        } else {
-            DOM.syncStatus.style.display = 'none';
-        }
-    }
-}
-
-// ========== КОРЗИНА (ЛОКАЛЬНАЯ) ==========
-
-function calculateCartCount() {
-    return state.cartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
-}
-
-function calculateItemTotal(item) {
-    const price = item.price || 0;
-    const discount = item.discount || 0;
-    const quantity = item.quantity || 0;
-    const discountedPrice = price * (1 - discount / 100);
-    return Math.round(discountedPrice * quantity);
-}
-
-function calculateCartTotal() {
-    const subtotal = state.cartItems.reduce((sum, item) => sum + calculateItemTotal(item), 0);
-    const total = subtotal * (1 - state.cartTotalDiscount / 100);
-    return Math.max(0, Math.round(total));
-}
-
-function saveCartToCache() {
-    try {
-        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({
-            items: state.cartItems,
-            totalDiscount: state.cartTotalDiscount,
-            cachedAt: Date.now()
-        }));
-    } catch (e) {
-        console.warn('[Cashier] Failed to cache cart:', e);
-    }
-}
-
-function loadCartFromCache() {
-    try {
-        const cached = localStorage.getItem(CART_STORAGE_KEY);
-        if (cached) {
-            const cart = JSON.parse(cached);
-            if (Date.now() - cart.cachedAt < CART_CACHE_TTL) {
-                state.cartItems = cart.items || [];
-                state.cartTotalDiscount = cart.totalDiscount || 0;
-                return true;
-            }
-        }
-    } catch (e) {
-        console.warn('[Cashier] Failed to load cached cart:', e);
-    }
-    return false;
-}
-
-function addToCart(product) {
-    const existing = state.cartItems.find(i => i.id === product.id);
-    
-    if (existing) {
-        existing.quantity += 1;
-    } else {
-        state.cartItems.push({ ...product, quantity: 1, discount: 0 });
-    }
-    
-    saveCartToCache();
-    render();
-    showNotification(`${product.name} добавлен в корзину`, 'success');
-}
-
-function updateQuantity(productId, delta) {
-    const item = state.cartItems.find(i => i.id === productId);
-    if (!item) return;
-    
-    const newQty = item.quantity + delta;
-    
-    if (newQty <= 0) {
-        state.cartItems = state.cartItems.filter(i => i.id !== productId);
-    } else {
-        item.quantity = newQty;
-    }
-    
-    saveCartToCache();
-    render();
-}
-
-function removeFromCart(productId) {
-    state.cartItems = state.cartItems.filter(i => i.id !== productId);
-    saveCartToCache();
-    render();
-}
-
-async function clearCart() {
-    if (state.cartItems.length === 0) return;
-    
-    const confirmed = await showConfirmDialog({
-        title: 'Очистка корзины',
-        message: 'Вы уверены, что хотите удалить все товары из корзины?',
-        confirmText: 'Очистить'
-    });
-    
-    if (!confirmed) return;
-    
-    state.cartItems = [];
-    state.cartTotalDiscount = 0;
-    saveCartToCache();
-    render();
-}
-
-function resetCart() {
-    state.cartItems = [];
-    state.cartTotalDiscount = 0;
-    saveCartToCache();
-}
-
-// ========== РАБОТА С ТОВАРАМИ ==========
-
-async function loadProductsData(forceRefresh = false) {
-    state.isLoadingProducts = true;
-    render();
-    
-    try {
-        const result = await loadData(ENTITIES.PRODUCTS, {
-            id: 'all',
-            maxAge: forceRefresh ? 0 : 5 * 60 * 1000,
-            fetcher: async () => {
-                const supabase = await getSupabase();
-                const { data, error } = await supabase
-                    .from('products')
-                    .select('*')
-                    .eq('status', 'in_stock')
-                    .order('created_at', { ascending: false });
-                
-                if (error) throw error;
-                return data || [];
-            }
-        });
-        
-        state.products = result.data || [];
-        
-        // Убираем оптимистично удалённые
-        state.products = state.products.filter(p => !p._deleted);
-        
-        buildCategories();
-        applyFilters();
-        
-    } catch (error) {
-        console.error('[Cashier] Load products error:', error);
-        if (state.products.length === 0) {
-            showNotification('Ошибка загрузки товаров', 'error');
-        }
-    } finally {
-        state.isLoadingProducts = false;
-        render();
-    }
-}
-
-function buildCategories() {
-    const counts = new Map();
-    
-    state.products.forEach(p => {
-        const cat = p.category || 'other';
-        counts.set(cat, (counts.get(cat) || 0) + 1);
-    });
-    
-    state.categories = Array.from(counts.entries())
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => b.count - a.count);
-}
-
-function applyFilters() {
-    let filtered = state.products.filter(p => !p._deleted);
-    
-    if (state.searchQuery) {
-        const q = state.searchQuery.toLowerCase();
-        filtered = filtered.filter(p => 
-            p.name?.toLowerCase().includes(q) || 
-            p.id?.toLowerCase().includes(q)
-        );
-    }
-    
-    if (state.selectedCategory) {
-        filtered = filtered.filter(p => p.category === state.selectedCategory);
-    }
-    
-    state.filteredProducts = filtered;
-}
-
-function findProductByCode(code) {
-    if (!code) return null;
-    const cleanCode = code.trim();
-    return state.products.find(p => p.id === cleanCode || p.barcode === cleanCode) || null;
-}
-
-// ========== РАБОТА СО СМЕНОЙ ==========
-
-function saveShiftToCache() {
-    if (state.currentShift) {
-        try {
-            localStorage.setItem(SHIFT_STORAGE_KEY, JSON.stringify({
-                ...state.currentShift,
-                stats: state.shiftStats,
-                cachedAt: Date.now()
-            }));
-        } catch (e) {
-            console.warn('[Cashier] Failed to cache shift:', e);
-        }
-    }
-}
-
-function loadShiftFromCache() {
-    try {
-        const cached = localStorage.getItem(SHIFT_STORAGE_KEY);
-        if (cached) {
-            const shift = JSON.parse(cached);
-            if (Date.now() - shift.cachedAt < 24 * 60 * 60 * 1000) {
-                state.currentShift = shift;
-                state.shiftStats = shift.stats || state.shiftStats;
-                return true;
-            }
-        }
-    } catch (e) {
-        console.warn('[Cashier] Failed to load cached shift:', e);
-    }
-    return false;
-}
-
-async function checkOpenShift() {
-    // Если нет сети — используем кэшированную смену
-    if (!syncState.isOnline) {
-        console.log('[Cashier] Offline, loading shift from cache');
-        const hasCachedShift = loadShiftFromCache();
-        if (!hasCachedShift) {
-            console.log('[Cashier] No cached shift, showing closed state');
-        }
-        render();
-        return;
-    }
-    
-    try {
-        const supabase = await getSupabase();
-        const { data, error } = await supabase
-            .from('shifts')
-            .select('*')
-            .eq('user_id', state.user?.id)
-            .is('closed_at', null)
-            .order('opened_at', { ascending: false })
-            .limit(1)
-            .single();
-        
-        if (error && error.code !== 'PGRST116') throw error;
-        
-        if (data) {
-            state.currentShift = data;
-            await loadShiftStats();
-        }
-        
-        render();
-        
-    } catch (error) {
-        console.error('[Cashier] Check shift error:', error.message);
-        
-        // При ошибке сети — пробуем загрузить кэшированную смену
-        console.log('[Cashier] Loading shift from cache after server error');
-        const hasCachedShift = loadShiftFromCache();
-        
-        if (!hasCachedShift) {
-            showNotification('Не удалось проверить смену. Работа в офлайн-режиме.', 'warning');
-        }
-        
-        render();
-    }
-}
-
-async function loadShiftStats() {
-    if (!state.currentShift || !syncState.isOnline) return;
-    
-    try {
-        const supabase = await getSupabase();
-        const { data, error } = await supabase
-            .from('sales')
-            .select('total, profit, items')
-            .eq('shift_id', state.currentShift.id);
-        
-        if (error) throw error;
-        
-        const sales = data || [];
-        
-        state.shiftStats = {
-            revenue: sales.reduce((sum, s) => sum + (s.total || 0), 0),
-            salesCount: sales.length,
-            profit: sales.reduce((sum, s) => sum + (s.profit || 0), 0),
-            itemsCount: sales.reduce((sum, s) => {
-                return sum + (s.items?.reduce((s2, i) => s2 + (i.quantity || 0), 0) || 0);
-            }, 0)
-        };
-        
-        saveShiftToCache();
-        
-    } catch (error) {
-        console.error('[Cashier] Load stats error:', error);
-    }
-}
-
-async function openShift() {
-    if (state.isShiftActionPending) return;
-    
-    if (!syncState.isOnline) {
-        showNotification('Невозможно открыть смену в офлайн-режиме', 'error');
-        return;
-    }
-    
-    state.isShiftActionPending = true;
-    render();
-    
-    try {
-        const supabase = await getSupabase();
-        const { data, error } = await supabase
-            .from('shifts')
-            .insert({
-                user_id: state.user.id,
-                opened_at: new Date().toISOString(),
-                initial_cash: 0,
-                status: 'active'
-            })
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
-        state.currentShift = data;
-        state.shiftStats = { revenue: 0, salesCount: 0, profit: 0, itemsCount: 0 };
-        
-        saveShiftToCache();
-        showNotification('Смена открыта', 'success');
-        
-    } catch (error) {
-        console.error('[Cashier] Open shift error:', error);
-        showNotification('Ошибка открытия смены: ' + error.message, 'error');
-    } finally {
-        state.isShiftActionPending = false;
-        render();
-    }
-}
-
-async function closeShift() {
-    if (!state.currentShift || state.isShiftActionPending) return;
-    
-    if (!syncState.isOnline) {
-        showNotification('Невозможно закрыть смену в офлайн-режиме', 'error');
-        return;
-    }
-    
-    const confirmed = await showConfirmDialog({
-        title: 'Закрытие смены',
-        message: `Выручка: ${formatMoney(state.shiftStats.revenue)}\nПродаж: ${state.shiftStats.salesCount}\nПрибыль: ${formatMoney(state.shiftStats.profit)}\n\nВы уверены, что хотите закрыть смену?`,
-        confirmText: 'Закрыть смену'
-    });
-    
-    if (!confirmed) return;
-    
-    state.isShiftActionPending = true;
-    render();
-    
-    try {
-        const supabase = await getSupabase();
-        const { error } = await supabase
-            .from('shifts')
-            .update({
-                closed_at: new Date().toISOString(),
-                final_cash: state.shiftStats.revenue,
-                total_revenue: state.shiftStats.revenue,
-                total_profit: state.shiftStats.profit,
-                sales_count: state.shiftStats.salesCount,
-                items_count: state.shiftStats.itemsCount,
-                status: 'closed'
-            })
-            .eq('id', state.currentShift.id);
-        
-        if (error) throw error;
-        
-        state.currentShift = null;
-        state.shiftStats = { revenue: 0, salesCount: 0, profit: 0, itemsCount: 0 };
-        resetCart();
-        
-        localStorage.removeItem(SHIFT_STORAGE_KEY);
-        
-        showNotification('Смена закрыта', 'success');
-        
-    } catch (error) {
-        console.error('[Cashier] Close shift error:', error);
-        showNotification('Ошибка закрытия смены: ' + error.message, 'error');
-    } finally {
-        state.isShiftActionPending = false;
-        render();
-    }
-}
-
-// ========== БЫСТРОЕ ДОБАВЛЕНИЕ ТОВАРА ==========
-
-async function openQuickAddProductForm() {
-    if (!syncState.isOnline) {
-        showNotification('Добавление товара недоступно в офлайн-режиме', 'warning');
-        return;
-    }
-    
-    if (!state.currentShift) {
-        showNotification('Откройте смену для добавления товаров', 'warning');
-        return;
-    }
-    
-    try {
-        const newProduct = await openProductFormModal({
-            mode: 'create',
-            userId: state.user?.id,
-            onSuccess: async (product) => {
-                // Оптимистично добавляем в список
-                product._optimistic = true;
-                state.products.unshift(product);
-                buildCategories();
-                applyFilters();
-                render();
-                
-                // Сохраняем через Sync Engine
-                await saveChange(ENTITIES.PRODUCTS, OP_TYPES.CREATE, product);
-                
-                // Добавляем в корзину
-                addToCart(product);
-                
-                updateSyncIndicator();
-            }
-        });
-        
-        if (newProduct) {
-            newProduct._optimistic = true;
-            state.products.unshift(newProduct);
-            buildCategories();
-            applyFilters();
-            render();
-            
-            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.CREATE, newProduct);
-            addToCart(newProduct);
-            updateSyncIndicator();
-        }
-        
-    } catch (error) {
-        console.error('[Cashier] Quick add error:', error);
-        showNotification('Не удалось открыть форму добавления', 'error');
-    }
-}
-
 // ========== ОФОРМЛЕНИЕ ПРОДАЖИ ==========
 
 async function checkout() {
-    if (state.cartItems.length === 0) {
+    if (calculateCartCount() === 0) {
         showNotification('Корзина пуста', 'warning');
         return;
     }
     
-    if (!state.currentShift) {
+    if (!isShiftOpen()) {
         showNotification('Смена не открыта', 'warning');
         return;
     }
@@ -583,8 +109,7 @@ async function checkout() {
     const paymentMethod = await showPaymentModal(total);
     if (!paymentMethod) return;
     
-    // Подготавливаем данные продажи
-    const items = state.cartItems.map(item => ({
+    const items = cartState.items.map(item => ({
         id: item.id,
         name: item.name,
         price: item.price,
@@ -599,7 +124,7 @@ async function checkout() {
     }, 0);
     
     const saleData = {
-        shift_id: state.currentShift.id,
+        shift_id: getCurrentShiftId(),
         items,
         total,
         profit,
@@ -608,67 +133,63 @@ async function checkout() {
         created_at: new Date().toISOString()
     };
     
-    // Оптимистично обновляем UI
-    const cartSnapshot = [...state.cartItems];
+    // Сохраняем снапшот для чека
+    const cartSnapshot = [...cartState.items];
     const totalSnapshot = total;
     const paymentMethodSnapshot = paymentMethod;
     
-    // Очищаем корзину сразу
+    // Очищаем корзину сразу (оптимистично)
     resetCart();
     
-    // Обновляем статистику смены оптимистично
-    state.shiftStats.revenue += total;
-    state.shiftStats.salesCount += 1;
-    state.shiftStats.profit += profit;
-    state.shiftStats.itemsCount += items.reduce((sum, i) => sum + i.quantity, 0);
-    saveShiftToCache();
-    
-    // Помечаем товары как проданные в локальном стейте
-    const soldProductIds = items.map(i => i.id);
-    state.products = state.products.filter(p => !soldProductIds.includes(p.id));
-    buildCategories();
-    applyFilters();
-    
-    render();
-    
-    // Сохраняем продажу через Sync Engine
     try {
-        await saveChange(ENTITIES.SALES, OP_TYPES.CREATE, saleData);
+        const supabase = getSupabase();
         
-        // Обновляем статус товаров через Sync Engine
+        // Сохраняем продажу в Supabase
+        const { error: saleError } = await supabase
+            .from('sales')
+            .insert(saleData);
+        
+        if (saleError) throw saleError;
+        
+        // Обновляем статус товаров на 'sold'
         for (const item of items) {
-            await saveChange(
-                ENTITIES.PRODUCTS,
-                OP_TYPES.UPDATE,
-                { id: item.id, status: 'sold', sold_at: new Date().toISOString() }
-            );
+            const { error: updateError } = await supabase
+                .from('products')
+                .update({ status: 'sold', sold_at: new Date().toISOString() })
+                .eq('id', item.id);
+            
+            if (updateError) {
+                console.error('[Cashier] Failed to update product status:', item.id, updateError);
+            }
         }
         
-        showNotification(
-            syncState.isOnline 
-                ? `Продажа на ${formatMoney(total)} оформлена`
-                : `Продажа сохранена локально. Синхронизируется при подключении к сети.`,
-            'success'
-        );
+        // Обновляем статистику смены
+        shiftState.stats.revenue += total;
+        shiftState.stats.salesCount += 1;
+        shiftState.stats.profit += profit;
+        shiftState.stats.itemsCount += items.reduce((sum, i) => sum + i.quantity, 0);
+        saveShiftToCache();
         
+        // Убираем проданные товары из списка
+        const soldIds = items.map(i => i.id);
+        productsState.all = productsState.all.filter(p => !soldIds.includes(p.id));
+        
+        showNotification(`Продажа на ${formatMoney(total)} оформлена`, 'success');
         showReceipt(cartSnapshot, totalSnapshot, paymentMethodSnapshot);
         
-        // Перезагружаем товары для актуализации
-        if (syncState.isOnline) {
-            setTimeout(() => loadProductsData(true), 1000);
-        }
+        // Перезагружаем товары
+        setTimeout(() => loadProducts(true), 1000);
         
     } catch (error) {
         console.error('[Cashier] Checkout error:', error);
         showNotification('Ошибка оформления продажи: ' + error.message, 'error');
         
-        // Восстанавливаем корзину при ошибке
-        state.cartItems = cartSnapshot;
+        // Восстанавливаем корзину
+        cartState.items = cartSnapshot;
         saveCartToCache();
-        render();
     }
     
-    updateSyncIndicator();
+    render();
 }
 
 function showReceipt(items, total, paymentMethod) {
@@ -713,7 +234,7 @@ function showReceipt(items, total, paymentMethod) {
 // ========== РЕНДЕРИНГ ==========
 
 function renderShiftBar() {
-    if (!state.currentShift) return '';
+    if (!isShiftOpen()) return '';
     
     return `
         <div class="shift-bar">
@@ -724,14 +245,14 @@ function renderShiftBar() {
             <div class="shift-stats">
                 <div class="stat-item">
                     <span class="stat-label">Выручка</span>
-                    <span class="stat-value">${formatMoney(state.shiftStats.revenue)}</span>
+                    <span class="stat-value">${formatMoney(shiftState.stats.revenue)}</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Продаж</span>
-                    <span class="stat-value">${state.shiftStats.salesCount}</span>
+                    <span class="stat-value">${shiftState.stats.salesCount}</span>
                 </div>
             </div>
-            <button class="btn-secondary btn-sm" id="closeShiftBtn" ${state.isShiftActionPending ? 'disabled' : ''}>
+            <button class="btn-secondary btn-sm" id="closeShiftBtn" ${shiftState.isActionPending ? 'disabled' : ''}>
                 Закрыть смену
             </button>
         </div>
@@ -739,32 +260,34 @@ function renderShiftBar() {
 }
 
 function renderToolbar() {
+    const searchQuery = productsState.searchQuery;
+    const selectedCategory = productsState.selectedCategory;
+    
     return `
         <div class="products-toolbar">
             <div class="toolbar-left">
                 <div class="search-wrapper">
                     <input type="text" id="searchInput" class="search-input" 
                         placeholder="Поиск товара или сканирование..." 
-                        value="${escapeHtml(state.searchQuery)}">
+                        value="${escapeHtml(searchQuery)}">
                 </div>
-                <button class="quick-add-btn" id="quickAddProductBtn" title="Быстрое добавление товара">
-                    <span class="icon">➕</span>
-                    <span>Быстрый товар</span>
+                <button class="btn-secondary btn-sm" id="quickAddProductBtn" title="Быстрое добавление товара">
+                    + Быстрый товар
                 </button>
             </div>
             
             <div class="toolbar-right">
-                ${(state.searchQuery || state.selectedCategory) ? `
-                    <button class="btn-secondary btn-sm" id="resetFiltersBtn">Сбросить фильтры</button>
+                ${(searchQuery || selectedCategory) ? `
+                    <button class="btn-ghost btn-sm" id="resetFiltersBtn">Сбросить фильтры</button>
                 ` : ''}
             </div>
         </div>
         <div class="category-bar">
-            <button class="category-tab ${!state.selectedCategory ? 'active' : ''}" data-category="">
-                Все (${state.products.length})
+            <button class="category-tab ${!selectedCategory ? 'active' : ''}" data-category="">
+                Все (${productsState.all.length})
             </button>
-            ${state.categories.map(c => `
-                <button class="category-tab ${state.selectedCategory === c.value ? 'active' : ''}" data-category="${c.value}">
+            ${productsState.categories.map(c => `
+                <button class="category-tab ${selectedCategory === c.value ? 'active' : ''}" data-category="${c.value}">
                     ${getCategoryName(c.value)} (${c.count})
                 </button>
             `).join('')}
@@ -773,28 +296,27 @@ function renderToolbar() {
 }
 
 function renderProductsGrid() {
-    if (state.isLoadingProducts) {
+    if (productsState.isLoading) {
         return '<div class="loading-spinner"></div>';
     }
     
-    if (state.filteredProducts.length === 0) {
-        const message = state.searchQuery || state.selectedCategory 
+    if (productsState.filtered.length === 0) {
+        const message = productsState.searchQuery || productsState.selectedCategory 
             ? 'По вашему запросу ничего не найдено'
-            : 'Товары не найдены. Добавьте товар через кнопку "Быстрый товар".';
+            : 'Товары не найдены. Добавьте товар через кнопку "+ Быстрый товар".';
         
         return `<div class="empty-state">${message}</div>`;
     }
     
     return `
         <div class="products-grid">
-            ${state.filteredProducts.map(p => `
-                <div class="product-card ${p._optimistic ? 'optimistic' : ''}" data-id="${p.id}">
+            ${productsState.filtered.map(p => `
+                <div class="product-card" data-id="${p.id}">
                     <div class="product-photo">
                         ${p.photo_url 
                             ? `<img src="${escapeHtml(p.photo_url)}" alt="${escapeHtml(p.name)}" loading="lazy">` 
                             : '<span class="photo-placeholder">📦</span>'
                         }
-                        ${p._optimistic ? '<span class="optimistic-badge" title="Ожидает синхронизации">⏳</span>' : ''}
                     </div>
                     <div class="product-info">
                         <div class="product-name">${escapeHtml(p.name)}</div>
@@ -810,9 +332,9 @@ function renderCart() {
     const cartCount = calculateCartCount();
     const cartTotal = calculateCartTotal();
     
-    const itemsHtml = state.cartItems.length === 0 
+    const itemsHtml = cartState.items.length === 0 
         ? '<div class="cart-empty">Корзина пуста</div>'
-        : state.cartItems.map(item => {
+        : cartState.items.map(item => {
             const itemTotal = calculateItemTotal(item);
             return `
                 <div class="cart-item">
@@ -839,7 +361,7 @@ function renderCart() {
             <div class="cart-header">
                 <h3>🛒 Корзина</h3>
                 <span class="cart-count">${cartCount} поз.</span>
-                ${state.cartItems.length > 0 ? '<button class="btn-ghost btn-sm" id="clearCartBtn">Очистить</button>' : ''}
+                ${cartState.items.length > 0 ? '<button class="btn-ghost btn-sm" id="clearCartBtn">Очистить</button>' : ''}
             </div>
             
             <div class="cart-items-container">
@@ -870,7 +392,7 @@ function renderCart() {
 function render() {
     if (!DOM.content) return;
     
-    if (!state.currentShift) {
+    if (!isShiftOpen()) {
         renderClosedShift();
         return;
     }
@@ -898,34 +420,63 @@ function renderClosedShift() {
             <div class="shift-closed-icon">🔒</div>
             <h2>Смена закрыта</h2>
             <p>Для начала работы откройте смену</p>
-            <button class="btn-primary btn-lg" id="openShiftBtn" ${state.isShiftActionPending ? 'disabled' : ''}>
-                ${state.isShiftActionPending ? 'Открытие...' : 'Открыть смену'}
+            <button class="btn-primary btn-lg" id="openShiftBtn" ${shiftState.isActionPending ? 'disabled' : ''}>
+                ${shiftState.isActionPending ? 'Открытие...' : 'Открыть смену'}
             </button>
         </div>
     `;
     
-    document.getElementById('openShiftBtn')?.addEventListener('click', openShift);
+    document.getElementById('openShiftBtn')?.addEventListener('click', async () => {
+        const success = await openShift(state.user?.id);
+        if (success) {
+            showNotification('Смена открыта', 'success');
+        } else {
+            showNotification('Ошибка открытия смены', 'error');
+        }
+        render();
+    });
 }
 
 function attachRenderEvents() {
-    document.getElementById('closeShiftBtn')?.addEventListener('click', closeShift);
-    document.getElementById('clearCartBtn')?.addEventListener('click', clearCart);
-    document.getElementById('checkoutBtn')?.addEventListener('click', checkout);
-    document.getElementById('quickAddProductBtn')?.addEventListener('click', openQuickAddProductForm);
-    
-    document.getElementById('resetFiltersBtn')?.addEventListener('click', () => {
-        state.searchQuery = '';
-        state.selectedCategory = null;
-        applyFilters();
+    // Закрытие смены
+    document.getElementById('closeShiftBtn')?.addEventListener('click', async () => {
+        const success = await closeShift();
+        if (success) {
+            resetCart();
+            showNotification('Смена закрыта', 'success');
+        }
         render();
     });
     
+    // Очистка корзины
+    document.getElementById('clearCartBtn')?.addEventListener('click', async () => {
+        await clearCart();
+        render();
+    });
+    
+    // Оформление продажи
+    document.getElementById('checkoutBtn')?.addEventListener('click', checkout);
+    
+    // Быстрое добавление товара
+    document.getElementById('quickAddProductBtn')?.addEventListener('click', async () => {
+        const newProduct = await openQuickAddProductForm(state.user?.id);
+        if (newProduct) {
+            render();
+        }
+    });
+    
+    // Сброс фильтров
+    document.getElementById('resetFiltersBtn')?.addEventListener('click', () => {
+        resetFilters();
+        render();
+    });
+    
+    // Поиск/сканер
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         const scannerHandler = debounce((value) => {
             if (!value) {
-                state.searchQuery = '';
-                applyFilters();
+                setSearchQuery('');
                 render();
                 return;
             }
@@ -934,11 +485,10 @@ function attachRenderEvents() {
             if (product) {
                 addToCart(product);
                 searchInput.value = '';
-                state.searchQuery = '';
-                applyFilters();
+                setSearchQuery('');
+                render();
             } else {
-                state.searchQuery = value;
-                applyFilters();
+                setSearchQuery(value);
                 render();
             }
         }, 300);
@@ -947,21 +497,26 @@ function attachRenderEvents() {
         searchInput.focus();
     }
     
+    // Фильтры по категориям
     document.querySelectorAll('[data-category]').forEach(btn => {
         btn.addEventListener('click', () => {
-            state.selectedCategory = btn.dataset.category || null;
-            applyFilters();
+            setSelectedCategory(btn.dataset.category || null);
             render();
         });
     });
     
+    // Добавление товара в корзину по клику
     document.querySelectorAll('.product-card').forEach(card => {
         card.addEventListener('click', () => {
-            const product = state.products.find(p => p.id === card.dataset.id);
-            if (product) addToCart(product);
+            const product = productsState.all.find(p => p.id === card.dataset.id);
+            if (product) {
+                addToCart(product);
+                render();
+            }
         });
     });
     
+    // Действия с товарами в корзине
     document.querySelectorAll('[data-action]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -969,6 +524,7 @@ function attachRenderEvents() {
             if (action === 'increase') updateQuantity(id, 1);
             if (action === 'decrease') updateQuantity(id, -1);
             if (action === 'remove') removeFromCart(id);
+            render();
         });
     });
 }
@@ -981,8 +537,6 @@ function cacheElements() {
     DOM.logoutBtn = document.getElementById('logoutBtn');
     DOM.offlineBanner = document.getElementById('offlineBanner');
     DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
-    DOM.syncBadge = document.getElementById('syncBadge');
-    DOM.syncStatus = document.getElementById('syncStatus');
 }
 
 function displayUserInfo() {
@@ -1003,10 +557,7 @@ function attachGlobalEvents() {
     
     if (DOM.offlineRetryBtn) {
         DOM.offlineRetryBtn.addEventListener('click', () => {
-            if (syncState.isOnline) {
-                syncNow();
-            }
-            loadProductsData(true);
+            location.reload();
         });
     }
     
@@ -1018,39 +569,18 @@ function attachGlobalEvents() {
         
         if (e.key === 'F9') {
             e.preventDefault();
-            if (state.cartItems.length > 0) checkout();
+            if (calculateCartCount() > 0) checkout();
         }
     });
     
     window.addEventListener('online', () => {
         hideOfflineBanner();
         showNotification('Соединение восстановлено', 'success');
-        updateSyncIndicator();
     });
     
     window.addEventListener('offline', () => {
         showOfflineBanner();
         showNotification('Отсутствует подключение к интернету', 'warning');
-        updateSyncIndicator();
-    });
-}
-
-function setupSyncSubscription() {
-    subscribeToSync((syncState, event) => {
-        updateSyncIndicator();
-        
-        if (!syncState.isOnline) {
-            showOfflineBanner();
-        } else {
-            hideOfflineBanner();
-        }
-        
-        // При завершении синхронизации обновляем данные
-        if (event?.type === 'sync-completed' && event.synced > 0) {
-            loadProductsData(true);
-            checkOpenShift();
-            showNotification(`Синхронизировано операций: ${event.synced}`, 'success');
-        }
     });
 }
 
@@ -1059,24 +589,19 @@ async function init() {
     
     cacheElements();
     
-    // Инициализируем Sync Engine
-    await initSyncEngine();
-    setupSyncSubscription();
-    
     // Проверяем сеть
-    if (!syncState.isOnline) {
+    if (!isOnline()) {
         showOfflineBanner();
     } else {
         hideOfflineBanner();
     }
-    updateSyncIndicator();
     
     // Проверяем авторизацию
     const authResult = await requireAuth();
     
     if (authResult.user) {
         state.user = authResult.user;
-    } else if (authResult.offline || authResult.networkError) {
+    } else if (authResult.offline) {
         state.user = null;
         showOfflineBanner();
         showNotification('Работа в офлайн-режиме. Некоторые функции недоступны.', 'warning');
@@ -1091,14 +616,21 @@ async function init() {
     loadCartFromCache();
     loadShiftFromCache();
     
-    // Проверяем смену и загружаем товары
-    await checkOpenShift();
-    await loadProductsData();
+    // Проверяем смену
+    const hasShift = await checkOpenShift(state.user?.id);
+    if (!hasShift && isOnline()) {
+        console.log('[Cashier] No open shift found');
+    }
+    
+    // Загружаем товары
+    await loadProducts();
     
     // Сообщаем HTML-обёртке, что модуль загружен
     if (window.markCashierModuleLoaded) {
         window.markCashierModuleLoaded();
     }
+    
+    render();
     
     console.log('[Cashier] Initialized');
 }
