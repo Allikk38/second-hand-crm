@@ -1,3 +1,7 @@
+<!-- ======================================== -->
+<!-- FILE: pages/inventory.html -->
+<!-- ======================================== -->
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -13,7 +17,6 @@
     <link rel="stylesheet" href="css/layouts/inventory.css">
     
     <style>
-        /* Стили только для этой страницы (переопределения) */
         .inventory-page {
             display: flex;
             flex-direction: column;
@@ -22,7 +25,6 @@
             background: var(--color-bg);
         }
         
-        /* Офлайн-баннер */
         .offline-banner {
             display: none;
             align-items: center;
@@ -117,7 +119,6 @@
         }
         
         .skeleton-rows {
-            display: none;
             padding: var(--spacing-4);
             background: var(--color-white);
             border-radius: var(--radius-lg);
@@ -148,7 +149,6 @@
             50% { opacity: 0.5; }
         }
         
-        /* Модальное окно добавления товара (базовый контейнер) */
         #modalContainer {
             position: fixed;
             top: 0;
@@ -163,7 +163,6 @@
             pointer-events: auto;
         }
         
-        /* Индикатор загрузки модуля */
         .module-loading {
             display: flex;
             flex-direction: column;
@@ -221,6 +220,10 @@
                 <a href="pages/reports.html">Отчеты</a>
             </nav>
             <div class="header-actions">
+                <span class="syn-status">
+                    <span id="syncBadge" style="display: none;"></span>
+                    <span id="syncStatus" style="display: none;"></span>
+                </span>
                 <span class="user-email" id="userEmail"></span>
                 <button class="btn-ghost btn-sm" id="logoutBtn" aria-label="Выйти из системы">
                     🚪 Выход
@@ -286,7 +289,7 @@
                         <p class="loading-status" id="loadingStatus">Загрузка модуля...</p>
                     </div>
                     
-                    <!-- Скелетон-лоадер (скрыт изначально) -->
+                    <!-- Скелетон-лоадер -->
                     <div class="skeleton-rows" id="skeletonLoader" style="display: none;">
                         <div class="skeleton-row">
                             <div class="skeleton skeleton-checkbox"></div>
@@ -364,6 +367,7 @@
             
             let loadStartTime = Date.now();
             let checkInterval = null;
+            let errorShown = false;
             
             // Функция для отображения статуса загрузки
             function updateLoadingStatus(message) {
@@ -374,48 +378,52 @@
             
             // Функция для отображения ошибки
             function showModuleError(message) {
+                errorShown = true;
                 if (moduleLoading) moduleLoading.style.display = 'none';
                 if (skeletonLoader) skeletonLoader.style.display = 'none';
-                if (productsTable) productsTable.style.display = 'none';
                 
                 if (errorBanner && errorMessage) {
                     errorMessage.textContent = message;
                     errorBanner.style.display = 'flex';
                     errorBanner.className = 'error-banner error-banner-error';
                 }
-                
-                if (emptyState) {
-                    emptyState.style.display = 'flex';
-                    const title = emptyState.querySelector('.empty-state-title');
-                    const msg = emptyState.querySelector('.empty-state-message');
-                    if (title) title.textContent = 'Ошибка загрузки';
-                    if (msg) msg.textContent = message;
+            }
+            
+            // Функция для скрытия ошибки (если модуль загрузился после таймаута)
+            function hideModuleError() {
+                errorShown = false;
+                if (errorBanner) {
+                    errorBanner.style.display = 'none';
                 }
             }
             
-            // Проверяем статус загрузки с обновлением сообщения
+            // Проверяем статус загрузки
             checkInterval = setInterval(function() {
                 const elapsed = Math.floor((Date.now() - loadStartTime) / 1000);
                 
+                // Если модуль уже загрузился — скрываем ошибку и останавливаем проверку
                 if (window.__inventoryModuleLoaded) {
                     clearInterval(checkInterval);
                     if (moduleLoading) moduleLoading.style.display = 'none';
+                    if (errorShown) {
+                        hideModuleError();
+                    }
                     return;
                 }
                 
                 // Обновляем сообщение о статусе
                 if (elapsed < 5) {
                     updateLoadingStatus('Загрузка модуля...');
-                } else if (elapsed < 10) {
+                } else if (elapsed < 15) {
                     updateLoadingStatus('Синхронизация данных...');
-                } else if (elapsed < 20) {
-                    updateLoadingStatus('Восстановление соединения...');
                 } else if (elapsed < 30) {
+                    updateLoadingStatus('Восстановление соединения...');
+                } else if (elapsed < 60) {
                     updateLoadingStatus('Медленное соединение. Пожалуйста, подождите...');
                 } else {
-                    // Прошло больше 30 секунд — показываем ошибку
+                    // Прошло больше 60 секунд — показываем ошибку
                     clearInterval(checkInterval);
-                    console.warn('[Inventory] Module load timeout after 30s');
+                    console.warn('[Inventory] Module load timeout after 60s');
                     showModuleError('Превышено время ожидания. Проверьте подключение к интернету и обновите страницу.');
                 }
             }, 3000);
@@ -426,6 +434,9 @@
                     window.__inventoryModuleLoaded = true;
                     clearInterval(checkInterval);
                     if (moduleLoading) moduleLoading.style.display = 'none';
+                    if (errorShown) {
+                        hideModuleError();
+                    }
                     console.log('[Inventory] Module loaded successfully in', Math.floor((Date.now() - loadStartTime) / 1000), 's');
                 }
             };
@@ -434,9 +445,12 @@
             document.addEventListener('click', function(e) {
                 if (e.target.id === 'offlineRetryBtn' || e.target.closest('#offlineRetryBtn')) {
                     loadStartTime = Date.now();
+                    errorShown = false;
+                    window.__inventoryModuleLoaded = false;
                     if (moduleLoading) moduleLoading.style.display = 'flex';
                     if (errorBanner) errorBanner.style.display = 'none';
                     if (emptyState) emptyState.style.display = 'none';
+                    if (productsTable) productsTable.style.display = 'none';
                     updateLoadingStatus('Переподключение...');
                     location.reload();
                 }
