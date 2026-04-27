@@ -9,13 +9,11 @@
  * Реализует стратегию "Cache First, Sync Later".
  * 
  * @module sync-engine
- * @version 1.2.0
+ * @version 1.2.1
  * @changes
+ * - Исправлен импорт из logger.js: error → logError, info → logInfo, warn → logWarn
  * - Добавлен вызов initLogger() при инициализации
- * - Добавлен диагностический вывод статуса логгера
- * - Добавлен лог успешной отправки логов
- * - Экспортирован getLoggerStatus для диагностики из консоли
- * - Добавлена проверка доступности таблицы логирования
+ * - Диагностический API в window.__syncEngine
  */
 
 import {
@@ -40,9 +38,9 @@ import {
 } from './sync.js';
 
 import {
-    info as logInfo,
-    warn as logWarn,
-    error as logError,
+    logInfo,
+    logWarn,
+    logError,
     logSyncEvent,
     logPerformance,
     logNetworkEvent,
@@ -60,7 +58,7 @@ const BASE_RETRY_DELAY = 5000;
 const MAX_RETRY_DELAY = 300000;
 const SYNC_INTERVAL = 30000;
 const OPERATION_TTL = 7 * 24 * 60 * 60 * 1000;
-const LOGGER_CHECK_INTERVAL = 60000; // Проверка логгера раз в минуту
+const LOGGER_CHECK_INTERVAL = 60000;
 
 // ========== СОСТОЯНИЕ ==========
 
@@ -98,9 +96,6 @@ async function updatePendingCount() {
 
 // ========== ДИАГНОСТИКА ЛОГГЕРА ==========
 
-/**
- * Проверяет состояние логгера и логирует результат
- */
 async function checkLoggerHealth() {
     const status = getLoggerStatus();
     
@@ -112,22 +107,11 @@ async function checkLoggerHealth() {
     
     if (status.tableAvailable === false) {
         console.warn('[SyncEngine] Logger table not available, logs saved locally');
-        logInfo('logger_status', {
-            entity: 'system',
-            details: { 
-                tableAvailable: false, 
-                localLogs: status.localLogsCount,
-                bufferSize: status.bufferSize,
-                lastError: status.lastFlushError
-            }
-        });
     } else if (status.tableAvailable === null) {
         console.log('[SyncEngine] Logger table status unknown, testing...');
-        const result = await testLoggerConnection();
-        console.log('[SyncEngine] Logger test result:', result);
+        await testLoggerConnection();
     }
     
-    // Если есть локальные логи и таблица доступна — они отправятся при следующем flush
     if (status.tableAvailable && status.localLogsCount > 0) {
         console.log('[SyncEngine] Found', status.localLogsCount, 'local logs, forcing flush');
         await flushAllLogs();
@@ -164,7 +148,7 @@ export async function enqueueOperation(operation) {
     await updatePendingCount();
     notifyListeners({ type: 'operation-added', operation: op });
     
-    logInfo(`Operation enqueued: ${type} ${entity}`, { opId: op.id });
+    logInfo(`Operation enqueued: ${type} ${entity}`, { entity, entityId: op.id });
     
     if (syncState.isOnline) syncNow();
     return op.id;
@@ -197,7 +181,7 @@ export async function syncNow() {
     for (const op of pendingOps) {
         if (Date.now() - op.timestamp > OPERATION_TTL) {
             await dbRemoveOperation(op.id);
-            logWarn(`Operation expired: ${op.id}`, { details: { op } });
+            logWarn(`Operation expired: ${op.id}`, { entity: op.entity });
             continue;
         }
         
@@ -209,17 +193,12 @@ export async function syncNow() {
             if (success) {
                 await dbRemoveOperation(op.id);
                 synced++;
-                logSyncEvent('operation_synced', op.type, op.entity, {
-                    entityId: op.id,
-                    details: { success: true }
-                });
             } else {
                 const newRetry = op.retryCount + 1;
                 if (newRetry >= MAX_RETRY_COUNT) {
                     await dbUpdateOperation(op.id, { status: 'failed', retryCount: newRetry });
                     logError(`Operation max retries exceeded: ${op.id}`, null, {
-                        entity: op.entity,
-                        details: { op }
+                        entity: op.entity
                     });
                 } else {
                     await dbUpdateOperation(op.id, { status: 'pending', retryCount: newRetry });
@@ -235,8 +214,7 @@ export async function syncNow() {
             });
             failed++;
             logError(`Sync operation failed: ${op.id}`, error, {
-                entity: op.entity,
-                details: { op }
+                entity: op.entity
             });
         }
     }
@@ -246,7 +224,7 @@ export async function syncNow() {
     await updatePendingCount();
     notifyListeners({ type: 'sync-completed', synced, failed });
     
-    logInfo(`Sync completed`, {
+    logInfo('Sync completed', {
         entity: 'system',
         details: {
             synced,
@@ -256,7 +234,6 @@ export async function syncNow() {
         }
     });
     
-    // После синхронизации проверяем логгер
     if (synced > 0 || failed > 0) {
         await flushAllLogs();
     }
@@ -280,7 +257,6 @@ export function startBackgroundSync() {
         if (syncState.isOnline && !syncState.isSyncing) syncNow();
     }, SYNC_INTERVAL);
     
-    // Периодическая проверка логгера
     if (syncState.loggerCheckInterval) clearInterval(syncState.loggerCheckInterval);
     syncState.loggerCheckInterval = setInterval(() => {
         checkLoggerHealth();
@@ -305,17 +281,14 @@ export function stopBackgroundSync() {
 window.addEventListener('online', () => {
     syncState.isOnline = true;
     logNetworkEvent('online');
-    logInfo('Network online', { entity: 'network' });
     notifyListeners({ type: 'online' });
     syncNow();
-    // При восстановлении сети проверяем логгер
     checkLoggerHealth();
 });
 
 window.addEventListener('offline', () => {
     syncState.isOnline = false;
     logNetworkEvent('offline');
-    logWarn('Network offline', { entity: 'network' });
     notifyListeners({ type: 'offline' });
 });
 
@@ -327,15 +300,12 @@ export async function loadData(entity, options = {}) {
     const cached = await cacheGet(entity, id, maxAge);
     
     if (cached) {
-        logInfo(`Data loaded from cache: ${entity}`, {
-            entity,
-            entityId: id,
-            details: { fromCache: true }
-        });
-        
         if (syncState.isOnline && fetcher) {
             fetcher().then(data => cacheSet(entity, id, data)).catch(err => {
-                logWarn(`Background refresh failed: ${entity}`, { details: { error: err.message } });
+                logWarn(`Background refresh failed: ${entity}`, {
+                    entity,
+                    details: { error: err.message }
+                });
             });
         }
         return { data: cached, fromCache: true };
@@ -349,16 +319,12 @@ export async function loadData(entity, options = {}) {
             
             logPerformance(`load_${entity}`, Date.now() - startTime, {
                 entity,
-                entityId: id,
                 details: { count: data?.length || 0 }
             });
             
             return { data, fromCache: false };
         } catch (error) {
-            logError(`Failed to load ${entity}`, error, {
-                entity,
-                entityId: id
-            });
+            logError(`Failed to load ${entity}`, error, { entity });
             throw error;
         }
     }
@@ -368,23 +334,13 @@ export async function loadData(entity, options = {}) {
 
 export async function saveChange(entity, type, data, originalData = null) {
     await updateLocalCacheOptimistic(entity, type, data);
-    
-    logInfo(`Change saved: ${type} ${entity}`, {
-        entity,
-        operationType: type,
-        details: { data }
-    });
-    
     return await enqueueOperation({ entity, type, data, originalData });
 }
 
 export async function initSyncEngine() {
     console.log('[SyncEngine] Initializing...');
     
-    // Первым делом инициализируем логгер
     await initLogger();
-    
-    // Проверяем здоровье логгера
     await checkLoggerHealth();
     
     try {
@@ -401,21 +357,18 @@ export async function initSyncEngine() {
         
         logInfo('Sync engine initialized', {
             entity: 'system',
-            details: { 
+            details: {
                 pendingCount: syncState.pendingCount,
                 isOnline: syncState.isOnline,
                 loggerStatus: getLoggerStatus()
             }
         });
         
-        // Принудительно сбрасываем логи после инициализации
         await flushAllLogs();
         
     } catch (error) {
         console.error('[SyncEngine] Init failed:', error);
-        logError('Sync engine init failed', error, {
-            entity: 'system'
-        });
+        logError('Sync engine init failed', error, { entity: 'system' });
         throw error;
     }
 }
@@ -425,12 +378,12 @@ export async function initSyncEngine() {
 export { ENTITIES, OP_TYPES };
 export { cacheGet, cacheSet, cacheDelete, cacheClear } from './db.js';
 
-export { 
-    logInfo, 
-    logWarn, 
-    logError, 
-    logSyncEvent, 
-    logPerformance, 
+export {
+    logInfo,
+    logWarn,
+    logError,
+    logSyncEvent,
+    logPerformance,
     logNetworkEvent,
     logUserAction,
     logProductEvent,
@@ -448,7 +401,7 @@ export {
     LOG_LEVELS
 } from './logger.js';
 
-// Экспорт для диагностики из консоли браузера
+// Диагностический API для консоли браузера
 if (typeof window !== 'undefined') {
     window.__syncEngine = {
         syncState,
