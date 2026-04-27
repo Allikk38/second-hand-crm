@@ -12,15 +12,18 @@
  * - Использует единый клиент из core/auth.js.
  * - Использование централизованных UI-утилит из utils/ui.js.
  * - Блокировка повторной отправки формы.
+ * - Использует getReturnUrl() для корректного редиректа с учётом base href.
  * 
  * @module login
- * @version 3.3.0
+ * @version 3.4.0
  * @changes
  * - Удалена локальная реализация showNotification.
  * - Добавлен импорт из utils/ui.js.
+ * - Исправлен путь редиректа: вместо 'inventory.html' используется getReturnUrl().
+ * - Это гарантирует корректный путь с учётом base href (GitHub Pages).
  */
 
-import { signIn, isOnline } from '../core/auth.js';
+import { signIn, isOnline, getReturnUrl } from '../core/auth.js';
 import { isValidEmail, escapeHtml } from '../utils/formatters.js';
 import { showNotification } from '../utils/ui.js';
 
@@ -187,9 +190,12 @@ async function handleLoginSubmit(e) {
             console.log('[Login] Login successful');
             showNotification('Вход выполнен успешно!', 'success');
             
-            // Перенаправляем на страницу склада
+            // Перенаправляем на страницу склада с учётом base href
+            const targetUrl = getReturnUrl('pages/inventory.html');
+            console.log('[Login] Redirecting to:', targetUrl);
+            
             setTimeout(() => {
-                window.location.href = 'inventory.html';
+                window.location.href = targetUrl;
             }, 500);
         } else {
             showFormError(result.error || 'Ошибка входа');
