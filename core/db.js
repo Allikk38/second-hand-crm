@@ -9,16 +9,13 @@
  * Замена sqlite-client.js для восстановления серверной работы.
  * 
  * @module db
- * @version 1.0.0
+ * @version 2.0.0
+ * @changes
+ * - v2.0.0: Прямой импорт supabase из supabase-client.js (ES-модули).
+ * - v1.0.0: Первая версия с createClient.
  */
 
-import { createClient } from './supabase-client.js';
-
-// Создаём единый инстанс клиента
-const supabase = createClient(
-    'https://bhdwniiyrrujeoubrvle.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM'
-);
+import { supabase } from './supabase-client.js';
 
 const log = (msg, data) => console.log(`[DB] ${msg}`, data || '');
 const logError = (msg, err) => console.error(`[DB] ${msg}`, err?.message || err);
