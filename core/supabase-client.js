@@ -14,9 +14,14 @@
  * - JWT-токен хранится в localStorage и передаётся в заголовках
  * - Автоматический рефреш токена
  * - HTTP/2 только (без QUIC/HTTP3)
+ * - Встроенный полифилл для AbortSignal.timeout()
  * 
  * @module supabase-client
- * @version 1.0.0
+ * @version 1.0.1
+ * @changes
+ * - Добавлен полифилл createTimeoutSignal() для поддержки старых браузеров.
+ * - Заменены все AbortSignal.timeout() на createTimeoutSignal().
+ * - Это исправляет вход в Firefox < 88, Chrome < 103, Safari < 16.
  */
 
 // ========== КОНСТАНТЫ ==========
@@ -24,6 +29,30 @@
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
 const STORAGE_KEY = 'sb-bhdwniiyrrujeoubrvle-auth-token';
+
+// ========== ПОЛИФИЛЛ ДЛЯ ABORTSIGNAL.TIMEOUT ==========
+
+/**
+ * Создаёт AbortSignal с таймаутом.
+ * Использует нативный AbortSignal.timeout() если доступен.
+ * Иначе — полифилл на основе AbortController + setTimeout.
+ * 
+ * @param {number} ms - Таймаут в миллисекундах
+ * @returns {AbortSignal}
+ */
+function createTimeoutSignal(ms) {
+    // Пробуем нативный API (Chrome 103+, Firefox 88+, Safari 16+)
+    if (typeof AbortSignal.timeout === 'function') {
+        return AbortSignal.timeout(ms);
+    }
+    
+    // Полифилл для старых браузеров
+    const controller = new AbortController();
+    setTimeout(() => {
+        controller.abort(new DOMException('TimeoutError', 'TimeoutError'));
+    }, ms);
+    return controller.signal;
+}
 
 // ========== HTTP/2 FETCH ==========
 
@@ -57,8 +86,8 @@ async function apiFetch(path, options = {}) {
         },
         // Ключевое: отключаем кэш и QUIC
         cache: 'no-store',
-        // Увеличиваем таймаут
-        signal: signal || AbortSignal.timeout(30000)
+        // Используем полифилл для совместимости со старыми браузерами
+        signal: signal || createTimeoutSignal(30000)
     };
     
     // Добавляем авторизацию если есть токен
@@ -390,7 +419,7 @@ const storage = {
                     },
                     cache: 'no-store',
                     body: formData,
-                    signal: AbortSignal.timeout(30000)
+                    signal: createTimeoutSignal(30000)
                 };
                 
                 const response = await fetch(
