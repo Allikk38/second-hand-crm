@@ -15,8 +15,9 @@
  * - Единая очередь для продаж и управления сменой
  * 
  * @module cashier/index
- * @version 2.0.1
+ * @version 2.0.2
  * @changes
+ * - v2.0.2: checkOpenShift() при ошибке сети загружает кэшированную смену
  * - v2.0.1: Добавлен вызов window.markCashierModuleLoaded() в конце init()
  * - v2.0.0: Полная интеграция с sync-engine.js
  */
@@ -342,7 +343,13 @@ function loadShiftFromCache() {
 }
 
 async function checkOpenShift() {
+    // Если нет сети — используем кэшированную смену
     if (!syncState.isOnline) {
+        console.log('[Cashier] Offline, loading shift from cache');
+        const hasCachedShift = loadShiftFromCache();
+        if (!hasCachedShift) {
+            console.log('[Cashier] No cached shift, showing closed state');
+        }
         render();
         return;
     }
@@ -368,7 +375,16 @@ async function checkOpenShift() {
         render();
         
     } catch (error) {
-        console.error('[Cashier] Check shift error:', error);
+        console.error('[Cashier] Check shift error:', error.message);
+        
+        // При ошибке сети — пробуем загрузить кэшированную смену
+        console.log('[Cashier] Loading shift from cache after server error');
+        const hasCachedShift = loadShiftFromCache();
+        
+        if (!hasCachedShift) {
+            showNotification('Не удалось проверить смену. Работа в офлайн-режиме.', 'warning');
+        }
+        
         render();
     }
 }
