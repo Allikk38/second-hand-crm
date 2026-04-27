@@ -3,18 +3,20 @@
 // ========================================
 
 /**
- * Authentication Module - Версия Supabase
+ * Authentication Module — официальный Supabase SDK
  * 
- * Восстановленная работа с Supabase Auth.
- * Использует нативный supabase-client.js для HTTP-запросов.
+ * Использует @supabase/supabase-js через CDN.
+ * Больше никакого самописного HTTP-клиента.
  * 
  * @module auth
- * @version 6.0.1
+ * @version 7.0.0
  * @changes
- * - v6.0.1: Добавлен экспорт getSupabase() для использования в других модулях
+ * - v7.0.0: Переход на официальный Supabase SDK
  */
 
-import { createClient } from './supabase-client.js';
+import { createClient, getClient } from './supabase-client.js';
+
+// Создаём клиент через обёртку (SDK загрузится асинхронно при первом вызове)
 const supabaseClient = createClient(
     'https://bhdwniiyrrujeoubrvle.supabase.co',
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM'
@@ -31,44 +33,46 @@ const logError = (msg, err) => console.error(`[Auth] ${msg}`, err?.message || er
 export async function initAuth() {
     log('InitAuth started...');
     
-    const { error } = await supabaseClient.auth.getUser();
-    
-    if (error) {
-        logError('InitAuth error', error);
-        if (error.status === 401) {
-            log('No valid session found, trying to refresh...');
-            try {
-                await supabaseClient.auth.refreshSession();
-                const { data } = await supabaseClient.auth.getUser();
-                if (data?.user) {
-                    currentUser = data.user;
-                    log('Session refreshed successfully');
+    try {
+        const { data, error } = await supabaseClient.auth.getUser();
+        
+        if (error) {
+            logError('InitAuth error', error);
+            if (error.status === 401 || error.code === 'unexpected_failure') {
+                log('No valid session found, trying to refresh...');
+                try {
+                    const { data: refreshData, error: refreshError } = await supabaseClient.auth.refreshSession();
+                    if (refreshError) throw refreshError;
+                    if (refreshData?.user) {
+                        currentUser = refreshData.user;
+                        log('Session refreshed successfully');
+                    }
+                } catch (refreshError) {
+                    logError('Session refresh failed', refreshError);
                 }
-            } catch (refreshError) {
-                logError('Session refresh failed', refreshError);
-                // Пользователю нужно будет войти заново
             }
+            return null;
         }
-        return null;
-    }
-    
-    const { data: { user } } = await supabaseClient.auth.getUser();
-    if (user) {
-        currentUser = user;
-        log('User session found:', user.email);
+        
+        if (data?.user) {
+            currentUser = data.user;
+            log('User session found:', data.user.email);
+        }
+    } catch (err) {
+        logError('InitAuth failed', err);
     }
     
     return currentUser;
 }
 
 /**
- * Возвращает экземпляр Supabase-клиента.
+ * Возвращает экземпляр Supabase-клиента (асинхронно).
  * Используется другими модулями для прямых запросов к БД.
  * 
- * @returns {Object} Supabase-клиент
+ * @returns {Promise<Object>} Supabase-клиент
  */
-export function getSupabase() {
-    return supabaseClient;
+export async function getSupabase() {
+    return await getClient();
 }
 
 /**
@@ -96,10 +100,10 @@ export async function signIn(email, password) {
         
     } catch (error) {
         logError('SignIn failed', error);
-        return { 
-            success: false, 
-            user: null, 
-            error: error.message || 'Ошибка входа' 
+        return {
+            success: false,
+            user: null,
+            error: error.message || 'Ошибка входа'
         };
     }
 }
@@ -112,18 +116,17 @@ export function getCurrentUser() {
         return { user: currentUser, error: null, errorType: null };
     }
     
-    // Если нет в памяти, пробуем проверить сессию
-    // Это асинхронно, но для старых вызовов возвращаем офлайн-статус
+    // Если нет в памяти, пробуем проверить сессию асинхронно
     supabaseClient.auth.getUser().then(({ data }) => {
         if (data?.user) {
             currentUser = data.user;
         }
-    });
+    }).catch(() => {});
     
-    return { 
-        user: currentUser, 
-        error: currentUser ? null : 'No session', 
-        errorType: currentUser ? null : 'auth' 
+    return {
+        user: currentUser,
+        error: currentUser ? null : 'No session',
+        errorType: currentUser ? null : 'auth'
     };
 }
 
@@ -135,21 +138,32 @@ export function isAuthenticated() {
 }
 
 /**
- * Требует авторизацию, иначе показывает ошибку
+ * Требует авторизацию, иначе показывает ошибку.
+ * Асинхронно проверяет сессию если currentUser не в памяти.
  */
-export function requireAuth() {
+export async function requireAuth() {
     if (currentUser) {
         return { user: currentUser, offline: false, authError: false };
     }
     
-    // Проверяем наличие токена в localStorage (даже если currentUser сброшен)
-    const session = supabaseClient.auth.getSession();
-    if (session?.data?.session) {
-        log('Found session in storage but user not loaded, attempting refresh');
-        supabaseClient.auth.getUser().then(({ data }) => {
-            if (data?.user) currentUser = data.user;
-        });
-        return { user: null, offline: false, authError: true };
+    try {
+        const { data, error } = await supabaseClient.auth.getSession();
+        
+        if (data?.session) {
+            log('Found session in storage, loading user...');
+            try {
+                const { data: userData } = await supabaseClient.auth.getUser();
+                if (userData?.user) {
+                    currentUser = userData.user;
+                    return { user: currentUser, offline: false, authError: false };
+                }
+            } catch (userError) {
+                logError('Failed to get user from session', userError);
+            }
+            return { user: null, offline: false, authError: true };
+        }
+    } catch (sessionError) {
+        logError('Failed to get session', sessionError);
     }
     
     return { user: null, offline: !navigator.onLine, authError: true };
@@ -158,12 +172,15 @@ export function requireAuth() {
 /**
  * Выход
  */
-export function logout() {
+export async function logout() {
     log('Logging out...');
     currentUser = null;
-    supabaseClient.auth.signOut()
-        .then(() => log('SignOut completed'))
-        .catch(err => logError('SignOut error', err));
+    try {
+        await supabaseClient.auth.signOut();
+        log('SignOut completed');
+    } catch (err) {
+        logError('SignOut error', err);
+    }
     
     window.location.href = 'pages/login.html';
 }
@@ -178,8 +195,8 @@ export function isOnline() {
 /**
  * URL для возврата
  */
-export function getReturnUrl() {
-    return 'pages/inventory.html';
+export function getReturnUrl(path = 'pages/inventory.html') {
+    return path;
 }
 
 export default {
@@ -194,4 +211,4 @@ export default {
     getSupabase
 };
 
-console.log('[Auth] Module loaded (Supabase Version)');
+console.log('[Auth] Module loaded (Supabase SDK Version)');
