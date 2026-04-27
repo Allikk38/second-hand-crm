@@ -1,3 +1,7 @@
+<!-- ======================================== -->
+<!-- FILE: pages/cashier.html -->
+<!-- ======================================== -->
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -14,13 +18,43 @@
     <link rel="stylesheet" href="css/pages/cashier.css">
     
     <style>
-        /* Стили только для этой страницы (переопределения при необходимости) */
         .cashier-page {
             display: flex;
             flex-direction: column;
             height: 100%;
             min-height: 0;
             background: var(--color-bg);
+        }
+        
+        /* Индикатор загрузки модуля */
+        .module-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            gap: var(--spacing-4);
+        }
+        
+        .module-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--color-border);
+            border-top-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        .module-loading .loading-status {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-muted);
+            text-align: center;
+            max-width: 300px;
+            line-height: 1.5;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
         
         /* Офлайн-баннер */
@@ -58,33 +92,12 @@
             color: var(--color-white);
         }
         
-        /* Состояние загрузки */
-        .skeleton-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: var(--spacing-3);
-            padding: var(--spacing-4);
-        }
-        
-        .skeleton-card {
-            aspect-ratio: 1;
-            background: var(--color-gray-200);
-            border-radius: var(--radius-lg);
-            animation: skeleton-pulse 1.5s ease-in-out infinite;
-        }
-        
-        @keyframes skeleton-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
         /* Ошибка загрузки */
         .load-error {
-            display: flex;
+            display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100%;
             min-height: 400px;
             text-align: center;
             padding: var(--spacing-6);
@@ -99,73 +112,23 @@
         .load-error h3 {
             font-size: var(--font-size-xl);
             margin-bottom: var(--spacing-2);
+            color: var(--color-text);
         }
         
         .load-error p {
             color: var(--color-text-muted);
             margin-bottom: var(--spacing-6);
+            max-width: 400px;
+            line-height: 1.5;
         }
         
-        /* Кнопка быстрого добавления товара */
-        .quick-add-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: var(--spacing-2);
-            padding: 0 var(--spacing-4);
-            height: 36px;
-            background: var(--color-white);
-            border: var(--border-width) solid var(--color-border);
-            border-radius: var(--radius-md);
-            font-size: var(--font-size-sm);
-            font-weight: var(--font-weight-medium);
-            color: var(--color-text);
-            cursor: pointer;
-            transition: background-color var(--transition-fast);
-            margin-right: var(--spacing-2);
-        }
-        
-        .quick-add-btn:hover {
-            background: var(--color-gray-50);
-            border-color: var(--color-gray-400);
-        }
-        
-        .quick-add-btn .icon {
-            font-size: 16px;
-        }
-        
-        /* Панель инструментов кассы */
-        .products-toolbar {
+        .load-error .btn-row {
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: var(--spacing-3) var(--spacing-4);
-            background: var(--color-white);
-            border-bottom: var(--border-width) solid var(--color-border);
-            flex-wrap: wrap;
-            gap: var(--spacing-2);
+            gap: var(--spacing-3);
         }
         
-        .toolbar-left {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-2);
-            flex: 1;
-        }
-        
-        .toolbar-right {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-2);
-        }
-        
-        /* Мобильная адаптация */
+        /* Адаптивность */
         @media (max-width: 768px) {
-            .skeleton-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: var(--spacing-2);
-                padding: var(--spacing-2);
-            }
-            
             .offline-banner {
                 flex-wrap: wrap;
             }
@@ -176,34 +139,10 @@
                 width: 100%;
             }
             
-            .products-toolbar {
+            .load-error .btn-row {
                 flex-direction: column;
-                align-items: stretch;
-            }
-            
-            .toolbar-left {
-                flex-wrap: wrap;
-            }
-            
-            .toolbar-right {
-                justify-content: flex-end;
-            }
-            
-            .quick-add-btn {
-                flex: 1;
-                justify-content: center;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .quick-add-btn span:not(.icon) {
-                display: none;
-            }
-            
-            .quick-add-btn {
-                padding: 0;
-                width: 36px;
-                justify-content: center;
+                width: 100%;
+                max-width: 250px;
             }
         }
     </style>
@@ -235,25 +174,25 @@
                     <button class="btn-ghost" id="offlineRetryBtn">Повторить подключение</button>
                 </div>
                 
-                <div id="cashierContent">
-                    <!-- Скелетон-лоадер -->
-                    <div class="skeleton-grid" id="skeletonLoader">
-                        <div class="skeleton-card"></div>
-                        <div class="skeleton-card"></div>
-                        <div class="skeleton-card"></div>
-                        <div class="skeleton-card"></div>
-                        <div class="skeleton-card"></div>
-                        <div class="skeleton-card"></div>
-                    </div>
-                    
-                    <!-- Сообщение об ошибке (скрыто по умолчанию) -->
-                    <div class="load-error" id="errorMessage" style="display: none;">
-                        <div class="load-error-icon">⚠️</div>
-                        <h3>Ошибка загрузки</h3>
-                        <p id="errorText">Не удалось загрузить страницу</p>
-                        <button class="btn-primary" id="reloadBtn">Обновить</button>
+                <!-- Индикатор загрузки модуля -->
+                <div id="moduleLoading" class="module-loading">
+                    <div class="spinner"></div>
+                    <p class="loading-status" id="loadingStatus">Загрузка модуля...</p>
+                </div>
+                
+                <!-- Ошибка загрузки (скрыто) -->
+                <div class="load-error" id="errorBlock">
+                    <div class="load-error-icon">⚠️</div>
+                    <h3>Ошибка загрузки</h3>
+                    <p id="errorText">Не удалось загрузить страницу кассы.</p>
+                    <div class="btn-row">
+                        <button class="btn-primary" id="retryBtn">🔄 Повторить</button>
+                        <a href="pages/inventory.html" class="btn-secondary">📦 На склад</a>
                     </div>
                 </div>
+                
+                <!-- Контейнер для контента кассы -->
+                <div id="cashierContent"></div>
             </div>
         </main>
     </div>
@@ -267,46 +206,117 @@
     <!-- Основной скрипт страницы -->
     <script type="module" src="js/cashier.js"></script>
     
-    <!-- Fallback на случай ошибки загрузки модуля -->
+    <!-- Отслеживание загрузки модуля с таймаутом 60 секунд -->
     <script>
         (function() {
-            const skeletonLoader = document.getElementById('skeletonLoader');
-            const errorBlock = document.getElementById('errorMessage');
+            const moduleLoading = document.getElementById('moduleLoading');
+            const loadingStatus = document.getElementById('loadingStatus');
+            const errorBlock = document.getElementById('errorBlock');
             const errorText = document.getElementById('errorText');
-            const reloadBtn = document.getElementById('reloadBtn');
+            const retryBtn = document.getElementById('retryBtn');
             
-            // Таймаут для проверки загрузки (8 секунд)
-            const timeoutId = setTimeout(function() {
-                // Проверяем, загрузился ли основной модуль
-                if (skeletonLoader && skeletonLoader.style.display !== 'none') {
-                    console.warn('[Cashier] Module load timeout');
-                    if (skeletonLoader) skeletonLoader.style.display = 'none';
-                    if (errorBlock) {
-                        errorText.textContent = 'Превышено время ожидания. Проверьте подключение к интернету.';
-                        errorBlock.style.display = 'flex';
-                    }
+            let loadStartTime = Date.now();
+            let checkInterval = null;
+            let errorShown = false;
+            const LOAD_TIMEOUT_MS = 60000; // 60 секунд — как на складе
+            
+            // Функция обновления статуса
+            function updateLoadingStatus(message) {
+                if (loadingStatus) {
+                    loadingStatus.textContent = message;
                 }
-            }, 8000);
+            }
             
-            // Обработчик кнопки обновления
-            if (reloadBtn) {
-                reloadBtn.addEventListener('click', function() {
+            // Функция показа ошибки
+            function showModuleError(message) {
+                errorShown = true;
+                if (moduleLoading) moduleLoading.style.display = 'none';
+                if (errorBlock) {
+                    errorText.textContent = message;
+                    errorBlock.style.display = 'flex';
+                }
+            }
+            
+            // Функция скрытия ошибки
+            function hideModuleError() {
+                errorShown = false;
+                if (errorBlock) {
+                    errorBlock.style.display = 'none';
+                }
+            }
+            
+            // Экспорт функции для JS-модуля
+            window.markCashierModuleLoaded = function() {
+                if (!window.__cashierModuleLoaded) {
+                    window.__cashierModuleLoaded = true;
+                    clearInterval(checkInterval);
+                    if (moduleLoading) moduleLoading.style.display = 'none';
+                    if (errorShown) hideModuleError();
+                    console.log('[Cashier] Module loaded successfully in', 
+                        Math.floor((Date.now() - loadStartTime) / 1000), 's');
+                }
+            };
+            
+            // Периодическая проверка статуса с обновлением сообщений
+            checkInterval = setInterval(function() {
+                const elapsed = Math.floor((Date.now() - loadStartTime) / 1000);
+                
+                // Если модуль уже загрузился
+                if (window.__cashierModuleLoaded) {
+                    clearInterval(checkInterval);
+                    if (moduleLoading) moduleLoading.style.display = 'none';
+                    if (errorShown) hideModuleError();
+                    return;
+                }
+                
+                // Обновляем сообщение о статусе
+                if (elapsed < 5) {
+                    updateLoadingStatus('Загрузка модуля...');
+                } else if (elapsed < 15) {
+                    updateLoadingStatus('Подключение к серверу...');
+                } else if (elapsed < 30) {
+                    updateLoadingStatus('Синхронизация данных...');
+                } else if (elapsed < 45) {
+                    updateLoadingStatus('Медленное соединение. Пожалуйста, подождите...');
+                } else if (elapsed < LOAD_TIMEOUT_MS / 1000) {
+                    updateLoadingStatus('Восстановление соединения. Ожидайте...');
+                } else {
+                    // Таймаут
+                    clearInterval(checkInterval);
+                    console.warn('[Cashier] Module load timeout after ' + LOAD_TIMEOUT_MS / 1000 + 's');
+                    showModuleError(
+                        'Превышено время ожидания (' + LOAD_TIMEOUT_MS / 1000 + ' сек). ' +
+                        'Проверьте подключение к интернету и попробуйте снова.'
+                    );
+                }
+            }, 3000);
+            
+            // Кнопка повтора
+            if (retryBtn) {
+                retryBtn.addEventListener('click', function() {
+                    window.__cashierModuleLoaded = false;
+                    loadStartTime = Date.now();
+                    errorShown = false;
+                    if (moduleLoading) moduleLoading.style.display = 'flex';
+                    if (errorBlock) errorBlock.style.display = 'none';
+                    updateLoadingStatus('Переподключение...');
                     location.reload();
                 });
             }
             
-            // Слушаем событие ошибки загрузки модуля
+            // Перехват ошибки загрузки скрипта
             window.addEventListener('error', function(e) {
-                if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('cashier.js')) {
+                if (e.target && e.target.tagName === 'SCRIPT' && 
+                    e.target.src && e.target.src.includes('cashier.js')) {
                     console.error('[Cashier] Script load error:', e);
-                    clearTimeout(timeoutId);
-                    if (skeletonLoader) skeletonLoader.style.display = 'none';
-                    if (errorBlock) {
-                        errorText.textContent = 'Не удалось загрузить модуль страницы. Проверьте подключение.';
-                        errorBlock.style.display = 'flex';
-                    }
+                    clearInterval(checkInterval);
+                    window.__cashierModuleLoaded = false;
+                    showModuleError(
+                        'Не удалось загрузить модуль страницы. ' +
+                        'Проверьте подключение к интернету и обновите страницу.'
+                    );
                 }
-            });
+            }, true);
         })();
     </script>
 </body>
