@@ -8,25 +8,14 @@
  * Точка входа для страницы отчетов. Управляет переключением вкладок,
  * загрузкой данных и динамической подгрузкой модулей-рендереров.
  * 
- * Архитектурные решения:
- * - Разделение на модули: dashboard, tables.
- * - Динамический импорт для уменьшения initial bundle.
- * - Кэширование данных в sessionStorage.
- * - Chart.js загружается только для дашборда.
- * - Использование централизованных утилит из core/auth.js и utils/ui.js.
- * - Поддержка офлайн-режима с отображением кэшированных данных.
- * 
  * @module reports
- * @version 3.5.0
+ * @version 3.5.1
  * @changes
- * - Исправлена синтаксическая ошибка в fetchSalesData (функция была не завершена).
- * - Добавлена полноценная поддержка офлайн-режима.
- * - При потере соединения данные автоматически загружаются из кэша.
- * - Добавлен офлайн-баннер с информацией о последней синхронизации.
+ * - v3.5.1: Убран неиспользуемый импорт getCategoryName.
  */
 
 import { requireAuth, logout, isOnline, getSupabase } from '../core/auth.js';
-import { formatMoney, formatNumber, formatPercent, escapeHtml, getCategoryName } from '../utils/formatters.js';
+import { formatMoney, formatNumber, formatPercent, escapeHtml } from '../utils/formatters.js';
 import { showNotification } from '../utils/ui.js';
 
 // ========== КОНСТАНТЫ ==========
@@ -69,9 +58,6 @@ const DOM = {
 
 // ========== ОФЛАЙН-БАННЕР ==========
 
-/**
- * Показывает офлайн-баннер с информацией о последней синхронизации
- */
 function showOfflineBanner() {
     if (DOM.offlineBanner) {
         DOM.offlineBanner.style.display = 'flex';
@@ -85,9 +71,6 @@ function showOfflineBanner() {
     }
 }
 
-/**
- * Скрывает офлайн-баннер
- */
 function hideOfflineBanner() {
     if (DOM.offlineBanner) {
         DOM.offlineBanner.style.display = 'none';
@@ -116,16 +99,10 @@ function hideLoader() {
 
 // ========== КЭШИРОВАНИЕ ==========
 
-/**
- * Получает ключ кэша для вкладки и периода
- */
 function getCacheKey(tab, period) {
     return `${CACHE_KEY_PREFIX}${tab}_${period}`;
 }
 
-/**
- * Загружает данные из кэша
- */
 function getFromCache(key) {
     try {
         const cached = sessionStorage.getItem(key);
@@ -144,9 +121,6 @@ function getFromCache(key) {
     }
 }
 
-/**
- * Сохраняет данные в кэш
- */
 function setToCache(key, data) {
     try {
         sessionStorage.setItem(key, JSON.stringify({
@@ -162,9 +136,6 @@ function setToCache(key, data) {
     }
 }
 
-/**
- * Очищает весь кэш отчётов
- */
 function clearCache() {
     Object.keys(sessionStorage).forEach(key => {
         if (key.startsWith(CACHE_KEY_PREFIX)) {
@@ -173,9 +144,6 @@ function clearCache() {
     });
 }
 
-/**
- * Загружает время последней синхронизации
- */
 function loadLastSyncTime() {
     try {
         const timestamp = sessionStorage.getItem(CACHE_TIMESTAMP_KEY);
@@ -189,9 +157,6 @@ function loadLastSyncTime() {
 
 // ========== ДИАПАЗОНЫ ДАТ ==========
 
-/**
- * Форматирует дату в ISO строку
- */
 function formatISODate(date) {
     if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
         return new Date().toISOString().split('.')[0] + 'Z';
@@ -199,9 +164,6 @@ function formatISODate(date) {
     return date.toISOString().split('.')[0] + 'Z';
 }
 
-/**
- * Получает диапазон дат для выбранного периода
- */
 function getDateRange(period) {
     const now = new Date();
     const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -255,9 +217,6 @@ function getDateRange(period) {
 
 // ========== ЗАГРУЗКА ДАННЫХ ==========
 
-/**
- * Рассчитывает тренд (изменение в процентах)
- */
 function calculateTrend(current, previous) {
     if (!previous || previous === 0) {
         return { direction: 'neutral', value: 0 };
@@ -269,9 +228,6 @@ function calculateTrend(current, previous) {
     };
 }
 
-/**
- * Форматирует длительность в читаемый вид
- */
 function formatDuration(ms) {
     if (!ms || ms < 0) return '—';
     const hours = Math.floor(ms / (1000 * 60 * 60));
@@ -280,9 +236,6 @@ function formatDuration(ms) {
     return `${minutes} мин`;
 }
 
-/**
- * Загружает все данные для отчётов
- */
 async function fetchSalesData(dateRange) {
     console.log('[Reports] Fetching data for range:', dateRange);
     
@@ -520,16 +473,13 @@ async function fetchSalesData(dateRange) {
     };
 }
 
-/**
- * Загружает данные с учётом офлайн-режима
- */
+// ========== ЗАГРУЗКА ДАННЫХ ==========
+
 async function loadData() {
     if (state.isLoading) return;
     
     state.isLoading = true;
     showLoader();
-    
-    const cacheKey = getCacheKey(state.activeTab, state.period);
     
     try {
         // Проверяем наличие сети
@@ -581,7 +531,7 @@ async function loadData() {
         console.error('[Reports] Load data error:', error);
         
         // При ошибке пробуем загрузить из кэша
-        const cached = getFromCache(cacheKey);
+        const cached = getFromCache(getCacheKey(state.activeTab, state.period));
         if (cached) {
             state.data[state.activeTab] = cached;
             showNotification('Загружены данные из кэша (сервер недоступен)', 'info');
@@ -597,9 +547,6 @@ async function loadData() {
 
 // ========== ДИНАМИЧЕСКИЙ РЕНДЕРИНГ ==========
 
-/**
- * Главная функция рендеринга
- */
 async function render() {
     if (!DOM.content) return;
     
@@ -713,9 +660,6 @@ async function render() {
 
 // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
-/**
- * Кэширует DOM элементы
- */
 function cacheElements() {
     DOM.content = document.getElementById('reportsContent');
     DOM.skeletonLoader = document.getElementById('skeletonLoader');
@@ -729,9 +673,6 @@ function cacheElements() {
     DOM.lastSyncSpan = document.getElementById('lastSyncTime');
 }
 
-/**
- * Отображает email пользователя
- */
 function displayUserInfo() {
     if (DOM.userEmail) {
         if (state.user) {
@@ -743,9 +684,6 @@ function displayUserInfo() {
     }
 }
 
-/**
- * Привязывает обработчики событий
- */
 function attachEvents() {
     if (DOM.logoutBtn) {
         DOM.logoutBtn.addEventListener('click', () => logout());
@@ -807,9 +745,6 @@ function attachEvents() {
     });
 }
 
-/**
- * Инициализация страницы
- */
 async function init() {
     console.log('[Reports] Initializing MPA page...');
     
@@ -843,8 +778,6 @@ async function init() {
     
     console.log('[Reports] Page initialized');
 }
-
-// ========== ЗАПУСК ==========
 
 document.addEventListener('DOMContentLoaded', init);
 
