@@ -11,24 +11,35 @@
  * Архитектурные решения:
  * - Контроллер управляет состоянием UI и рендерингом.
  * - Делегирует работу с данными в модуль `products.js`.
- * - Делегирует синхронизацию операций в модуль `operations.js`.
+ * - Использует sync-engine напрямую для мутирующих операций.
+ * - Оптимистичное удаление: товар исчезает сразу, при ошибке восстанавливается.
  * - Подписывается на события `sync-engine` для обновления UI.
+ * - Все операции проходят через очередь синхронизации.
  * 
  * @module inventory/index
- * @version 3.0.0
+ * @version 3.1.0
  * @changes
- * - Полный рефакторинг в тонкий контроллер.
- * - Удалена прямая работа с данными и синхронизацией.
- * - Добавлена координация работы модулей `products` и `operations`.
- * - Соблюдена модульная архитектура.
+ * - Полностью удалена зависимость от старого модуля operations.js
+ * - Удаление теперь через saveChange() из sync-engine
+ * - Оптимистичное удаление с восстановлением при ошибке
+ * - Добавлена проверка isOnline перед мутирующими операциями
+ * - Улучшена обработка ошибок при удалении
  */
 
-import { requireAuth, logout } from '../../core/auth.js';
+import { requireAuth, logout, isOnline } from '../../core/auth.js';
 import { debounce, escapeHtml, formatMoney, getCategoryName, getStatusText } from '../../utils/formatters.js';
-import { showNotification } from '../../utils/ui.js';
-import { initSyncEngine, subscribeToSync, syncNow, syncState } from '../../core/sync-engine.js';
+import { showNotification, showConfirmDialog } from '../../utils/ui.js';
+import { 
+    initSyncEngine, 
+    subscribeToSync, 
+    syncNow, 
+    syncState,
+    loadData,
+    saveChange,
+    ENTITIES,
+    OP_TYPES
+} from '../../core/sync-engine.js';
 import * as productsModule from './products.js';
-import * as operationsModule from './operations.js';
 import { openProductFormModal } from '../../utils/product-form.js';
 
 // ========== СОСТОЯНИЕ UI ==========
@@ -36,6 +47,7 @@ import { openProductFormModal } from '../../utils/product-form.js';
 const state = {
     user: null,
     isLoading: false,
+    isDeleting: false,
     selectedIds: new Set()
 };
 
@@ -72,11 +84,9 @@ function hideOfflineBanner() {
 }
 
 function updateSyncIndicator() {
-    const stats = operationsModule.getOperationsStats();
-    
     if (DOM.syncBadge) {
-        if (stats.pending > 0) {
-            DOM.syncBadge.textContent = stats.pending;
+        if (syncState.pendingCount > 0) {
+            DOM.syncBadge.textContent = syncState.pendingCount;
             DOM.syncBadge.style.display = 'inline-block';
         } else {
             DOM.syncBadge.style.display = 'none';
@@ -84,11 +94,11 @@ function updateSyncIndicator() {
     }
     
     if (DOM.syncStatus) {
-        if (stats.syncing > 0) {
+        if (syncState.isSyncing) {
             DOM.syncStatus.textContent = 'Синхронизация...';
             DOM.syncStatus.style.display = 'inline';
-        } else if (stats.pending > 0) {
-            DOM.syncStatus.textContent = `Ожидает: ${stats.pending}`;
+        } else if (syncState.pendingCount > 0) {
+            DOM.syncStatus.textContent = `Ожидает: ${syncState.pendingCount}`;
             DOM.syncStatus.style.display = 'inline';
         } else {
             DOM.syncStatus.style.display = 'none';
@@ -194,7 +204,6 @@ function updateCategorySelect() {
     if (!DOM.categoryFilter) return;
     
     const categories = productsModule.getCategories();
-    const selectedCategory = productsModule.getSelectedCategory();
     const currentValue = DOM.categoryFilter.value;
     
     while (DOM.categoryFilter.options.length > 1) {
@@ -272,7 +281,7 @@ function render() {
             <tr class="product-row ${isSelected ? 'selected' : ''} ${isOptimistic}" data-id="${product.id}">
                 <td class="checkbox-cell">
                     <input type="checkbox" class="table-checkbox" data-id="${product.id}" 
-                        ${state.isLoading ? 'disabled' : ''} ${isSelected ? 'checked' : ''}>
+                        ${state.isDeleting ? 'disabled' : ''} ${isSelected ? 'checked' : ''}>
                 </td>
                 <td class="photo-cell">
                     <div class="product-thumb">
@@ -300,12 +309,12 @@ function render() {
                 <td class="actions-cell">
                     <div class="row-actions">
                         <button class="btn-icon" data-action="edit" data-id="${product.id}" 
-                            title="Редактировать" ${state.isLoading ? 'disabled' : ''}>
+                            title="Редактировать" ${state.isDeleting ? 'disabled' : ''}>
                             ✎
                         </button>
                         <button class="btn-icon btn-danger" data-action="delete" data-id="${product.id}" 
-                            title="Удалить" ${state.isLoading ? 'disabled' : ''}>
-                            ${state.isLoading ? '⌛' : '✕'}
+                            title="Удалить" ${state.isDeleting ? 'disabled' : ''}>
+                            ${state.isDeleting ? '⌛' : '✕'}
                         </button>
                     </div>
                 </td>
@@ -323,7 +332,7 @@ function attachRowEvents() {
     DOM.tableBody.querySelectorAll('[data-action="edit"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!state.isLoading) {
+            if (!state.isDeleting) {
                 openEditProductForm(btn.dataset.id);
             }
         });
@@ -332,7 +341,7 @@ function attachRowEvents() {
     DOM.tableBody.querySelectorAll('[data-action="delete"]').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!state.isLoading) {
+            if (!state.isDeleting) {
                 deleteProduct(btn.dataset.id);
             }
         });
@@ -372,18 +381,136 @@ function updateSelectAllCheckbox() {
 
 // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ ==========
 
+/**
+ * Удаляет товар оптимистично через Sync Engine
+ * 
+ * Процесс:
+ * 1. Запрашивает подтверждение
+ * 2. Оптимистично удаляет из локального стейта
+ * 3. Добавляет операцию в очередь синхронизации
+ * 4. При ошибке синхронизации восстанавливает товар
+ * 
+ * @param {string} id - ID товара для удаления
+ */
 async function deleteProduct(id) {
-    const success = await operationsModule.deleteProduct(id);
-    if (success) {
-        render();
+    if (state.isDeleting) return;
+    
+    const product = productsModule.getProductById(id);
+    if (!product) {
+        showNotification('Товар не найден', 'error');
+        return;
+    }
+    
+    // Проверяем, не продан ли товар
+    if (product.status === 'sold') {
+        showNotification('Нельзя удалить проданный товар', 'warning');
+        return;
+    }
+    
+    // Запрашиваем подтверждение
+    const confirmed = await showConfirmDialog({
+        title: 'Удаление товара',
+        message: `Вы уверены, что хотите удалить товар "${product.name}"?`,
+        confirmText: 'Удалить',
+        confirmClass: 'btn-danger'
+    });
+    
+    if (!confirmed) return;
+    
+    // Сохраняем копию товара для возможности восстановления
+    const productBackup = { ...product };
+    
+    // ОПТИМИСТИЧНОЕ УДАЛЕНИЕ: сразу убираем из локального стейта
+    productsModule.removeProductFromState(id);
+    state.selectedIds.delete(id);
+    render();
+    
+    // Если офлайн — добавляем в очередь синхронизации
+    if (!isOnline()) {
+        try {
+            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.DELETE, { id }, productBackup);
+            
+            showNotification(
+                `Товар "${product.name}" будет удалён при восстановлении сети`,
+                'warning'
+            );
+            updateSyncIndicator();
+        } catch (error) {
+            console.error('[Inventory] Failed to enqueue delete operation:', error);
+            
+            // Восстанавливаем товар при ошибке добавления в очередь
+            productsModule.addProductToState(productBackup);
+            render();
+            showNotification('Не удалось добавить операцию в очередь', 'error');
+        }
+        return;
+    }
+    
+    // Онлайн — удаляем через Sync Engine
+    state.isDeleting = true;
+    render();
+    
+    try {
+        // Сначала удаляем фото если есть
+        if (product.photo_url) {
+            try {
+                const supabase = (await import('../../core/auth.js')).getSupabase;
+                const client = await supabase();
+                const photoPath = product.photo_url.split('/').pop();
+                if (photoPath) {
+                    await client.storage
+                        .from('product-photos')
+                        .remove([photoPath]);
+                }
+            } catch (photoError) {
+                console.warn('[Inventory] Photo deletion error (non-critical):', photoError);
+            }
+        }
+        
+        // Сохраняем операцию удаления через Sync Engine
+        // Это добавит операцию в очередь и немедленно попытается синхронизировать
+        await saveChange(ENTITIES.PRODUCTS, OP_TYPES.DELETE, { id }, productBackup);
+        
+        // Принудительно запускаем синхронизацию
+        if (syncState.isOnline) {
+            await syncNow();
+        }
+        
+        showNotification(`Товар "${product.name}" удалён`, 'success');
         updateSyncIndicator();
+        
+        // Перезагружаем товары для актуализации
+        setTimeout(() => {
+            productsModule.loadProducts(true).then(() => render());
+        }, 1000);
+        
+    } catch (error) {
+        console.error('[Inventory] Delete error:', error);
+        
+        // Восстанавливаем товар в стейте при ошибке
+        productsModule.addProductToState(productBackup);
+        render();
+        
+        showNotification('Ошибка удаления: ' + (error.message || 'Неизвестная ошибка'), 'error');
+    } finally {
+        state.isDeleting = false;
+        render();
     }
 }
 
+/**
+ * Открывает форму редактирования товара
+ */
 async function openEditProductForm(id) {
     const product = productsModule.getProductById(id);
     if (!product) {
         showNotification('Товар не найден', 'error');
+        return;
+    }
+    
+    // Проверяем онлайн
+    if (!isOnline()) {
+        showNotification('Редактирование товара недоступно в офлайн-режиме', 'warning');
         return;
     }
     
@@ -393,32 +520,40 @@ async function openEditProductForm(id) {
             initialData: product,
             userId: state.user?.id,
             onSuccess: async (product) => {
-                const success = await operationsModule.updateProduct(id, product);
-                if (success) {
-                    showNotification(`Товар "${product.name}" обновлён`, 'success');
-                    productsModule.updateProductInState(id, product);
-                    render();
-                    updateSyncIndicator();
-                }
+                // Обновляем товар в локальном стейте
+                productsModule.updateProductInState(id, product);
+                render();
+                
+                // Сохраняем изменение через Sync Engine
+                await saveChange(ENTITIES.PRODUCTS, OP_TYPES.UPDATE, product);
+                updateSyncIndicator();
+                
+                showNotification(`Товар "${product.name}" обновлён`, 'success');
             }
         });
         
         if (updatedProduct) {
-            await operationsModule.updateProduct(id, updatedProduct);
             productsModule.updateProductInState(id, updatedProduct);
             render();
-            updateSyncIndicator();
         }
         
     } catch (error) {
         console.error('[Inventory] Edit error:', error);
-        showError('Не удалось открыть форму редактирования', 'error');
+        showNotification('Не удалось открыть форму редактирования', 'error');
     }
 }
 
+/**
+ * Открывает форму добавления товара
+ */
 async function openAddProductForm() {
+    if (!isOnline()) {
+        showNotification('Добавление товара недоступно в офлайн-режиме', 'warning');
+        return;
+    }
+    
     if (!state.user?.id) {
-        showError('Не удалось определить пользователя', 'error');
+        showNotification('Не удалось определить пользователя', 'error');
         return;
     }
     
@@ -427,26 +562,26 @@ async function openAddProductForm() {
             mode: 'create',
             userId: state.user.id,
             onSuccess: async (product) => {
-                const success = await operationsModule.createProduct(product);
-                if (success) {
-                    showNotification(`Товар "${product.name}" добавлен`, 'success');
-                    productsModule.addProductToState(product);
-                    render();
-                    updateSyncIndicator();
-                }
+                // Добавляем товар в локальный стейт
+                productsModule.addProductToState(product);
+                render();
+                
+                // Сохраняем через Sync Engine
+                await saveChange(ENTITIES.PRODUCTS, OP_TYPES.CREATE, product);
+                updateSyncIndicator();
+                
+                showNotification(`Товар "${product.name}" добавлен`, 'success');
             }
         });
         
         if (newProduct) {
-            await operationsModule.createProduct(newProduct);
             productsModule.addProductToState(newProduct);
             render();
-            updateSyncIndicator();
         }
         
     } catch (error) {
         console.error('[Inventory] Add error:', error);
-        showError('Не удалось открыть форму добавления', 'error');
+        showNotification('Не удалось открыть форму добавления', 'error');
     }
 }
 
@@ -481,7 +616,6 @@ function attachEvents() {
         DOM.refreshBtn.addEventListener('click', async () => {
             hideError();
             await productsModule.loadProducts(true);
-            await operationsModule.syncPendingOperations();
             render();
         });
     }
@@ -493,7 +627,7 @@ function attachEvents() {
     if (DOM.offlineRetryBtn) {
         DOM.offlineRetryBtn.addEventListener('click', async () => {
             if (syncState.isOnline) {
-                await operationsModule.syncPendingOperations();
+                await syncNow();
             }
             await productsModule.loadProducts(true);
             render();
@@ -556,6 +690,7 @@ function attachEvents() {
         hideOfflineBanner();
         showNotification('Соединение восстановлено', 'success');
         updateSyncIndicator();
+        syncNow();
     });
     
     window.addEventListener('offline', () => {
@@ -563,20 +698,13 @@ function attachEvents() {
         showNotification('Отсутствует подключение к интернету. Работа в офлайн-режиме.', 'warning');
         updateSyncIndicator();
     });
-
-    // Подписка на изменения в модулях
-    productsModule.setProductsChangeCallback(render);
-    operationsModule.setOperationsChangeCallback(() => {
-        updateSyncIndicator();
-        productsModule.loadProducts(true);
-    });
 }
 
 function setupSyncSubscription() {
-    subscribeToSync((syncState, event) => {
+    subscribeToSync((currentSyncState, event) => {
         updateSyncIndicator();
         
-        if (!syncState.isOnline) {
+        if (!currentSyncState.isOnline) {
             showOfflineBanner();
         } else {
             hideOfflineBanner();
@@ -584,7 +712,7 @@ function setupSyncSubscription() {
         
         // При завершении синхронизации обновляем данные
         if (event?.type === 'sync-completed' && event.synced > 0) {
-            productsModule.loadProducts(true);
+            productsModule.loadProducts(true).then(() => render());
             showNotification(`Синхронизировано операций: ${event.synced}`, 'success');
         }
     });
@@ -623,7 +751,7 @@ async function init() {
     displayUserInfo();
     attachEvents();
     
-    // Загружаем товары (мгновенно из кэша)
+    // Загружаем товары
     await productsModule.loadProducts();
     render();
     
