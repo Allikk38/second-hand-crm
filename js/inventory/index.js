@@ -3,50 +3,26 @@
 // ========================================
 
 /**
- * Inventory Page Module - Index
+ * Inventory Page Module (Supabase Version)
  * 
- * Точка входа для страницы управления складом. Координирует модули данных,
- * синхронизации и рендеринг интерфейса.
- * 
- * Архитектурные решения:
- * - Контроллер управляет состоянием UI и рендерингом.
- * - Делегирует работу с данными в модуль `products.js`.
- * - Использует sync-engine напрямую для мутирующих операций.
- * - Оптимистичное удаление: товар исчезает сразу, при ошибке восстанавливается.
- * - Подписывается на события `sync-engine` для обновления UI.
- * - Все операции проходят через очередь синхронизации.
+ * Контроллер страницы склада.
+ * Восстановлена работа через Supabase.
  * 
  * @module inventory/index
- * @version 3.1.0
- * @changes
- * - Полностью удалена зависимость от старого модуля operations.js
- * - Удаление теперь через saveChange() из sync-engine
- * - Оптимистичное удаление с восстановлением при ошибке
- * - Добавлена проверка isOnline перед мутирующими операциями
- * - Улучшена обработка ошибок при удалении
+ * @version 4.0.0
  */
 
 import { requireAuth, logout, isOnline } from '../../core/auth.js';
+import { products as productsDb } from '../../core/db.js';
 import { debounce, escapeHtml, formatMoney, getCategoryName, getStatusText } from '../../utils/formatters.js';
 import { showNotification, showConfirmDialog } from '../../utils/ui.js';
-import { 
-    initSyncEngine, 
-    subscribeToSync, 
-    syncNow, 
-    syncState,
-    loadData,
-    saveChange,
-    ENTITIES,
-    OP_TYPES
-} from '../../core/sync-engine.js';
-import * as productsModule from './products.js';
 import { openProductFormModal } from '../../utils/product-form.js';
+import * as productsModule from './products.js';
 
 // ========== СОСТОЯНИЕ UI ==========
 
 const state = {
     user: null,
-    isLoading: false,
     isDeleting: false,
     selectedIds: new Set()
 };
@@ -66,8 +42,6 @@ const DOM = {
     errorMessage: null,
     offlineBanner: null,
     offlineRetryBtn: null,
-    syncBadge: null,
-    syncStatus: null,
     userEmail: null,
     logoutBtn: null,
     moduleLoading: null
@@ -81,29 +55,6 @@ function showOfflineBanner() {
 
 function hideOfflineBanner() {
     if (DOM.offlineBanner) DOM.offlineBanner.style.display = 'none';
-}
-
-function updateSyncIndicator() {
-    if (DOM.syncBadge) {
-        if (syncState.pendingCount > 0) {
-            DOM.syncBadge.textContent = syncState.pendingCount;
-            DOM.syncBadge.style.display = 'inline-block';
-        } else {
-            DOM.syncBadge.style.display = 'none';
-        }
-    }
-    
-    if (DOM.syncStatus) {
-        if (syncState.isSyncing) {
-            DOM.syncStatus.textContent = 'Синхронизация...';
-            DOM.syncStatus.style.display = 'inline';
-        } else if (syncState.pendingCount > 0) {
-            DOM.syncStatus.textContent = `Ожидает: ${syncState.pendingCount}`;
-            DOM.syncStatus.style.display = 'inline';
-        } else {
-            DOM.syncStatus.style.display = 'none';
-        }
-    }
 }
 
 function showError(message, type = 'error') {
@@ -275,10 +226,9 @@ function render() {
         const safeId = escapeHtml(product.id?.slice(0, 8) || '—');
         const safePhotoUrl = product.photo_url ? escapeHtml(product.photo_url) : null;
         const isSelected = state.selectedIds.has(product.id);
-        const isOptimistic = product._optimistic ? 'optimistic' : '';
         
         return `
-            <tr class="product-row ${isSelected ? 'selected' : ''} ${isOptimistic}" data-id="${product.id}">
+            <tr class="product-row ${isSelected ? 'selected' : ''}" data-id="${product.id}">
                 <td class="checkbox-cell">
                     <input type="checkbox" class="table-checkbox" data-id="${product.id}" 
                         ${state.isDeleting ? 'disabled' : ''} ${isSelected ? 'checked' : ''}>
@@ -292,10 +242,7 @@ function render() {
                     </div>
                 </td>
                 <td class="name-cell">
-                    <div class="product-name">
-                        ${safeName}
-                        ${product._optimistic ? '<span class="optimistic-badge" title="Ожидает синхронизации">⏳</span>' : ''}
-                    </div>
+                    <div class="product-name">${safeName}</div>
                     <div class="product-id">ID: ${safeId}</div>
                 </td>
                 <td class="category-cell">${getCategoryName(product.category)}</td>
@@ -381,17 +328,6 @@ function updateSelectAllCheckbox() {
 
 // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ ==========
 
-/**
- * Удаляет товар оптимистично через Sync Engine
- * 
- * Процесс:
- * 1. Запрашивает подтверждение
- * 2. Оптимистично удаляет из локального стейта
- * 3. Добавляет операцию в очередь синхронизации
- * 4. При ошибке синхронизации восстанавливает товар
- * 
- * @param {string} id - ID товара для удаления
- */
 async function deleteProduct(id) {
     if (state.isDeleting) return;
     
@@ -401,13 +337,11 @@ async function deleteProduct(id) {
         return;
     }
     
-    // Проверяем, не продан ли товар
     if (product.status === 'sold') {
         showNotification('Нельзя удалить проданный товар', 'warning');
         return;
     }
     
-    // Запрашиваем подтверждение
     const confirmed = await showConfirmDialog({
         title: 'Удаление товара',
         message: `Вы уверены, что хотите удалить товар "${product.name}"?`,
@@ -417,90 +351,32 @@ async function deleteProduct(id) {
     
     if (!confirmed) return;
     
-    // Сохраняем копию товара для возможности восстановления
-    const productBackup = { ...product };
-    
-    // ОПТИМИСТИЧНОЕ УДАЛЕНИЕ: сразу убираем из локального стейта
-    productsModule.removeProductFromState(id);
-    state.selectedIds.delete(id);
-    render();
-    
-    // Если офлайн — добавляем в очередь синхронизации
-    if (!isOnline()) {
-        try {
-            await saveChange(ENTITIES.PRODUCTS, OP_TYPES.DELETE, { id }, productBackup);
-            
-            showNotification(
-                `Товар "${product.name}" будет удалён при восстановлении сети`,
-                'warning'
-            );
-            updateSyncIndicator();
-        } catch (error) {
-            console.error('[Inventory] Failed to enqueue delete operation:', error);
-            
-            // Восстанавливаем товар при ошибке добавления в очередь
-            productsModule.addProductToState(productBackup);
-            render();
-            showNotification('Не удалось добавить операцию в очередь', 'error');
-        }
-        return;
-    }
-    
-    // Онлайн — удаляем через Sync Engine
     state.isDeleting = true;
     render();
     
     try {
-        // Сначала удаляем фото если есть
-        if (product.photo_url) {
-            try {
-                const supabase = (await import('../../core/auth.js')).getSupabase;
-                const client = await supabase();
-                const photoPath = product.photo_url.split('/').pop();
-                if (photoPath) {
-                    await client.storage
-                        .from('product-photos')
-                        .remove([photoPath]);
-                }
-            } catch (photoError) {
-                console.warn('[Inventory] Photo deletion error (non-critical):', photoError);
-            }
-        }
+        console.log('[Inventory] Deleting product:', id);
+        await productsDb.remove(id);
         
-        // Сохраняем операцию удаления через Sync Engine
-        // Это добавит операцию в очередь и немедленно попытается синхронизировать
-        await saveChange(ENTITIES.PRODUCTS, OP_TYPES.DELETE, { id }, productBackup);
-        
-        // Принудительно запускаем синхронизацию
-        if (syncState.isOnline) {
-            await syncNow();
-        }
+        // Удаляем из локального стейта
+        productsModule.removeProductFromState(id);
+        state.selectedIds.delete(id);
         
         showNotification(`Товар "${product.name}" удалён`, 'success');
-        updateSyncIndicator();
         
-        // Перезагружаем товары для актуализации
-        setTimeout(() => {
-            productsModule.loadProducts(true).then(() => render());
-        }, 1000);
+        // Перезагружаем список
+        await productsModule.loadProducts(true);
+        render();
         
     } catch (error) {
         console.error('[Inventory] Delete error:', error);
-        
-        // Восстанавливаем товар в стейте при ошибке
-        productsModule.addProductToState(productBackup);
-        render();
-        
-        showNotification('Ошибка удаления: ' + (error.message || 'Неизвестная ошибка'), 'error');
+        showNotification('Ошибка удаления: ' + error.message, 'error');
     } finally {
         state.isDeleting = false;
         render();
     }
 }
 
-/**
- * Открывает форму редактирования товара
- */
 async function openEditProductForm(id) {
     const product = productsModule.getProductById(id);
     if (!product) {
@@ -508,7 +384,6 @@ async function openEditProductForm(id) {
         return;
     }
     
-    // Проверяем онлайн
     if (!isOnline()) {
         showNotification('Редактирование товара недоступно в офлайн-режиме', 'warning');
         return;
@@ -520,14 +395,8 @@ async function openEditProductForm(id) {
             initialData: product,
             userId: state.user?.id,
             onSuccess: async (product) => {
-                // Обновляем товар в локальном стейте
                 productsModule.updateProductInState(id, product);
                 render();
-                
-                // Сохраняем изменение через Sync Engine
-                await saveChange(ENTITIES.PRODUCTS, OP_TYPES.UPDATE, product);
-                updateSyncIndicator();
-                
                 showNotification(`Товар "${product.name}" обновлён`, 'success');
             }
         });
@@ -543,9 +412,6 @@ async function openEditProductForm(id) {
     }
 }
 
-/**
- * Открывает форму добавления товара
- */
 async function openAddProductForm() {
     if (!isOnline()) {
         showNotification('Добавление товара недоступно в офлайн-режиме', 'warning');
@@ -562,14 +428,8 @@ async function openAddProductForm() {
             mode: 'create',
             userId: state.user.id,
             onSuccess: async (product) => {
-                // Добавляем товар в локальный стейт
                 productsModule.addProductToState(product);
                 render();
-                
-                // Сохраняем через Sync Engine
-                await saveChange(ENTITIES.PRODUCTS, OP_TYPES.CREATE, product);
-                updateSyncIndicator();
-                
                 showNotification(`Товар "${product.name}" добавлен`, 'success');
             }
         });
@@ -600,8 +460,6 @@ function cacheElements() {
     DOM.errorMessage = document.getElementById('errorMessage');
     DOM.offlineBanner = document.getElementById('offlineBanner');
     DOM.offlineRetryBtn = document.getElementById('offlineRetryBtn');
-    DOM.syncBadge = document.getElementById('syncBadge');
-    DOM.syncStatus = document.getElementById('syncStatus');
     DOM.userEmail = document.getElementById('userEmail');
     DOM.logoutBtn = document.getElementById('logoutBtn');
     DOM.moduleLoading = document.getElementById('moduleLoading');
@@ -626,9 +484,6 @@ function attachEvents() {
     
     if (DOM.offlineRetryBtn) {
         DOM.offlineRetryBtn.addEventListener('click', async () => {
-            if (syncState.isOnline) {
-                await syncNow();
-            }
             await productsModule.loadProducts(true);
             render();
         });
@@ -685,36 +540,14 @@ function attachEvents() {
         });
     }
     
-    // События сети
     window.addEventListener('online', () => {
         hideOfflineBanner();
         showNotification('Соединение восстановлено', 'success');
-        updateSyncIndicator();
-        syncNow();
     });
     
     window.addEventListener('offline', () => {
         showOfflineBanner();
-        showNotification('Отсутствует подключение к интернету. Работа в офлайн-режиме.', 'warning');
-        updateSyncIndicator();
-    });
-}
-
-function setupSyncSubscription() {
-    subscribeToSync((currentSyncState, event) => {
-        updateSyncIndicator();
-        
-        if (!currentSyncState.isOnline) {
-            showOfflineBanner();
-        } else {
-            hideOfflineBanner();
-        }
-        
-        // При завершении синхронизации обновляем данные
-        if (event?.type === 'sync-completed' && event.synced > 0) {
-            productsModule.loadProducts(true).then(() => render());
-            showNotification(`Синхронизировано операций: ${event.synced}`, 'success');
-        }
+        showNotification('Отсутствует подключение к интернету', 'warning');
     });
 }
 
@@ -723,19 +556,12 @@ async function init() {
     
     cacheElements();
     
-    // Инициализируем Sync Engine
-    await initSyncEngine();
-    setupSyncSubscription();
-    
-    // Проверяем сеть
-    if (!syncState.isOnline) {
+    if (!isOnline()) {
         showOfflineBanner();
     } else {
         hideOfflineBanner();
     }
-    updateSyncIndicator();
     
-    // Проверяем авторизацию
     const authResult = await requireAuth();
     
     if (authResult.user) {
@@ -765,3 +591,5 @@ async function init() {
 document.addEventListener('DOMContentLoaded', init);
 
 export { init };
+
+console.log('[Inventory] Module loaded (Supabase Version)');
