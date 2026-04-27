@@ -10,8 +10,9 @@
  * кэширование данных смены и интеграцию с Supabase.
  * 
  * @module cashier/shift
- * @version 1.0.1
+ * @version 1.0.2
  * @changes
+ * - v1.0.2: Убран неиспользуемый импорт getSupabase из auth.js.
  * - v1.0.1: getSupabase() теперь с await (официальный SDK)
  */
 
@@ -206,13 +207,8 @@ export async function openShift(userId) {
 export async function closeShift() {
     if (!shiftState.currentShift || shiftState.isActionPending) return false;
     
-    const formatMoney = (amount) => {
-        return new Intl.NumberFormat('ru-RU', {
-            style: 'currency',
-            currency: 'RUB',
-            minimumFractionDigits: 0
-        }).format(amount).replace('RUB', '₽').trim();
-    };
+    // Импортируем formatMoney динамически чтобы избежать циклической зависимости
+    const { formatMoney } = await import('../../utils/formatters.js');
     
     const confirmed = await showConfirmDialog({
         title: 'Закрытие смены',
