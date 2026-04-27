@@ -3,27 +3,17 @@
 // ========================================
 
 /**
- * Product Form Module
+ * Product Form Module (Supabase Version)
  * 
  * Универсальное модальное окно для создания и редактирования товара.
- * Используется на страницах склада и кассы для избежания дублирования кода.
- * 
- * Архитектурные решения:
- * - Экспортирует единственную функцию openProductFormModal.
- * - Возвращает Promise с результатом (созданный/обновлённый товар или null).
- * - Полностью автономен: сам загружает Supabase, управляет состоянием формы.
- * - Интегрируется с categorySchema.js для динамических полей.
- * - Поддерживает загрузку фото через Supabase Storage.
+ * Восстановлена работа через Supabase.
  * 
  * @module product-form
- * @version 1.0.1
- * @changes
- * - Удалена установка updated_at (отсутствует в схеме БД)
- * - Удалена ручная установка created_at (используется default now() в БД)
- * - Улучшена обработка ошибки PGRST204
+ * @version 2.0.0
  */
 
-import { getSupabase } from '../core/auth.js';
+import { products as productsDb } from '../core/db.js';
+import { createClient } from '../core/supabase-client.js';
 import { formatMoney, escapeHtml } from './formatters.js';
 import { showNotification } from './ui.js';
 import { 
@@ -34,44 +24,25 @@ import {
     CATEGORY_KEYS 
 } from './categorySchema.js';
 
+// Создаём клиент для работы со Storage
+const supabase = createClient(
+    'https://bhdwniiyrrujeoubrvle.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM'
+);
+
 // ========== КОНСТАНТЫ ==========
 
 const SUPABASE_STORAGE_BUCKET = 'product-photos';
 const MAX_PHOTO_SIZE_MB = 5;
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
 
-// ========== ТИПЫ (JSDoc) ==========
-
-/**
- * @typedef {Object} ProductFormOptions
- * @property {'create'|'edit'} mode - Режим работы формы
- * @property {Object} [initialData] - Начальные данные для редактирования
- * @property {string} [initialData.id] - ID товара (только для edit)
- * @property {string} [initialData.name] - Название
- * @property {string} [initialData.category] - Категория
- * @property {number} [initialData.price] - Цена
- * @property {number} [initialData.cost_price] - Себестоимость
- * @property {string} [initialData.photo_url] - URL фото
- * @property {Object} [initialData.attributes] - Атрибуты категории
- * @property {Function} [onSuccess] - Колбэк после успешного сохранения
- */
-
-/**
- * @typedef {Object} ProductFormResult
- * @property {boolean} success - Успешно ли сохранение
- * @property {Object|null} product - Сохранённый товар
- * @property {string|null} error - Сообщение об ошибке
- */
-
 // ========== ПРИВАТНЫЕ ФУНКЦИИ ==========
 
 /**
  * Загружает фото в Supabase Storage
- * @param {File} file - Файл изображения
- * @returns {Promise<string>} Публичный URL загруженного фото
  */
 async function uploadPhoto(file) {
-    const supabase = await getSupabase();
+    console.log('[ProductForm] Uploading photo...');
     
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
@@ -92,24 +63,23 @@ async function uploadPhoto(file) {
         .from(SUPABASE_STORAGE_BUCKET)
         .getPublicUrl(fileName);
     
+    console.log('[ProductForm] Photo uploaded:', publicUrl);
     return publicUrl;
 }
 
 /**
  * Удаляет фото из Supabase Storage
- * @param {string} photoUrl - Публичный URL фото
  */
 async function deletePhoto(photoUrl) {
     if (!photoUrl) return;
     
     try {
-        const supabase = await getSupabase();
         const fileName = photoUrl.split('/').pop();
-        
         if (fileName) {
             await supabase.storage
                 .from(SUPABASE_STORAGE_BUCKET)
                 .remove([fileName]);
+            console.log('[ProductForm] Photo deleted:', fileName);
         }
     } catch (error) {
         console.warn('[ProductForm] Failed to delete photo:', error);
@@ -118,13 +88,9 @@ async function deletePhoto(photoUrl) {
 
 /**
  * Сохраняет товар в базу данных
- * @param {Object} formData - Данные формы
- * @param {string} mode - 'create' или 'edit'
- * @param {string|null} productId - ID товара для edit
- * @returns {Promise<Object>} Сохранённый товар
  */
 async function saveProduct(formData, mode, productId = null) {
-    const supabase = await getSupabase();
+    console.log(`[ProductForm] Saving product (${mode})...`);
     
     // Подготавливаем данные
     const productData = {
@@ -133,9 +99,6 @@ async function saveProduct(formData, mode, productId = null) {
         price: parseFloat(formData.price) || 0,
         cost_price: parseFloat(formData.costPrice) || 0,
         attributes: formData.attributes
-        // ПРИМЕЧАНИЕ: Не устанавливаем updated_at и created_at вручную.
-        // Supabase автоматически управляет created_at через default now().
-        // Колонка updated_at отсутствует в схеме БД.
     };
     
     // Добавляем фото если есть
@@ -144,36 +107,15 @@ async function saveProduct(formData, mode, productId = null) {
     }
     
     if (mode === 'create') {
-        productData.status = 'in_stock';
         productData.created_by = formData.userId;
-        
-        const { data, error } = await supabase
-            .from('products')
-            .insert(productData)
-            .select()
-            .single();
-        
-        if (error) throw error;
-        return data;
-        
+        return await productsDb.create(productData);
     } else {
-        const { data, error } = await supabase
-            .from('products')
-            .update(productData)
-            .eq('id', productId)
-            .select()
-            .single();
-        
-        if (error) throw error;
-        return data;
+        return await productsDb.update(productId, productData);
     }
 }
 
 /**
  * Генерирует HTML полей для выбранной категории
- * @param {string} category - Ключ категории
- * @param {Object} initialAttributes - Начальные значения атрибутов
- * @returns {string} HTML полей
  */
 function renderCategoryFields(category, initialAttributes = {}) {
     const schema = getCategorySchema(category);
@@ -234,8 +176,6 @@ function renderCategoryFields(category, initialAttributes = {}) {
 
 /**
  * Создаёт HTML модального окна
- * @param {ProductFormOptions} options - Опции формы
- * @returns {string} HTML
  */
 function renderModalHtml(options) {
     const { mode, initialData = {} } = options;
@@ -366,23 +306,6 @@ function renderModalHtml(options) {
 
 /**
  * Открывает модальное окно для создания/редактирования товара
- * 
- * @param {ProductFormOptions} options - Опции формы
- * @returns {Promise<Object|null>} Созданный/обновлённый товар или null при отмене
- * 
- * @example
- * // Создание нового товара
- * const newProduct = await openProductFormModal({ 
- *     mode: 'create',
- *     userId: currentUser.id 
- * });
- * 
- * @example
- * // Редактирование существующего
- * const updated = await openProductFormModal({ 
- *     mode: 'edit',
- *     initialData: product 
- * });
  */
 export async function openProductFormModal(options = {}) {
     const {
@@ -539,7 +462,6 @@ export async function openProductFormModal(options = {}) {
         
         /**
          * Валидирует форму
-         * @returns {Object} { valid, errors }
          */
         function validateForm() {
             const errors = [];
@@ -604,7 +526,6 @@ export async function openProductFormModal(options = {}) {
         
         /**
          * Собирает данные формы
-         * @returns {Object}
          */
         function collectFormData() {
             const name = document.getElementById('productName')?.value.trim() || '';
@@ -654,7 +575,6 @@ export async function openProductFormModal(options = {}) {
             try {
                 // Загружаем новое фото если есть
                 if (formData.photoFile) {
-                    // Если редактируем и было старое фото, удаляем его
                     if (mode === 'edit' && initialData.photo_url) {
                         await deletePhoto(initialData.photo_url);
                     }
@@ -682,11 +602,7 @@ export async function openProductFormModal(options = {}) {
                 console.error('[ProductForm] Submit error:', error);
                 
                 let errorMessage = 'Ошибка сохранения товара';
-                
-                // Обрабатываем известные коды ошибок Supabase
-                if (error.code === 'PGRST204') {
-                    errorMessage = 'Ошибка схемы базы данных. Обратитесь к администратору.';
-                } else if (error.message) {
+                if (error.message) {
                     errorMessage = error.message;
                 }
                 
@@ -746,6 +662,8 @@ export async function openProductFormModal(options = {}) {
         
         // Начальный расчёт маржи
         setTimeout(updateMarginIndicator, 50);
+        
+        console.log('[ProductForm] Modal opened');
     });
 }
 
@@ -754,3 +672,5 @@ export async function openProductFormModal(options = {}) {
 export default {
     openProductFormModal
 };
+
+console.log('[ProductForm] Module loaded (Supabase Version)');
