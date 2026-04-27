@@ -9,11 +9,13 @@
  * Реализует стратегию "Cache First, Sync Later".
  * 
  * @module sync-engine
- * @version 1.2.1
+ * @version 1.2.2
  * @changes
  * - Исправлен импорт из logger.js: error → logError, info → logInfo, warn → logWarn
  * - Добавлен вызов initLogger() при инициализации
  * - Диагностический API в window.__syncEngine
+ * - v1.2.2: flushAllLogs() больше не блокирует initSyncEngine (убрано await)
+ * - v1.2.2: flushAllLogs() в syncNow() также без await
  */
 
 import {
@@ -114,7 +116,8 @@ async function checkLoggerHealth() {
     
     if (status.tableAvailable && status.localLogsCount > 0) {
         console.log('[SyncEngine] Found', status.localLogsCount, 'local logs, forcing flush');
-        await flushAllLogs();
+        // Не ждём — отправка логов не должна блокировать работу
+        flushAllLogs();
     }
 }
 
@@ -234,8 +237,9 @@ export async function syncNow() {
         }
     });
     
+    // Фоновая отправка логов — не блокирует
     if (synced > 0 || failed > 0) {
-        await flushAllLogs();
+        flushAllLogs();
     }
     
     if (failed > 0) scheduleRetry();
@@ -337,6 +341,10 @@ export async function saveChange(entity, type, data, originalData = null) {
     return await enqueueOperation({ entity, type, data, originalData });
 }
 
+/**
+ * Инициализирует Sync Engine.
+ * ВАЖНО: flushAllLogs() вызывается БЕЗ await, чтобы не блокировать загрузку страницы.
+ */
 export async function initSyncEngine() {
     console.log('[SyncEngine] Initializing...');
     
@@ -364,7 +372,8 @@ export async function initSyncEngine() {
             }
         });
         
-        await flushAllLogs();
+        // Отправляем логи в фоне, не блокируем загрузку
+        flushAllLogs();
         
     } catch (error) {
         console.error('[SyncEngine] Init failed:', error);
