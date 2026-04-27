@@ -12,6 +12,13 @@
     <!-- Базовый путь для GitHub Pages -->
     <base href="/second-hand-crm/">
     
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
     <!-- Основные стили -->
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/layouts/inventory.css">
@@ -354,6 +361,15 @@
     <!-- Основной скрипт страницы -->
     <script type="module" src="js/inventory.js"></script>
     
+    <!-- PWA: Регистрация Service Worker -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/second-hand-crm/sw.js', { scope: '/second-hand-crm/' })
+                .then(reg => console.log('[PWA] SW registered:', reg.scope))
+                .catch(err => console.warn('[PWA] SW failed:', err));
+        }
+    </script>
+    
     <!-- Fallback на случай ошибки -->
     <script>
         (function() {
@@ -369,14 +385,12 @@
             let checkInterval = null;
             let errorShown = false;
             
-            // Функция для отображения статуса загрузки
             function updateLoadingStatus(message) {
                 if (loadingStatus) {
                     loadingStatus.textContent = message;
                 }
             }
             
-            // Функция для отображения ошибки
             function showModuleError(message) {
                 errorShown = true;
                 if (moduleLoading) moduleLoading.style.display = 'none';
@@ -389,7 +403,6 @@
                 }
             }
             
-            // Функция для скрытия ошибки (если модуль загрузился после таймаута)
             function hideModuleError() {
                 errorShown = false;
                 if (errorBanner) {
@@ -397,11 +410,9 @@
                 }
             }
             
-            // Проверяем статус загрузки
             checkInterval = setInterval(function() {
                 const elapsed = Math.floor((Date.now() - loadStartTime) / 1000);
                 
-                // Если модуль уже загрузился — скрываем ошибку и останавливаем проверку
                 if (window.__inventoryModuleLoaded) {
                     clearInterval(checkInterval);
                     if (moduleLoading) moduleLoading.style.display = 'none';
@@ -411,7 +422,6 @@
                     return;
                 }
                 
-                // Обновляем сообщение о статусе
                 if (elapsed < 5) {
                     updateLoadingStatus('Загрузка модуля...');
                 } else if (elapsed < 15) {
@@ -421,14 +431,12 @@
                 } else if (elapsed < 60) {
                     updateLoadingStatus('Медленное соединение. Пожалуйста, подождите...');
                 } else {
-                    // Прошло больше 60 секунд — показываем ошибку
                     clearInterval(checkInterval);
                     console.warn('[Inventory] Module load timeout after 60s');
                     showModuleError('Превышено время ожидания. Проверьте подключение к интернету и обновите страницу.');
                 }
             }, 3000);
             
-            // Экспортируем функцию для отметки загрузки модуля
             window.markInventoryModuleLoaded = function() {
                 if (!window.__inventoryModuleLoaded) {
                     window.__inventoryModuleLoaded = true;
@@ -441,7 +449,6 @@
                 }
             };
             
-            // Обработчик кнопки повтора
             document.addEventListener('click', function(e) {
                 if (e.target.id === 'offlineRetryBtn' || e.target.closest('#offlineRetryBtn')) {
                     loadStartTime = Date.now();
@@ -456,7 +463,6 @@
                 }
             });
             
-            // Обработчик ошибки загрузки скрипта
             window.addEventListener('error', function(e) {
                 if (e.target && e.target.tagName === 'SCRIPT' && e.target.src && e.target.src.includes('inventory.js')) {
                     console.error('[Inventory] Script load error:', e);
