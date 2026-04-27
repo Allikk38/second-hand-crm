@@ -17,8 +17,9 @@
  * - requireAuth не редиректит при таймауте — показывает офлайн-режим.
  * 
  * @module auth
- * @version 4.4.0
+ * @version 4.5.0
  * @changes
+ * - v4.5.0: Уменьшен таймаут getCurrentUser с 8 до 3 секунд
  * - v4.4.0: Добавлен retry в signIn() для холодного старта Supabase
  * - v4.4.0: Добавлен таймаут 8с в getCurrentUser()
  * - v4.4.0: requireAuth() при таймауте возвращает timeout вместо редиректа
@@ -32,7 +33,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const SIGN_IN_MAX_RETRIES = 3;
 const SIGN_IN_RETRY_DELAY_MS = 2000;
-const GET_USER_TIMEOUT_MS = 8000;
+const GET_USER_TIMEOUT_MS = 3000; // 3 секунды (было 8000)
 
 // ========== БАЗОВЫЙ ПУТЬ ==========
 
@@ -143,7 +144,7 @@ export function isOnline() {
 
 /**
  * Получает текущего пользователя.
- * Имеет таймаут 8 секунд. При таймауте проверяет localStorage.
+ * Имеет таймаут 3 секунды. При таймауте проверяет localStorage.
  * 
  * @returns {Promise<{user: Object|null, error: string|null, errorType: string|null}>}
  */
