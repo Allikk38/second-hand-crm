@@ -9,19 +9,14 @@
  * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
  * 
  * @module supabase-client
- * @version 1.7.1
+ * @version 1.8.0
  * @changes
- * - v1.4.0: getUser() с отложенным рефрешем
- * - v1.5.0: Полный рефакторинг from() — поддержка method chaining
- * - v1.5.0: .select().eq().order().limit() работают как в оригинальном SDK
- * - v1.5.0: .insert(), .update().eq(), .delete().eq() возвращают { data, error }
- * - v1.6.0: Добавлен метод .is() для проверки IS NULL/TRUE/FALSE
- * - v1.6.0: Добавлен метод .neq(), .gte(), .lte(), .gt(), .lt()
- * - v1.7.0: Таймаут 30с для signInWithPassword и refreshSession (холодный старт Supabase)
- * - v1.7.0: Автоматический повтор при первой ошибке таймаута
- * - v1.7.0: Понятные сообщения об ошибках на русском
- * - v1.7.1: ИСПРАВЛЕНО двойное URL-кодирование в фильтрах (убрал encodeURIComponent)
- * - v1.7.1: URLSearchParams сам кодирует значения, повторное кодирование давало %253A
+ * - v1.8.0: Все запросы теперь с AbortController и таймаутом
+ * - v1.8.0: GET-запросы: таймаут 12с, мутирующие: 15с, auth: 10с
+ * - v1.8.0: getUser() с таймаутом 10с
+ * - v1.8.0: refreshSession с таймаутом 10с
+ * - v1.8.0: signInWithPassword — retry при abort
+ * - v1.8.0: Убрано двойное URL-кодирование в фильтрах
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
@@ -29,7 +24,10 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const STORAGE_KEY = 'sb-bhdwniiyrrujeoubrvle-auth-token';
 
 // Таймауты
-const AUTH_TIMEOUT_MS = 30000;
+const DEFAULT_GET_TIMEOUT = 12000;    // 12 секунд для GET
+const DEFAULT_MUTATE_TIMEOUT = 15000; // 15 секунд для POST/PATCH/DELETE
+const AUTH_TIMEOUT_MS = 10000;        // 10 секунд для auth-запросов
+const STORAGE_TIMEOUT = 15000;        // 15 секунд для storage
 
 // ========== ПОЛИФИЛЛ ==========
 
@@ -38,15 +36,61 @@ function createTimeoutSignal(ms) {
         return AbortSignal.timeout(ms);
     }
     const controller = new AbortController();
-    setTimeout(() => controller.abort(new DOMException('TimeoutError', 'TimeoutError')), ms);
+    setTimeout(() => {
+        try { controller.abort(new DOMException('TimeoutError', 'TimeoutError')); } catch {}
+    }, ms);
     return controller.signal;
 }
 
 // ========== HTTP FETCH ==========
 
+/**
+ * Выполняет HTTP-запрос к Supabase API.
+ * Всегда имеет таймаут через AbortController.
+ * 
+ * @param {string} path - Путь API
+ * @param {Object} options - Опции запроса
+ * @param {number} [options.timeoutMs] - Таймаут в мс (по умолчанию зависит от метода)
+ * @returns {Promise<Response>}
+ */
 async function apiFetch(path, options = {}) {
-    const { method = 'GET', body, headers = {}, signal } = options;
+    const { 
+        method = 'GET', 
+        body, 
+        headers = {}, 
+        signal: externalSignal,
+        timeoutMs 
+    } = options;
+    
     const token = getAccessToken();
+    
+    // Определяем таймаут
+    let effectiveTimeout = timeoutMs;
+    if (!effectiveTimeout) {
+        if (path.startsWith('/auth/')) {
+            effectiveTimeout = AUTH_TIMEOUT_MS;
+        } else if (method === 'GET') {
+            effectiveTimeout = DEFAULT_GET_TIMEOUT;
+        } else {
+            effectiveTimeout = DEFAULT_MUTATE_TIMEOUT;
+        }
+    }
+    
+    // Создаём AbortController с таймаутом
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+        try { timeoutController.abort(new DOMException('TimeoutError', 'TimeoutError')); } catch {}
+    }, effectiveTimeout);
+    
+    // Комбинируем с внешним сигналом если есть
+    let combinedSignal = timeoutController.signal;
+    if (externalSignal) {
+        // Если внешний сигнал сработает — отменяем наш таймаут
+        externalSignal.addEventListener('abort', () => {
+            clearTimeout(timeoutId);
+            try { timeoutController.abort(externalSignal.reason); } catch {}
+        }, { once: true });
+    }
     
     const fetchOptions = {
         method,
@@ -54,7 +98,8 @@ async function apiFetch(path, options = {}) {
             'apikey': SUPABASE_ANON_KEY,
             'Content-Type': 'application/json',
             ...headers
-        }
+        },
+        signal: combinedSignal
     };
     
     if (token && !path.startsWith('/auth/v1/token')) {
@@ -65,20 +110,20 @@ async function apiFetch(path, options = {}) {
         fetchOptions.body = JSON.stringify(body);
     }
     
-    if (signal) {
-        fetchOptions.signal = signal;
-    }
-    
     try {
-        return await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
+        const response = await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
+        clearTimeout(timeoutId);
+        return response;
     } catch (error) {
+        clearTimeout(timeoutId);
+        
         if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-            const timeoutError = new Error('Сервер не отвечает. Попробуйте ещё раз.');
+            const timeoutError = new Error('Сервер не отвечает. Попробуйте обновить страницу.');
             timeoutError.code = 'TIMEOUT';
             timeoutError.originalError = error;
             throw timeoutError;
         }
-        if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+        if (error.message === 'Failed to fetch' || error.message?.includes('NetworkError')) {
             const networkError = new Error('Нет подключения к интернету. Проверьте соединение.');
             networkError.code = 'NETWORK_ERROR';
             networkError.originalError = error;
@@ -115,24 +160,25 @@ function getAccessToken() {
 async function signInWithPassword(email, password) {
     let lastError = null;
     
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) {
-            console.log('[Supabase] Retrying signInWithPassword (attempt ' + (attempt + 1) + ')...');
+            const delay = 2000 * attempt; // 2с, 4с
+            console.log('[Supabase] Retrying signInWithPassword (attempt ' + (attempt + 1) + ') in ' + delay + 'ms...');
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
         
         try {
-            const signal = createTimeoutSignal(AUTH_TIMEOUT_MS);
-            
             const response = await apiFetch('/auth/v1/token?grant_type=password', {
                 method: 'POST',
                 body: { email, password },
                 headers: { 'Content-Type': 'application/json' },
-                signal
+                timeoutMs: AUTH_TIMEOUT_MS
             });
             
             let data;
             try { data = await response.json(); } catch {
-                return { data: null, error: new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.') };
+                lastError = new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.');
+                continue;
             }
             
             if (!response.ok) {
@@ -142,11 +188,13 @@ async function signInWithPassword(email, password) {
                     return { data: null, error: new Error('Неверный email или пароль') };
                 }
                 
-                return { data: null, error: new Error(msg || `Ошибка сервера (${response.status}). Попробуйте позже.`) };
+                lastError = new Error(msg || `Ошибка сервера (${response.status}). Попробуйте позже.`);
+                continue;
             }
             
             if (!data.user || !data.access_token) {
-                return { data: null, error: new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.') };
+                lastError = new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.');
+                continue;
             }
             
             saveSession(data);
@@ -156,7 +204,15 @@ async function signInWithPassword(email, password) {
         } catch (error) {
             lastError = error;
             
-            if (error.code === 'TIMEOUT' && attempt === 0) {
+            // При таймауте — пробуем ещё раз
+            if (error.code === 'TIMEOUT' && attempt < 2) {
+                console.log('[Supabase] Timeout, will retry...');
+                continue;
+            }
+            
+            // При сетевой ошибке — тоже пробуем
+            if (error.code === 'NETWORK_ERROR' && attempt < 2) {
+                console.log('[Supabase] Network error, will retry...');
                 continue;
             }
             
@@ -191,16 +247,15 @@ async function refreshSession() {
     for (let attempt = 0; attempt < 2; attempt++) {
         if (attempt > 0) {
             console.log('[Supabase] Retrying refreshSession...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
         
         try {
-            const signal = createTimeoutSignal(AUTH_TIMEOUT_MS);
-            
             const response = await apiFetch('/auth/v1/token?grant_type=refresh_token', {
                 method: 'POST',
                 body: { refresh_token: session.refresh_token },
                 headers: { 'Content-Type': 'application/json' },
-                signal
+                timeoutMs: AUTH_TIMEOUT_MS
             });
             
             let data;
@@ -223,7 +278,7 @@ async function refreshSession() {
         } catch (error) {
             lastError = error;
             
-            if (error.code === 'TIMEOUT' && attempt === 0) {
+            if (error.code === 'TIMEOUT' && attempt < 1) {
                 continue;
             }
             
@@ -247,12 +302,12 @@ async function getUser() {
     
     let response;
     try {
-        response = await apiFetch('/auth/v1/user');
+        response = await apiFetch('/auth/v1/user', { timeoutMs: AUTH_TIMEOUT_MS });
     } catch (error) {
         return { 
             user: null, 
             error: { 
-                status: 0, 
+                status: error.code === 'TIMEOUT' ? 0 : 500, 
                 message: error.message || 'Сервер недоступен' 
             } 
         };
@@ -268,12 +323,12 @@ async function getUser() {
             };
         }
         try { 
-            response = await apiFetch('/auth/v1/user'); 
+            response = await apiFetch('/auth/v1/user', { timeoutMs: AUTH_TIMEOUT_MS }); 
         } catch (error) {
             return { 
                 user: null, 
                 error: { 
-                    status: 0, 
+                    status: error.code === 'TIMEOUT' ? 0 : 500, 
                     message: error.message || 'Сервер недоступен' 
                 } 
             };
@@ -307,7 +362,7 @@ async function signOut() {
             await apiFetch('/auth/v1/logout', {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
-                signal: createTimeoutSignal(10000)
+                timeoutMs: 5000
             });
         } catch {}
     }
@@ -322,15 +377,6 @@ async function signOut() {
  * 
  * ВАЖНО: значения НЕ кодируются через encodeURIComponent — 
  * URLSearchParams.append() делает это автоматически.
- * 
- * Поддерживаемые операторы PostgREST:
- * - eq (equals)
- * - neq (not equals)
- * - is (null, true, false)
- * - gte (greater than or equal)
- * - lte (less than or equal)
- * - gt (greater than)
- * - lt (less than)
  */
 class QueryBuilder {
     constructor(table) {
@@ -357,22 +403,12 @@ class QueryBuilder {
         return this._resultPromise.then(resolve, reject);
     }
     
-    /**
-     * SELECT запрос.
-     * @param {string} columns
-     * @returns {QueryBuilder}
-     */
     select(columns = '*') {
         this._method = 'GET';
         this._selectStr = columns;
         return this;
     }
     
-    /**
-     * INSERT запрос.
-     * @param {Object|Array} rows
-     * @returns {QueryBuilder}
-     */
     insert(rows) {
         this._method = 'POST';
         this._body = rows;
@@ -380,11 +416,6 @@ class QueryBuilder {
         return this;
     }
     
-    /**
-     * UPDATE запрос (требует .eq() после).
-     * @param {Object} updates
-     * @returns {QueryBuilder}
-     */
     update(updates) {
         this._method = 'PATCH';
         this._body = updates;
@@ -392,44 +423,21 @@ class QueryBuilder {
         return this;
     }
     
-    /**
-     * DELETE запрос (требует .eq() после).
-     * @returns {QueryBuilder}
-     */
     delete() {
         this._method = 'DELETE';
         return this;
     }
     
-    /**
-     * Добавляет фильтр равенства.
-     * Значение НЕ кодируется — URLSearchParams сделает это сам.
-     * @param {string} column
-     * @param {any} value
-     * @returns {QueryBuilder}
-     */
     eq(column, value) {
         this._filters.push({ column, op: 'eq', value: String(value) });
         return this;
     }
     
-    /**
-     * Добавляет фильтр неравенства.
-     * @param {string} column
-     * @param {any} value
-     * @returns {QueryBuilder}
-     */
     neq(column, value) {
         this._filters.push({ column, op: 'neq', value: String(value) });
         return this;
     }
     
-    /**
-     * Добавляет фильтр IS NULL, IS TRUE, IS FALSE.
-     * @param {string} column
-     * @param {string|null|boolean} value - null, true, false
-     * @returns {QueryBuilder}
-     */
     is(column, value) {
         if (value === null) {
             this._filters.push({ column, op: 'is', value: 'null' });
@@ -443,88 +451,55 @@ class QueryBuilder {
         return this;
     }
     
-    /**
-     * Добавляет фильтр "больше или равно".
-     * @param {string} column
-     * @param {any} value
-     * @returns {QueryBuilder}
-     */
     gte(column, value) {
         this._filters.push({ column, op: 'gte', value: String(value) });
         return this;
     }
     
-    /**
-     * Добавляет фильтр "меньше или равно".
-     * @param {string} column
-     * @param {any} value
-     * @returns {QueryBuilder}
-     */
     lte(column, value) {
         this._filters.push({ column, op: 'lte', value: String(value) });
         return this;
     }
     
-    /**
-     * Добавляет фильтр "больше".
-     * @param {string} column
-     * @param {any} value
-     * @returns {QueryBuilder}
-     */
     gt(column, value) {
         this._filters.push({ column, op: 'gt', value: String(value) });
         return this;
     }
     
-    /**
-     * Добавляет фильтр "меньше".
-     * @param {string} column
-     * @param {any} value
-     * @returns {QueryBuilder}
-     */
     lt(column, value) {
         this._filters.push({ column, op: 'lt', value: String(value) });
         return this;
     }
     
-    /**
-     * Добавляет сортировку.
-     * @param {string} column
-     * @param {{ascending?: boolean}} options
-     * @returns {QueryBuilder}
-     */
     order(column, options = {}) {
         const direction = options.ascending === false ? 'desc' : 'asc';
         this._orderStr = `${column}.${direction}`;
         return this;
     }
     
-    /**
-     * Ограничивает количество результатов.
-     * @param {number} n
-     * @returns {QueryBuilder}
-     */
     limit(n) {
         this._limitNum = n;
         return this;
     }
     
-    /**
-     * Возвращает один объект вместо массива.
-     * @returns {QueryBuilder}
-     */
     single() {
         this._single = true;
         return this;
     }
     
-    /**
-     * Возвращает null если запись не найдена (вместо ошибки 406).
-     * @returns {QueryBuilder}
-     */
     maybeSingle() {
         this._single = true;
         this._headers['Accept'] = 'application/vnd.pgrst.object+json';
+        return this;
+    }
+    
+    /**
+     * Добавляет поддержку AbortSignal.
+     * @param {AbortSignal} signal
+     * @returns {QueryBuilder}
+     */
+    abortSignal(signal) {
+        this._abortSignal = signal;
         return this;
     }
     
@@ -538,24 +513,20 @@ class QueryBuilder {
         
         const params = new URLSearchParams();
         
-        // select
         if (this._method === 'GET' && this._selectStr) {
             params.append('select', this._selectStr);
         }
         
-        // filters — URLSearchParams сам кодирует значения
         this._filters.forEach(f => {
             const key = f.column;
             const value = f.op + '.' + f.value;
             params.append(key, value);
         });
         
-        // order
         if (this._orderStr) {
             params.append('order', this._orderStr);
         }
         
-        // limit
         if (this._limitNum) {
             params.append('limit', String(this._limitNum));
         }
@@ -566,9 +537,12 @@ class QueryBuilder {
         try {
             const fetchOptions = {
                 method: this._method,
-                headers: { ...this._headers },
-                signal: this._method === 'GET' ? createTimeoutSignal(30000) : createTimeoutSignal(15000)
+                headers: { ...this._headers }
             };
+            
+            if (this._abortSignal) {
+                fetchOptions.signal = this._abortSignal;
+            }
             
             if (this._body) {
                 fetchOptions.body = this._body;
@@ -577,7 +551,6 @@ class QueryBuilder {
             const response = await apiFetch(path, fetchOptions);
             
             if (!response.ok) {
-                // 406 Not Acceptable — нет результатов для single
                 if (response.status === 406 && this._single) {
                     return { data: null, error: null };
                 }
@@ -589,14 +562,12 @@ class QueryBuilder {
                 return { data: null, error };
             }
             
-            // DELETE — нет тела ответа
             if (this._method === 'DELETE') {
                 return { data: null, error: null };
             }
             
             const responseData = await response.json();
             
-            // single — возвращаем первый элемент
             if (this._single && Array.isArray(responseData)) {
                 return { data: responseData[0] || null, error: null };
             }
@@ -612,11 +583,6 @@ class QueryBuilder {
     }
 }
 
-/**
- * Создаёт строитель запросов для таблицы.
- * @param {string} table
- * @returns {QueryBuilder}
- */
 function from(table) {
     return new QueryBuilder(table);
 }
@@ -636,11 +602,14 @@ const storage = {
                         'Authorization': `Bearer ${getAccessToken() || ''}`
                     },
                     body: formData,
-                    signal: createTimeoutSignal(30000)
+                    signal: createTimeoutSignal(STORAGE_TIMEOUT)
                 });
                 if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
                 return { error: null };
             } catch (error) {
+                if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+                    return { error: new Error('Таймаут загрузки. Попробуйте снова.') };
+                }
                 return { error };
             }
         },
@@ -649,11 +618,11 @@ const storage = {
         }),
         remove: async (paths) => {
             try {
-                const response = await apiFetch(`/storage/v1/object/${bucket}`, {
+                await apiFetch(`/storage/v1/object/${bucket}`, {
                     method: 'DELETE',
                     body: { prefixes: paths },
                     headers: { 'Content-Type': 'application/json' },
-                    signal: createTimeoutSignal(15000)
+                    timeoutMs: STORAGE_TIMEOUT
                 });
                 return { error: null };
             } catch (error) {
