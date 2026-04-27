@@ -13,17 +13,26 @@
  * - Клиент создаётся один раз и кэшируется (синглтон).
  * - Все функции безопасно обрабатывают отсутствие данных.
  * - getCurrentUser использует новый формат ответа getUser() (v1.4.0+).
+ * - signIn имеет retry-логику для холодного старта Supabase.
+ * - requireAuth не редиректит при таймауте — показывает офлайн-режим.
  * 
  * @module auth
- * @version 4.3.0
+ * @version 4.4.0
  * @changes
- * - v4.2.0: Исправлена обработка ответа в signIn.
- * - v4.3.0: getCurrentUser адаптирован под новый формат getUser() (без обёртки data).
- * - v4.3.0: isAuthenticated адаптирован под новый формат getSession().
+ * - v4.4.0: Добавлен retry в signIn() для холодного старта Supabase
+ * - v4.4.0: Добавлен таймаут 8с в getCurrentUser()
+ * - v4.4.0: requireAuth() при таймауте возвращает timeout вместо редиректа
+ * - v4.4.0: Улучшены сообщения об ошибках
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
+
+// ========== КОНСТАНТЫ RETRY ==========
+
+const SIGN_IN_MAX_RETRIES = 3;
+const SIGN_IN_RETRY_DELAY_MS = 2000;
+const GET_USER_TIMEOUT_MS = 8000;
 
 // ========== БАЗОВЫЙ ПУТЬ ==========
 
@@ -89,6 +98,41 @@ export async function isSupabaseAvailable() {
     }
 }
 
+// ========== УТИЛИТЫ ==========
+
+/**
+ * Выполняет функцию с таймаутом.
+ * @param {Function} fn - Асинхронная функция
+ * @param {number} timeoutMs - Таймаут в мс
+ * @param {string} timeoutMessage - Сообщение при таймауте
+ * @returns {Promise<any>}
+ */
+async function withTimeout(fn, timeoutMs, timeoutMessage) {
+    return new Promise(async (resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(timeoutMessage));
+        }, timeoutMs);
+        
+        try {
+            const result = await fn();
+            clearTimeout(timer);
+            resolve(result);
+        } catch (error) {
+            clearTimeout(timer);
+            reject(error);
+        }
+    });
+}
+
+/**
+ * Задержка на указанное количество миллисекунд.
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // ========== ПРОВЕРКИ ==========
 
 export function isOnline() {
@@ -99,18 +143,34 @@ export function isOnline() {
 
 /**
  * Получает текущего пользователя.
- * Использует новый формат getUser() — { user, error } без обёртки data.
+ * Имеет таймаут 8 секунд. При таймауте проверяет localStorage.
  * 
  * @returns {Promise<{user: Object|null, error: string|null, errorType: string|null}>}
  */
 export async function getCurrentUser() {
+    // Быстрая проверка: если нет сети и нет токена в localStorage — сразу возвращаем
     if (!isOnline()) {
+        // Проверяем, есть ли токен в localStorage
+        try {
+            const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+            if (token?.user) {
+                console.log('[Auth] Offline but cached user found:', token.user.email);
+                return { user: token.user, error: null, errorType: null };
+            }
+        } catch {}
+        
         return { user: null, error: 'Нет подключения к интернету', errorType: 'network' };
     }
     
     try {
         const supabase = await getSupabase();
-        const { user, error } = await supabase.auth.getUser();
+        
+        // Выполняем getUser с таймаутом
+        const { user, error } = await withTimeout(
+            () => supabase.auth.getUser(),
+            GET_USER_TIMEOUT_MS,
+            'Сервер не отвечает. Проверка сессии прервана.'
+        );
         
         if (error) {
             console.warn('[Auth] getUser returned error:', error);
@@ -120,7 +180,15 @@ export async function getCurrentUser() {
                 return { user: null, error: error.message || 'Сессия истекла', errorType: 'auth' };
             }
             
-            // Другие ошибки — проблема с сетью или сервером
+            // Другие ошибки — проверяем кэш
+            try {
+                const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+                if (token?.user) {
+                    console.log('[Auth] Server error but cached user found');
+                    return { user: token.user, error: null, errorType: null };
+                }
+            } catch {}
+            
             return { user: null, error: error.message || 'Ошибка сервера', errorType: 'network' };
         }
         
@@ -133,6 +201,19 @@ export async function getCurrentUser() {
     } catch (error) {
         console.error('[Auth] getCurrentUser exception:', error);
         
+        // При таймауте или сетевой ошибке — пробуем кэш
+        if (error.message?.includes('не отвечает') || error.message?.includes('прервана')) {
+            try {
+                const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+                if (token?.user) {
+                    console.log('[Auth] Timeout but cached user found');
+                    return { user: token.user, error: null, errorType: null };
+                }
+            } catch {}
+            
+            return { user: null, error: error.message, errorType: 'timeout' };
+        }
+        
         const errorType = error?.status === 401 ? 'auth' : 'network';
         return { user: null, error: error.message || 'Неизвестная ошибка', errorType };
     }
@@ -140,38 +221,76 @@ export async function getCurrentUser() {
 
 /**
  * Проверяет, аутентифицирован ли пользователь.
+ * Проверяет localStorage мгновенно, без запроса к серверу.
  * 
- * @returns {Promise<boolean>}
+ * @returns {boolean}
  */
 export async function isAuthenticated() {
-    if (!isOnline()) return false;
-    
+    // Быстрая проверка localStorage
     try {
-        const supabase = await getSupabase();
-        const { data } = await supabase.auth.getSession();
-        return !!(data?.session?.user);
-    } catch {
-        return false;
+        const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+        if (token?.user?.id) {
+            return true;
+        }
+    } catch {}
+    
+    // Если нет в localStorage, но есть сеть — проверяем сервер
+    if (isOnline()) {
+        try {
+            const supabase = await getSupabase();
+            const { data } = await supabase.auth.getSession();
+            return !!(data?.session?.user);
+        } catch {
+            return false;
+        }
     }
+    
+    return false;
 }
 
 /**
  * Требует аутентификацию для доступа к странице.
  * 
+ * ПРИ ТАЙМАУТЕ: НЕ редиректит на логин. Возвращает timeout: true.
+ * Страница должна показать офлайн-режим с кэшированными данными.
+ * 
  * @param {Object} options
  * @param {string} [options.redirectTo='pages/login.html']
- * @returns {Promise<{user: Object|null, offline?: boolean, authError?: boolean, networkError?: boolean}>}
+ * @returns {Promise<{user: Object|null, offline?: boolean, authError?: boolean, networkError?: boolean, timeout?: boolean}>}
  */
 export async function requireAuth(options = {}) {
     const { redirectTo = 'pages/login.html' } = options;
     
+    // Нет сети — офлайн-режим
     if (!isOnline()) {
+        // Проверяем кэшированную сессию
+        try {
+            const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+            if (token?.user) {
+                console.log('[Auth] Offline mode with cached session');
+                return { user: token.user, offline: true };
+            }
+        } catch {}
+        
         return { user: null, offline: true };
     }
     
     try {
         const { user, errorType } = await getCurrentUser();
         
+        // Таймаут — не редиректим, даём работать офлайн
+        if (errorType === 'timeout') {
+            console.log('[Auth] Auth check timed out, using cached session if available');
+            try {
+                const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
+                if (token?.user) {
+                    return { user: token.user, timeout: true };
+                }
+            } catch {}
+            return { user: null, timeout: true };
+        }
+        
+        // Нет авторизации — редиректим
         if (errorType === 'auth' || !user) {
             const basePath = getBasePath();
             const fullPath = redirectTo.startsWith('/') 
@@ -183,6 +302,7 @@ export async function requireAuth(options = {}) {
             return { user: null, authError: true };
         }
         
+        // Сетевая ошибка — не редиректим
         if (errorType === 'network') {
             return { user: null, networkError: true };
         }
@@ -199,6 +319,7 @@ export async function requireAuth(options = {}) {
 
 /**
  * Выполняет вход по email и паролю.
+ * Имеет retry-логику (3 попытки с задержкой 2с) для холодного старта Supabase.
  * 
  * @param {string} email
  * @param {string} password
@@ -206,46 +327,84 @@ export async function requireAuth(options = {}) {
  */
 export async function signIn(email, password) {
     if (!isOnline()) {
-        return { success: false, user: null, error: 'Нет подключения к интернету' };
+        return { success: false, user: null, error: 'Нет подключения к интернету. Проверьте соединение.' };
     }
     
-    try {
-        const supabase = await getSupabase();
-        const result = await supabase.auth.signInWithPassword({ email, password });
-        
-        if (!result) {
-            console.error('[Auth] signIn: empty result from signInWithPassword');
-            return { success: false, user: null, error: 'Пустой ответ от сервера' };
+    let lastError = null;
+    
+    // До 3 попыток с задержкой
+    for (let attempt = 0; attempt < SIGN_IN_MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+            console.log(`[Auth] Sign in retry ${attempt + 1}/${SIGN_IN_MAX_RETRIES} after ${SIGN_IN_RETRY_DELAY_MS}ms...`);
+            await delay(SIGN_IN_RETRY_DELAY_MS);
         }
         
-        if (result.error) {
-            console.warn('[Auth] signIn: error in result:', result.error.message);
-            return { success: false, user: null, error: result.error.message || 'Ошибка входа' };
+        try {
+            const supabase = await getSupabase();
+            const result = await supabase.auth.signInWithPassword({ email, password });
+            
+            if (!result) {
+                console.error('[Auth] signIn: empty result from signInWithPassword');
+                lastError = 'Пустой ответ от сервера. Попробуйте ещё раз.';
+                continue;
+            }
+            
+            if (result.error) {
+                console.warn('[Auth] signIn: error in result:', result.error.message);
+                
+                // Неверные учётные данные — нет смысла повторять
+                if (result.error.message?.includes('Invalid login credentials') ||
+                    result.error.message?.includes('Неверный email или пароль')) {
+                    return { success: false, user: null, error: 'Неверный email или пароль' };
+                }
+                
+                // Таймаут или сетевая ошибка — пробуем ещё раз
+                if (result.error.message?.includes('не отвечает') ||
+                    result.error.message?.includes('подключения к интернету')) {
+                    lastError = result.error.message;
+                    continue;
+                }
+                
+                lastError = result.error.message || 'Ошибка входа';
+                continue;
+            }
+            
+            const user = result.data?.user || null;
+            
+            if (!user) {
+                console.error('[Auth] signIn: no user in response');
+                lastError = 'Сервер не вернул данные пользователя';
+                continue;
+            }
+            
+            console.log('[Auth] Login successful:', user.email);
+            return { success: true, user, error: null };
+            
+        } catch (error) {
+            console.error(`[Auth] signIn error (attempt ${attempt + 1}):`, error);
+            
+            let message = 'Ошибка входа';
+            
+            if (error.code === 'SUPABASE_CLIENT_LOAD_FAILED') {
+                message = 'Не удалось загрузить модуль авторизации. Обновите страницу.';
+            } else if (error.message?.includes('TIMEOUT') || error.message?.includes('не отвечает')) {
+                message = 'Сервер не отвечает. Пробуем ещё раз...';
+            } else if (error.message?.includes('NETWORK') || error.message?.includes('подключения')) {
+                message = 'Проблемы с подключением. Проверьте интернет.';
+            } else if (error.message) {
+                message = error.message;
+            }
+            
+            lastError = message;
+            // Продолжаем попытки
         }
-        
-        const user = result.data?.user || null;
-        
-        if (!user) {
-            console.error('[Auth] signIn: no user in response');
-            return { success: false, user: null, error: 'Сервер не вернул данные пользователя' };
-        }
-        
-        console.log('[Auth] Login successful:', user.email);
-        return { success: true, user, error: null };
-        
-    } catch (error) {
-        console.error('[Auth] signIn error:', error);
-        
-        let message = 'Ошибка входа';
-        
-        if (error.code === 'SUPABASE_CLIENT_LOAD_FAILED') {
-            message = 'Не удалось загрузить модуль авторизации.';
-        } else if (error.message) {
-            message = error.message;
-        }
-        
-        return { success: false, user: null, error: message };
     }
+    
+    // Исчерпали попытки
+    const finalMessage = lastError || 'Не удалось войти после нескольких попыток. Попробуйте позже.';
+    console.error('[Auth] All sign in attempts exhausted:', finalMessage);
+    
+    return { success: false, user: null, error: finalMessage };
 }
 
 // ========== ВЫХОД ==========
