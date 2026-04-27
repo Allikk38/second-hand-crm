@@ -9,11 +9,11 @@
  * HTTP/2 только, без QUIC.
  * 
  * @module auth
- * @version 4.0.0
+ * @version 4.0.1
  * @changes
  * - Полный переход на локальный supabase-client.js
  * - Удалена загрузка @supabase/supabase-js с CDN
- * - Больше нет ERR_QUIC_PROTOCOL_ERROR
+ * - Исправлен редирект для GitHub Pages (учёт base href)
  */
 
 import { createClient } from './supabase-client.js';
@@ -21,9 +21,22 @@ import { createClient } from './supabase-client.js';
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
 
-export function isOnline() {
-    return navigator.onLine;
+// ========== БАЗОВЫЙ ПУТЬ ==========
+
+/**
+ * Определяет base URL для приложения.
+ * На GitHub Pages это /second-hand-crm/
+ * При локальной разработке — просто /
+ */
+function getBasePath() {
+    const base = document.querySelector('base');
+    if (base && base.href) {
+        return base.href.replace(/\/$/, '');
+    }
+    return window.location.origin;
 }
+
+// ========== КЛИЕНТ ==========
 
 let clientInstance = null;
 
@@ -33,6 +46,14 @@ export async function getSupabase() {
     }
     return clientInstance;
 }
+
+// ========== ПРОВЕРКИ ==========
+
+export function isOnline() {
+    return navigator.onLine;
+}
+
+// ========== АУТЕНТИФИКАЦИЯ ==========
 
 export async function getCurrentUser() {
     if (!isOnline()) {
@@ -52,8 +73,19 @@ export async function getCurrentUser() {
     }
 }
 
+export async function isAuthenticated() {
+    if (!isOnline()) return false;
+    try {
+        const supabase = await getSupabase();
+        const { data: { session } } = await supabase.auth.getSession();
+        return !!session?.user;
+    } catch {
+        return false;
+    }
+}
+
 export async function requireAuth(options = {}) {
-    const { redirectTo = '/pages/login.html' } = options;
+    const { redirectTo = 'pages/login.html' } = options;
     
     if (!isOnline()) return { user: null, offline: true };
     
@@ -61,8 +93,19 @@ export async function requireAuth(options = {}) {
         const { user, errorType } = await getCurrentUser();
         
         if (errorType === 'auth' || !user) {
-            window.location.href = redirectTo;
+            const basePath = getBasePath();
+            // Правильный URL: /second-hand-crm/pages/login.html или /pages/login.html
+            const fullPath = redirectTo.startsWith('/') 
+                ? `${basePath}${redirectTo}` 
+                : `${basePath}/${redirectTo}`;
+            
+            console.log('[Auth] Redirecting to:', fullPath);
+            window.location.href = fullPath;
             return { user: null, authError: true };
+        }
+        
+        if (errorType === 'network') {
+            return { user: null, networkError: true };
         }
         
         return { user };
@@ -70,6 +113,8 @@ export async function requireAuth(options = {}) {
         return { user: null, networkError: true };
     }
 }
+
+// ========== ВХОД ==========
 
 export async function signIn(email, password) {
     if (!isOnline()) {
@@ -91,8 +136,10 @@ export async function signIn(email, password) {
     }
 }
 
+// ========== ВЫХОД ==========
+
 export async function logout(options = {}) {
-    const { redirectTo = '/pages/login.html' } = options;
+    const { redirectTo = 'pages/login.html' } = options;
     
     try {
         localStorage.removeItem('sh_device_id');
@@ -100,34 +147,47 @@ export async function logout(options = {}) {
         sessionStorage.clear();
         
         if (isOnline()) {
-            const supabase = await getSupabase();
-            await supabase.auth.signOut();
+            try {
+                const supabase = await getSupabase();
+                await supabase.auth.signOut();
+            } catch {}
         }
         
         clientInstance = null;
     } catch {} finally {
-        window.location.href = redirectTo;
+        const basePath = getBasePath();
+        const fullPath = redirectTo.startsWith('/') 
+            ? `${basePath}${redirectTo}` 
+            : `${basePath}/${redirectTo}`;
+        
+        window.location.href = fullPath;
     }
 }
 
-export function getReturnUrl(defaultUrl = '/pages/inventory.html') {
+// ========== ВСПОМОГАТЕЛЬНЫЕ ==========
+
+export function getReturnUrl(defaultUrl = 'pages/inventory.html') {
     const url = sessionStorage.getItem('sh_auth_return_url');
     if (url) {
         sessionStorage.removeItem('sh_auth_return_url');
         return url;
     }
-    return defaultUrl;
+    const basePath = getBasePath();
+    return defaultUrl.startsWith('/') ? `${basePath}${defaultUrl}` : `${basePath}/${defaultUrl}`;
 }
 
 export function setReturnUrl(url) {
-    if (url && url !== '/pages/login.html') {
+    if (url && !url.includes('login.html')) {
         sessionStorage.setItem('sh_auth_return_url', url);
     }
 }
 
+// ========== ЭКСПОРТ ==========
+
 export default {
     getSupabase,
     getCurrentUser,
+    isAuthenticated,
     requireAuth,
     signIn,
     logout,
