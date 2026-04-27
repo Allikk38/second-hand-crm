@@ -1,3 +1,7 @@
+<!-- ======================================== -->
+<!-- FILE: index.html -->
+<!-- ======================================== -->
+
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -30,7 +34,7 @@
             background: white;
             border-radius: 16px;
             box-shadow: 0 4px 6px -2px rgba(0, 0, 0, 0.08);
-            max-width: 400px;
+            max-width: 440px;
             width: 90%;
             border: 1px solid #e2e8f0;
         }
@@ -85,6 +89,7 @@
             background: #fef2f2;
             border-radius: 8px;
             border-left: 3px solid #dc2626;
+            text-align: left;
         }
         
         .error-message.show {
@@ -101,7 +106,29 @@
         .error-text {
             font-size: 13px;
             color: #7f1d1d;
+            margin-bottom: 12px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        
+        .error-details {
+            font-size: 12px;
+            color: #991b1b;
             margin-bottom: 16px;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.04);
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        
+        .error-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
         }
         
         .btn {
@@ -115,8 +142,8 @@
             color: #475569;
             cursor: pointer;
             text-decoration: none;
-            margin: 4px;
             transition: all 0.15s;
+            white-space: nowrap;
         }
         
         .btn:hover {
@@ -133,6 +160,16 @@
         .btn-primary:hover {
             background: #1d4ed8;
         }
+        
+        .btn-danger {
+            background: #dc2626;
+            color: white;
+            border-color: #b91c1c;
+        }
+        
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
     </style>
 </head>
 <body>
@@ -143,64 +180,165 @@
         
         <div class="loader" id="splashLoader">
             <div class="spinner"></div>
-            <div class="loader-text">Загрузка...</div>
+            <div class="loader-text">Проверка сессии...</div>
         </div>
         
         <div class="error-message" id="splashError">
-            <div class="error-title">⚠️ Ошибка</div>
+            <div class="error-title" id="errorTitle">⚠️ Ошибка</div>
             <div class="error-text" id="errorMessage">Не удалось загрузить приложение</div>
-            <button class="btn" id="retryBtn">Повторить</button>
-            <a href="pages/login.html" class="btn btn-primary" id="loginBtn">Войти</a>
+            <div class="error-details" id="errorDetails" style="display: none;"></div>
+            <div class="error-actions">
+                <a href="pages/login.html" class="btn btn-primary" id="loginBtn">Перейти ко входу</a>
+                <button class="btn" id="retryBtn">Повторить</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // Функция для динамической загрузки auth.js и проверки сессии
+        /**
+         * Инициализация приложения.
+         * Проверяет сессию и перенаправляет на нужную страницу.
+         */
         async function init() {
+            const loaderText = document.querySelector('#splashLoader .loader-text');
+            
             try {
-                // Динамически импортируем auth.js
-                const authModule = await import('./core/auth.js');
+                // Шаг 1: Проверяем сеть
+                if (!navigator.onLine) {
+                    throw new Error('NETWORK_OFFLINE');
+                }
+                
+                // Шаг 2: Пытаемся загрузить модуль auth
+                loaderText.textContent = 'Загрузка модуля авторизации...';
+                
+                let authModule;
+                try {
+                    authModule = await import('./core/auth.js');
+                } catch (importError) {
+                    console.error('[Index] Failed to import auth.js:', importError);
+                    throw new Error('MODULE_LOAD_FAILED: ' + (importError.message || 'Неизвестная ошибка импорта'));
+                }
+                
                 const { getCurrentUser } = authModule;
                 
-                const { user, error } = await getCurrentUser();
-                
-                if (error || !user) {
-                    window.location.href = 'pages/login.html';
-                } else {
-                    window.location.href = 'pages/inventory.html';
+                if (typeof getCurrentUser !== 'function') {
+                    throw new Error('MODULE_API_ERROR: getCurrentUser не найдена в auth.js');
                 }
+                
+                // Шаг 3: Проверяем сессию
+                loaderText.textContent = 'Проверка сессии...';
+                
+                const { user, error, errorType } = await getCurrentUser();
+                
+                if (error) {
+                    if (errorType === 'network') {
+                        throw new Error('SUPABASE_NETWORK_ERROR: ' + error);
+                    } else if (errorType === 'auth') {
+                        // Нет сессии — это нормально, перенаправляем на вход
+                        console.log('[Index] No session found, redirecting to login');
+                        window.location.href = 'pages/login.html';
+                        return;
+                    } else {
+                        throw new Error('SUPABASE_UNKNOWN_ERROR: ' + error);
+                    }
+                }
+                
+                if (user) {
+                    // Сессия есть — перенаправляем на склад
+                    console.log('[Index] Session found, redirecting to inventory');
+                    window.location.href = 'pages/inventory.html';
+                } else {
+                    // Нет пользователя — на вход
+                    window.location.href = 'pages/login.html';
+                }
+                
             } catch (err) {
                 console.error('[Index] Init error:', err);
-                document.getElementById('splashLoader').style.display = 'none';
-                document.getElementById('splashError').classList.add('show');
-                document.getElementById('errorMessage').textContent = 'Ошибка загрузки приложения';
+                handleInitError(err);
+            }
+        }
+        
+        /**
+         * Обрабатывает ошибку инициализации и показывает пользователю
+         * @param {Error} err - Объект ошибки
+         */
+        function handleInitError(err) {
+            const splashLoader = document.getElementById('splashLoader');
+            const splashError = document.getElementById('splashError');
+            const errorTitle = document.getElementById('errorTitle');
+            const errorMessage = document.getElementById('errorMessage');
+            const errorDetails = document.getElementById('errorDetails');
+            
+            // Скрываем лоадер
+            if (splashLoader) {
+                splashLoader.style.display = 'none';
+            }
+            
+            // Показываем ошибку
+            if (splashError) {
+                splashError.classList.add('show');
+            }
+            
+            const errorMsg = err.message || String(err);
+            
+            // Определяем тип ошибки и показываем понятное сообщение
+            if (errorMsg.includes('NETWORK_OFFLINE')) {
+                if (errorTitle) errorTitle.textContent = '⚠️ Нет подключения к интернету';
+                if (errorMessage) errorMessage.textContent = 'Приложение требует подключения к интернету для первой загрузки. Проверьте соединение и попробуйте снова.';
+            } else if (errorMsg.includes('MODULE_LOAD_FAILED')) {
+                if (errorTitle) errorTitle.textContent = '⚠️ Ошибка загрузки модуля';
+                if (errorMessage) errorMessage.textContent = 'Не удалось загрузить основной модуль авторизации. Возможно, файл повреждён или отсутствует. Попробуйте обновить страницу.';
+            } else if (errorMsg.includes('SUPABASE_NETWORK_ERROR')) {
+                if (errorTitle) errorTitle.textContent = '⚠️ Сервер недоступен';
+                if (errorMessage) errorMessage.textContent = 'Не удалось подключиться к серверу авторизации. Проверьте подключение к интернету и попробуйте снова.';
+            } else if (errorMsg.includes('MODULE_API_ERROR')) {
+                if (errorTitle) errorTitle.textContent = '⚠️ Ошибка API модуля';
+                if (errorMessage) errorMessage.textContent = 'Нарушена структура модуля авторизации. Возможно, требуется обновление приложения.';
+            } else {
+                if (errorTitle) errorTitle.textContent = '⚠️ Неизвестная ошибка';
+                if (errorMessage) errorMessage.textContent = 'Произошла непредвиденная ошибка при загрузке приложения.';
+            }
+            
+            // Показываем технические детали (для отладки)
+            if (errorDetails) {
+                errorDetails.style.display = 'block';
+                errorDetails.textContent = errorMsg;
+            }
+            
+            // Кнопка "Войти" всегда доступна как fallback
+            const loginBtn = document.getElementById('loginBtn');
+            if (loginBtn) {
+                loginBtn.style.display = 'inline-block';
             }
         }
         
         // Обработчики кнопок
         document.getElementById('retryBtn')?.addEventListener('click', () => {
-            document.getElementById('splashError').classList.remove('show');
-            document.getElementById('splashLoader').style.display = 'flex';
+            const splashError = document.getElementById('splashError');
+            const splashLoader = document.getElementById('splashLoader');
+            
+            if (splashError) splashError.classList.remove('show');
+            if (splashLoader) splashLoader.style.display = 'flex';
+            
             init();
         });
         
         document.getElementById('loginBtn')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            window.location.href = 'pages/login.html';
+            // Уже является ссылкой на pages/login.html
+            // Не отменяем переход
         });
         
         // Запуск
         init();
         
-        // Fallback таймаут
+        // Fallback таймаут (10 секунд)
         setTimeout(() => {
             const loader = document.getElementById('splashLoader');
             if (loader && loader.style.display !== 'none') {
-                loader.style.display = 'none';
-                document.getElementById('splashError').classList.add('show');
-                document.getElementById('errorMessage').textContent = 'Превышено время ожидания';
+                const error = new Error('TIMEOUT: Превышено время ожидания ответа от сервера');
+                handleInitError(error);
             }
-        }, 8000);
+        }, 10000);
     </script>
 </body>
 </html>
