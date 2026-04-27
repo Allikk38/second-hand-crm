@@ -6,23 +6,16 @@
  * Extended Logger Module
  * 
  * Подробное логирование для аудита и выявления аномалий.
- * Логи отправляются в Supabase таблицу sync_logs асинхронно.
- * При недоступности сервера логи сохраняются локально в localStorage.
- * 
- * ВАЖНО: отправка логов НЕ блокирует основной поток.
- * Инициализация НЕ ждёт проверки доступности таблицы.
+ * В локальной версии все логи сохраняются только в localStorage.
+ * Отправка на сервер будет добавлена позже при подключении VPS.
  * 
  * @module sync-engine/logger
- * @version 2.3.0
+ * @version 3.0.0
  * @changes
- * - v2.3.0: initLogger() больше не ждёт checkTableAvailability()
- * - v2.3.0: checkTableAvailability() использует SELECT вместо INSERT
- * - v2.3.0: Результат проверки кэшируется на 30 минут
- * - v2.3.0: Добавлен таймаут 5 секунд на проверку таблицы
- * - v2.3.0: Логи всегда пишутся в localStorage как fallback
+ * - v3.0.0: Полный переход на локальное хранение, удалена зависимость от Supabase
+ * - Логи сохраняются только в localStorage
+ * - Упрощена инициализация (всегда доступна)
  */
-
-import { getSupabase } from '../auth.js';
 
 // ========== КОНСТАНТЫ ==========
 
@@ -47,8 +40,6 @@ const CATEGORIES = {
 
 const LOCAL_LOG_STORE = 'sync_logs_local';
 const MAX_LOCAL_LOGS = 500;
-const TABLE_CHECK_CACHE_KEY = 'logger_table_available';
-const TABLE_CHECK_CACHE_TTL = 30 * 60 * 1000; // 30 минут
 
 // Буфер логов
 let logBuffer = [];
@@ -60,8 +51,6 @@ let sessionId = generateSessionId();
 
 // Флаги состояния
 let isLoggerInitialized = false;
-let isTableAvailable = null;
-let lastFlushError = null;
 
 // ========== УТИЛИТЫ ==========
 
@@ -80,48 +69,23 @@ function getDeviceId() {
 
 function getUserId() {
     try {
-        const token = JSON.parse(localStorage.getItem('sb-bhdwniiyrrujeoubrvle-auth-token') || '{}');
-        return token?.user?.id || null;
+        const savedUserId = localStorage.getItem('sh_current_user_id');
+        return savedUserId || null;
     } catch {
         return null;
     }
 }
 
 function getCurrentPage() {
-    const path = window.location.pathname;
-    if (path.includes('inventory')) return 'inventory';
-    if (path.includes('cashier')) return 'cashier';
-    if (path.includes('reports')) return 'reports';
-    if (path.includes('login')) return 'login';
-    return 'unknown';
-}
-
-// ========== КЭШИРОВАНИЕ РЕЗУЛЬТАТА ПРОВЕРКИ ТАБЛИЦЫ ==========
-
-function getCachedTableAvailability() {
     try {
-        const cached = sessionStorage.getItem(TABLE_CHECK_CACHE_KEY);
-        if (cached) {
-            const { available, timestamp } = JSON.parse(cached);
-            if (Date.now() - timestamp < TABLE_CHECK_CACHE_TTL) {
-                console.log('[Logger] Using cached table availability:', available);
-                return available;
-            }
-        }
-    } catch (e) {
-        // игнорируем
-    }
-    return null;
-}
-
-function setCachedTableAvailability(available) {
-    try {
-        sessionStorage.setItem(TABLE_CHECK_CACHE_KEY, JSON.stringify({
-            available,
-            timestamp: Date.now()
-        }));
-    } catch (e) {
-        // игнорируем
+        const path = window.location.pathname;
+        if (path.includes('inventory')) return 'inventory';
+        if (path.includes('cashier')) return 'cashier';
+        if (path.includes('reports')) return 'reports';
+        if (path.includes('login')) return 'login';
+        return 'unknown';
+    } catch {
+        return 'unknown';
     }
 }
 
@@ -140,93 +104,16 @@ function saveLogsLocally(logs) {
 function getLocalLogs() {
     try {
         const logs = JSON.parse(localStorage.getItem(LOCAL_LOG_STORE) || '[]');
-        localStorage.removeItem(LOCAL_LOG_STORE);
         return logs;
     } catch {
         return [];
     }
 }
 
-// ========== ПРОВЕРКА ДОСТУПНОСТИ ТАБЛИЦЫ (БЫСТРАЯ) ==========
+// ========== ОТПРАВКА ЛОГОВ (ЛОКАЛЬНАЯ) ==========
 
 /**
- * Проверяет доступность таблицы sync_logs.
- * Использует лёгкий SELECT count(*) вместо INSERT.
- * Результат кэшируется на 30 минут.
- * Имеет таймаут 5 секунд.
- * 
- * @returns {Promise<boolean>}
- */
-async function checkTableAvailability() {
-    // Проверяем кэш
-    const cached = getCachedTableAvailability();
-    if (cached !== null) {
-        isTableAvailable = cached;
-        return cached;
-    }
-    
-    if (isTableAvailable !== null) {
-        return isTableAvailable;
-    }
-    
-    try {
-        const supabase = await getSupabase();
-        
-        // Используем лёгкий запрос с таймаутом
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 секунд таймаут
-        
-        try {
-            // Вместо INSERT делаем SELECT count(*) — это быстрее и не создаёт записей
-            const { error } = await supabase
-                .from('sync_logs')
-                .select('id', { count: 'exact', head: true })
-                .limit(0)
-                .abortSignal(controller.signal);
-            
-            clearTimeout(timeoutId);
-            
-            if (error) {
-                if (error.code === '42P01') {
-                    console.warn('[Logger] Table sync_logs does not exist');
-                    isTableAvailable = false;
-                } else if (error.code === '42501') {
-                    console.warn('[Logger] Permission denied for sync_logs');
-                    isTableAvailable = false;
-                } else {
-                    console.warn('[Logger] Table check error:', error.message, error.code);
-                    isTableAvailable = false;
-                }
-            } else {
-                console.log('[Logger] Table sync_logs is available');
-                isTableAvailable = true;
-            }
-        } catch (fetchError) {
-            clearTimeout(timeoutId);
-            if (fetchError.name === 'AbortError') {
-                console.warn('[Logger] Table check timed out after 5s');
-            } else {
-                console.warn('[Logger] Table check network error:', fetchError.message);
-            }
-            isTableAvailable = false;
-        }
-        
-    } catch (error) {
-        console.warn('[Logger] Failed to check table availability:', error.message);
-        isTableAvailable = false;
-    }
-    
-    // Кэшируем результат
-    setCachedTableAvailability(isTableAvailable);
-    
-    return isTableAvailable;
-}
-
-// ========== ОТПРАВКА ЛОГОВ (АСИНХРОННАЯ) ==========
-
-/**
- * Отправляет накопленные логи в Supabase.
- * Выполняется АСИНХРОННО через setTimeout, не блокирует UI.
+ * Отправляет накопленные логи в локальное хранилище.
  */
 function scheduleAsyncFlush() {
     if (flushTimer) return;
@@ -246,65 +133,10 @@ async function flushLogs() {
     const logs = [...logBuffer];
     logBuffer = [];
     
-    // Проверяем доступность таблицы (использует кэш)
-    const available = await checkTableAvailability();
+    // Сохраняем логи локально
+    saveLogsLocally(logs);
     
-    if (!available) {
-        saveLogsLocally(logs);
-        isFlushing = false;
-        return;
-    }
-    
-    try {
-        const supabase = await getSupabase();
-        
-        const enrichedLogs = logs.map(log => ({
-            ...log,
-            device_id: getDeviceId(),
-            user_id: getUserId(),
-            session_id: sessionId,
-            page: getCurrentPage()
-        }));
-        
-        // Отправка с таймаутом 10 секунд
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        
-        try {
-            const { error } = await supabase
-                .from('sync_logs')
-                .insert(enrichedLogs)
-                .abortSignal(controller.signal);
-            
-            clearTimeout(timeoutId);
-            
-            if (error) {
-                console.error('[Logger] Failed to send logs:', error.message, error.code);
-                lastFlushError = { message: error.message, code: error.code, time: Date.now() };
-                saveLogsLocally(enrichedLogs);
-            } else {
-                lastFlushError = null;
-                
-                // Пытаемся отправить локальные логи
-                const localLogs = getLocalLogs();
-                if (localLogs.length > 0) {
-                    logBuffer = [...localLogs, ...logBuffer];
-                }
-            }
-        } catch (fetchError) {
-            clearTimeout(timeoutId);
-            console.warn('[Logger] Flush network error:', fetchError.message);
-            lastFlushError = { message: fetchError.message, code: 'NETWORK', time: Date.now() };
-            saveLogsLocally(logs);
-        }
-        
-    } catch (error) {
-        console.error('[Logger] Flush error:', error.message);
-        lastFlushError = { message: error.message, code: 'NETWORK', time: Date.now() };
-        saveLogsLocally(logs);
-    } finally {
-        isFlushing = false;
-    }
+    isFlushing = false;
 }
 
 /**
@@ -335,6 +167,10 @@ function addLog(level, category, event, options = {}) {
         error_stack: error?.stack?.split('\n').slice(0, 5).join('\n') || null,
         details: typeof details === 'string' ? details : JSON.stringify(details),
         metadata: typeof metadata === 'string' ? metadata : JSON.stringify(metadata),
+        device_id: getDeviceId(),
+        user_id: getUserId(),
+        session_id: sessionId,
+        page: getCurrentPage(),
         created_at: new Date().toISOString()
     };
     
@@ -342,7 +178,6 @@ function addLog(level, category, event, options = {}) {
     logBuffer.push(logEntry);
     
     // И ВСЕГДА сохраняем локально как fallback
-    // (в фоне, не блокируя)
     setTimeout(() => {
         saveLogsLocally([logEntry]);
     }, 0);
@@ -358,7 +193,6 @@ function addLog(level, category, event, options = {}) {
     
     // Отправляем только если буфер заполнен или это ошибка
     if (logBuffer.length >= BUFFER_SIZE || level === 'error') {
-        // Асинхронная отправка без await — не блокирует
         setTimeout(() => flushLogs(), 0);
     } else {
         scheduleAsyncFlush();
@@ -368,39 +202,27 @@ function addLog(level, category, event, options = {}) {
 // ========== ПУБЛИЧНЫЙ API ==========
 
 /**
- * Тестирует соединение с таблицей логов.
- * Не блокирует инициализацию.
- * 
- * @returns {Promise<{available: boolean, lastError: Object|null}>}
+ * Тестирует соединение (заглушка для локальной версии)
+ * @returns {Promise<Object>}
  */
 export async function testLoggerConnection() {
-    const available = await checkTableAvailability();
-    
-    if (available) {
-        info(CATEGORIES.SYSTEM, 'logger_test_passed', {
-            details: { message: 'Logger connection test passed' }
-        });
-    }
-    
     return {
-        available,
-        lastError: lastFlushError
+        available: true,
+        lastError: null
     };
 }
 
 /**
- * Возвращает статус логгера.
- * Не делает запросов к серверу.
- * 
+ * Возвращает статус логгера
  * @returns {Object}
  */
 export function getLoggerStatus() {
     return {
         initialized: isLoggerInitialized,
-        tableAvailable: isTableAvailable,
+        tableAvailable: true, // Всегда доступно локально
         bufferSize: logBuffer.length,
         isFlushing,
-        lastFlushError: lastFlushError,
+        lastFlushError: null,
         localLogsCount: JSON.parse(localStorage.getItem(LOCAL_LOG_STORE) || '[]').length
     };
 }
@@ -497,8 +319,7 @@ export function measurePerformance(name, fn) {
 }
 
 /**
- * Принудительная отправка всех накопленных логов.
- * Выполняется асинхронно, не блокирует.
+ * Принудительная отправка всех накопленных логов
  */
 export async function flushAllLogs() {
     await flushLogs();
@@ -509,42 +330,26 @@ export function newSession() {
     info(CATEGORIES.USER, 'session_start');
 }
 
-// ========== ИНИЦИАЛИЗАЦИЯ (БЫСТРАЯ, БЕЗ ОЖИДАНИЯ) ==========
+// ========== ИНИЦИАЛИЗАЦИЯ ==========
 
 /**
  * Инициализирует логгер.
- * 
- * ВАЖНО: НЕ ждёт проверки доступности таблицы sync_logs.
- * Проверка запускается в фоне и не блокирует загрузку страницы.
- * Логи всегда сохраняются локально и отправляются когда возможно.
+ * В локальной версии всегда доступен.
  */
 export async function initLogger() {
     if (isLoggerInitialized) return;
     
-    console.log('[Logger] Initializing (non-blocking)...');
+    console.log('[Logger] Initializing local logger...');
     
-    // Отмечаем как инициализированный СРАЗУ
     isLoggerInitialized = true;
     
-    // Запускаем проверку таблицы В ФОНЕ, не ждём результата
-    checkTableAvailability().then(available => {
-        console.log('[Logger] Background table check complete. Available:', available);
-        
-        // Если таблица доступна, пробуем отправить накопленные локальные логи
-        if (available) {
-            const localLogs = getLocalLogs();
-            if (localLogs.length > 0) {
-                console.log('[Logger] Found', localLogs.length, 'locally saved logs, retrying');
-                logBuffer = [...localLogs, ...logBuffer];
-                // Асинхронная отправка, не блокирует
-                setTimeout(() => flushLogs(), 100);
-            }
-        }
-    }).catch(err => {
-        console.warn('[Logger] Background table check failed:', err.message);
-    });
+    // Отправляем накопленные логи если есть
+    const localLogs = getLocalLogs();
+    if (localLogs.length > 0) {
+        console.log('[Logger] Found', localLogs.length, 'locally saved logs');
+    }
     
-    console.log('[Logger] Initialized (table check running in background)');
+    console.log('[Logger] Initialized (local mode)');
 }
 
 // ========== ЭКСПОРТ ==========
