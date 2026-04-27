@@ -6,8 +6,9 @@
  * Специфичные для страниц правила находятся в соответствующих файлах.
  * 
  * @stylesheet responsive
- * @version 5.0.0
+ * @version 5.1.0
  * @changes
+ * - v5.1.0: Добавлено разблокирование скролла на мобильных (body overflow).
  * - Удалены дублирующиеся правила.
  * - Упрощены селекторы.
  * - Добавлены комментарии.
@@ -20,6 +21,29 @@
  * lg: 1024px (планшеты landscape / маленькие десктопы)
  * xl: 1280px (десктопы)
  */
+
+/* ========== МОБИЛЬНЫЕ ТЕЛЕФОНЫ (768px и меньше) ========== */
+@media (max-width: 768px) {
+    /* Разблокируем скролл на мобильных */
+    body {
+        overflow: auto !important;
+        height: auto;
+    }
+    
+    #app-root {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .app {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .page-container {
+        overflow: visible;
+    }
+}
 
 /* ========== МОБИЛЬНЫЕ ТЕЛЕФОНЫ (640px и меньше) ========== */
 @media (max-width: 640px) {
@@ -111,13 +135,6 @@
     
     .btn-icon {
         min-width: 44px;
-    }
-    
-    /* Убираем :hover эффекты на тач-устройствах */
-    .btn:hover,
-    .product-card:hover,
-    .category-tab:hover {
-        transform: none;
     }
 }
 
