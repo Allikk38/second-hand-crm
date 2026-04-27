@@ -12,6 +12,14 @@
     <!-- Базовый путь для GitHub Pages -->
     <base href="/second-hand-crm/">
     
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SH CRM">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
     <style>
         * {
             margin: 0;
@@ -195,6 +203,26 @@
     </div>
 
     <script>
+        /**
+         * Регистрация Service Worker для PWA
+         */
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js', { scope: '/' })
+                    .then(registration => {
+                        console.log('[PWA] ServiceWorker registered with scope:', registration.scope);
+                        
+                        // Проверяем обновления каждые 60 минут
+                        setInterval(() => {
+                            registration.update();
+                        }, 60 * 60 * 1000);
+                    })
+                    .catch(error => {
+                        console.warn('[PWA] ServiceWorker registration failed:', error);
+                    });
+            });
+        }
+        
         /**
          * Инициализация приложения.
          * Проверяет сессию и перенаправляет на нужную страницу.
