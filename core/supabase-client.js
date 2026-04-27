@@ -9,8 +9,10 @@
  * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
  * 
  * @module supabase-client
- * @version 1.8.0
+ * @version 1.9.0
  * @changes
+ * - v1.9.0: getUser() обрабатывает 403 наравне с 401 (refreshSession + retry)
+ * - v1.9.0: apiFetch() делает retry при 403 для мутирующих запросов
  * - v1.8.0: Все запросы теперь с AbortController и таймаутом
  * - v1.8.0: GET-запросы: таймаут 12с, мутирующие: 15с, auth: 10с
  * - v1.8.0: getUser() с таймаутом 10с
@@ -47,6 +49,7 @@ function createTimeoutSignal(ms) {
 /**
  * Выполняет HTTP-запрос к Supabase API.
  * Всегда имеет таймаут через AbortController.
+ * При 403 для мутирующих запросов пробует обновить токен и повторить.
  * 
  * @param {string} path - Путь API
  * @param {Object} options - Опции запроса
@@ -85,34 +88,72 @@ async function apiFetch(path, options = {}) {
     // Комбинируем с внешним сигналом если есть
     let combinedSignal = timeoutController.signal;
     if (externalSignal) {
-        // Если внешний сигнал сработает — отменяем наш таймаут
         externalSignal.addEventListener('abort', () => {
             clearTimeout(timeoutId);
             try { timeoutController.abort(externalSignal.reason); } catch {}
         }, { once: true });
     }
     
-    const fetchOptions = {
-        method,
-        headers: {
-            'apikey': SUPABASE_ANON_KEY,
-            'Content-Type': 'application/json',
-            ...headers
-        },
-        signal: combinedSignal
+    /**
+     * Строит fetchOptions с указанным токеном
+     */
+    const buildFetchOptions = (authToken) => {
+        const opts = {
+            method,
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Content-Type': 'application/json',
+                ...headers
+            },
+            signal: combinedSignal
+        };
+        
+        if (authToken && !path.startsWith('/auth/v1/token')) {
+            opts.headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        
+        if (body && method !== 'GET') {
+            opts.body = JSON.stringify(body);
+        }
+        
+        return opts;
     };
     
-    if (token && !path.startsWith('/auth/v1/token')) {
-        fetchOptions.headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    if (body && method !== 'GET') {
-        fetchOptions.body = JSON.stringify(body);
-    }
+    /**
+     * Выполняет fetch с указанным токеном
+     */
+    const doFetch = async (authToken) => {
+        const fetchOptions = buildFetchOptions(authToken);
+        return await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
+    };
     
     try {
-        const response = await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
+        let response = await doFetch(token);
         clearTimeout(timeoutId);
+        
+        // Если мутирующий запрос вернул 403 — пробуем обновить токен и повторить ОДИН раз
+        if (response.status === 403 && method !== 'GET' && !path.startsWith('/auth/')) {
+            try {
+                await refreshSession();
+                const newToken = getAccessToken();
+                if (newToken) {
+                    // Создаём новый AbortController для повторного запроса
+                    const retryController = new AbortController();
+                    const retryTimeoutId = setTimeout(() => {
+                        try { retryController.abort(new DOMException('TimeoutError', 'TimeoutError')); } catch {}
+                    }, effectiveTimeout);
+                    
+                    const retryFetchOptions = buildFetchOptions(newToken);
+                    retryFetchOptions.signal = retryController.signal;
+                    
+                    response = await fetch(`${SUPABASE_URL}${path}`, retryFetchOptions);
+                    clearTimeout(retryTimeoutId);
+                }
+            } catch {
+                // Если не удалось обновить — возвращаем исходный 403
+            }
+        }
+        
         return response;
     } catch (error) {
         clearTimeout(timeoutId);
@@ -313,7 +354,7 @@ async function getUser() {
         };
     }
     
-    if (response.status === 401) {
+    if (response.status === 401 || response.status === 403) {
         try { 
             await refreshSession(); 
         } catch (refreshError) {
