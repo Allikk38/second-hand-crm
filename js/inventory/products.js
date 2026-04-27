@@ -3,41 +3,24 @@
 // ========================================
 
 /**
- * Products Module - Inventory
+ * Products Module - Inventory (Supabase Version)
  * 
  * Сервис управления данными товаров на складе.
- * Отвечает за загрузку, кэширование, фильтрацию, сортировку и обновление состояния.
- * Не выполняет мутирующих операций с сервером — это зона ответственности operations.js.
- * 
- * Архитектурные решения:
- * - Загрузка данных через единый движок синхронизации sync-engine.
- * - Кэширование данных управляется внутри sync-engine (IndexedDB + Memory).
- * - Состояние модуля — единственный источник правды о товарах для UI контроллера.
- * - Уведомление подписчиков об изменении данных через callback.
+ * Восстановлена работа через Supabase через db.js.
  * 
  * @module inventory/products
- * @version 2.0.0
- * @changes
- * - Полный рефакторинг. Удалены прямые запросы к Supabase.
- * - Интегрирован sync-engine для загрузки данных.
- * - Удалена зависимость от operations.js.
- * - Упрощено управление состоянием.
+ * @version 3.0.0
  */
 
-import { loadData, ENTITIES } from '../../core/sync-engine.js';
-import { getSupabase } from '../../core/auth.js';
+import { products as productsDb } from '../../core/db.js';
 
 // ========== КОНСТАНТЫ ==========
 
-const CACHE_KEY = 'all';
 const CACHE_MAX_AGE = 5 * 60 * 1000; // 5 минут
+const CACHE_KEY = 'inventory_products_cache';
 
 // ========== СОСТОЯНИЕ ТОВАРОВ ==========
 
-/**
- * Состояние товаров
- * @type {Object}
- */
 export const productsState = {
     all: [],
     filtered: [],
@@ -62,17 +45,10 @@ export const productsState = {
 /** @type {Function|null} */
 let onChangeCallback = null;
 
-/**
- * Устанавливает колбэк для вызова при изменении товаров
- * @param {Function} callback - Функция для вызова
- */
 export function setProductsChangeCallback(callback) {
     onChangeCallback = callback;
 }
 
-/**
- * Вызывает колбэк изменения товаров
- */
 function notifyProductsChanged() {
     if (onChangeCallback) {
         onChangeCallback();
@@ -81,9 +57,6 @@ function notifyProductsChanged() {
 
 // ========== ОБРАБОТКА КАТЕГОРИЙ ==========
 
-/**
- * Обновляет список категорий на основе товаров
- */
 function updateCategoryFilter() {
     const counts = new Map();
     
@@ -99,9 +72,6 @@ function updateCategoryFilter() {
 
 // ========== ФИЛЬТРАЦИЯ И СОРТИРОВКА ==========
 
-/**
- * Применяет фильтры к списку товаров
- */
 function applyFilters() {
     let filtered = [...productsState.all];
     
@@ -130,12 +100,6 @@ function applyFilters() {
     productsState.filtered = filtered;
 }
 
-/**
- * Сортирует товары
- * @param {Array} products - Массив товаров
- * @param {string} sortBy - Критерий сортировки
- * @returns {Array}
- */
 function sortProducts(products, sortBy) {
     const sorted = [...products];
     
@@ -158,9 +122,6 @@ function sortProducts(products, sortBy) {
 
 // ========== СТАТИСТИКА ==========
 
-/**
- * Обновляет статистику склада
- */
 function updateStats() {
     const all = productsState.all;
     const inStock = all.filter(p => p.status === 'in_stock' && !p._deleted);
@@ -177,49 +138,30 @@ function updateStats() {
 
 // ========== УСТАНОВКА ФИЛЬТРОВ ==========
 
-/**
- * Устанавливает поисковый запрос
- * @param {string} query - Поисковый запрос
- */
 export function setSearchQuery(query) {
     productsState.searchQuery = query || '';
     applyFilters();
     notifyProductsChanged();
 }
 
-/**
- * Устанавливает фильтр по статусу
- * @param {string} status - Статус товара
- */
 export function setStatusFilter(status) {
     productsState.selectedStatus = status || '';
     applyFilters();
     notifyProductsChanged();
 }
 
-/**
- * Устанавливает фильтр по категории
- * @param {string} category - Категория
- */
 export function setCategoryFilter(category) {
     productsState.selectedCategory = category || '';
     applyFilters();
     notifyProductsChanged();
 }
 
-/**
- * Устанавливает сортировку
- * @param {string} sortBy - Критерий сортировки
- */
 export function setSortBy(sortBy) {
     productsState.sortBy = sortBy || 'created_at-desc';
     applyFilters();
     notifyProductsChanged();
 }
 
-/**
- * Сбрасывает все фильтры
- */
 export function resetFilters() {
     productsState.searchQuery = '';
     productsState.selectedStatus = '';
@@ -232,40 +174,39 @@ export function resetFilters() {
 // ========== ЗАГРУЗКА ТОВАРОВ ==========
 
 /**
- * Загружает товары через Sync Engine
- * @param {boolean} [forceRefresh=false] - Игнорировать кэш
- * @returns {Promise<boolean>} true если загрузка успешна
+ * Загружает товары через Supabase
  */
 export async function loadProducts(forceRefresh = false) {
     if (productsState.isLoading) return false;
     
+    console.log('[Products] Loading products...');
     productsState.isLoading = true;
     notifyProductsChanged();
     
     try {
-        const result = await loadData(ENTITIES.PRODUCTS, {
-            id: CACHE_KEY,
-            maxAge: forceRefresh ? 0 : CACHE_MAX_AGE,
-            fetcher: async () => {
-                const supabase = await getSupabase();
-                const { data, error } = await supabase
-                    .from('products')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                
-                if (error) throw error;
-                return data || [];
+        // Пробуем кэш (если не принудительное обновление)
+        if (!forceRefresh) {
+            const cached = loadFromCache();
+            if (cached) {
+                console.log('[Products] Using cached data');
+                productsState.all = cached;
+                updateCategoryFilter();
+                applyFilters();
+                updateStats();
+                productsState.isLoading = false;
+                notifyProductsChanged();
+                return true;
             }
-        });
-        
-        productsState.all = result.data || [];
-        
-        // Логируем источник данных
-        if (result.fromCache) {
-            console.log('[Products] Loaded from cache:', productsState.all.length);
-        } else {
-            console.log('[Products] Loaded from server:', productsState.all.length);
         }
+        
+        // Загружаем с сервера
+        const data = await productsDb.getAll();
+        productsState.all = data || [];
+        
+        console.log('[Products] Loaded from server:', productsState.all.length);
+        
+        // Сохраняем в кэш
+        saveToCache(productsState.all);
         
         updateCategoryFilter();
         applyFilters();
@@ -275,7 +216,19 @@ export async function loadProducts(forceRefresh = false) {
         return true;
         
     } catch (error) {
-        console.error('[Products] Load products error:', error);
+        console.error('[Products] Load error:', error);
+        
+        // При ошибке пробуем кэш
+        const cached = loadFromCache();
+        if (cached && cached.length > 0) {
+            console.log('[Products] Falling back to cached data');
+            productsState.all = cached;
+            updateCategoryFilter();
+            applyFilters();
+            updateStats();
+            notifyProductsChanged();
+        }
+        
         return false;
     } finally {
         productsState.isLoading = false;
@@ -283,11 +236,36 @@ export async function loadProducts(forceRefresh = false) {
     }
 }
 
-// ========== ОБНОВЛЕНИЕ СОСТОЯНИЯ (ВЫЗЫВАЕТСЯ ИЗВНЕ) ==========
+// ========== КЭШИРОВАНИЕ ==========
 
-/**
- * Полностью обновляет UI после изменения списка товаров
- */
+function saveToCache(data) {
+    try {
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+            data,
+            timestamp: Date.now()
+        }));
+    } catch (e) {
+        console.warn('[Products] Failed to save cache:', e);
+    }
+}
+
+function loadFromCache() {
+    try {
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        if (cached) {
+            const { data, timestamp } = JSON.parse(cached);
+            if (Date.now() - timestamp < CACHE_MAX_AGE) {
+                return data;
+            }
+        }
+    } catch (e) {
+        console.warn('[Products] Failed to load cache:', e);
+    }
+    return null;
+}
+
+// ========== ОБНОВЛЕНИЕ СОСТОЯНИЯ ==========
+
 export function refreshProductsList() {
     updateCategoryFilter();
     applyFilters();
@@ -295,20 +273,11 @@ export function refreshProductsList() {
     notifyProductsChanged();
 }
 
-/**
- * Добавляет товар в начало списка
- * @param {Object} product - Товар
- */
 export function addProductToState(product) {
     productsState.all.unshift(product);
     refreshProductsList();
 }
 
-/**
- * Обновляет товар в списке
- * @param {string} productId - ID товара
- * @param {Object} updatedProduct - Обновлённые данные
- */
 export function updateProductInState(productId, updatedProduct) {
     const index = productsState.all.findIndex(p => p.id === productId);
     if (index !== -1) {
@@ -319,10 +288,6 @@ export function updateProductInState(productId, updatedProduct) {
     return false;
 }
 
-/**
- * Удаляет товар из списка
- * @param {string} productId - ID товара
- */
 export function removeProductFromState(productId) {
     const index = productsState.all.findIndex(p => p.id === productId);
     if (index !== -1) {
@@ -335,111 +300,36 @@ export function removeProductFromState(productId) {
 
 // ========== ГЕТТЕРЫ ==========
 
-/**
- * Получает все товары
- * @returns {Array}
- */
-export function getAllProducts() {
-    return [...productsState.all];
-}
+export function getAllProducts() { return [...productsState.all]; }
+export function getFilteredProducts() { return [...productsState.filtered]; }
+export function getCategories() { return [...productsState.categories]; }
+export function getStats() { return { ...productsState.stats }; }
 
-/**
- * Получает отфильтрованные товары
- * @returns {Array}
- */
-export function getFilteredProducts() {
-    return [...productsState.filtered];
-}
-
-/**
- * Получает список категорий
- * @returns {Array}
- */
-export function getCategories() {
-    return [...productsState.categories];
-}
-
-/**
- * Получает статистику
- * @returns {Object}
- */
-export function getStats() {
-    return { ...productsState.stats };
-}
-
-/**
- * Получает товар по ID
- * @param {string} id - ID товара
- * @returns {Object|null}
- */
 export function getProductById(id) {
     return productsState.all.find(p => p.id === id) || null;
 }
 
-/**
- * Проверяет, идёт ли загрузка
- * @returns {boolean}
- */
-export function isLoading() {
-    return productsState.isLoading;
-}
-
-/**
- * Получает текущий поисковый запрос
- * @returns {string}
- */
-export function getSearchQuery() {
-    return productsState.searchQuery;
-}
-
-/**
- * Получает выбранный статус
- * @returns {string}
- */
-export function getSelectedStatus() {
-    return productsState.selectedStatus;
-}
-
-/**
- * Получает выбранную категорию
- * @returns {string}
- */
-export function getSelectedCategory() {
-    return productsState.selectedCategory;
-}
-
-/**
- * Получает текущую сортировку
- * @returns {string}
- */
-export function getSortBy() {
-    return productsState.sortBy;
-}
+export function isLoading() { return productsState.isLoading; }
+export function getSearchQuery() { return productsState.searchQuery; }
+export function getSelectedStatus() { return productsState.selectedStatus; }
+export function getSelectedCategory() { return productsState.selectedCategory; }
+export function getSortBy() { return productsState.sortBy; }
 
 // ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
 
 export default {
-    // Состояние и колбэки
     productsState,
     setProductsChangeCallback,
-    
-    // Загрузка данных
     loadProducts,
     refreshProductsList,
-    
-    // Управление фильтрами
     setSearchQuery,
     setStatusFilter,
     setCategoryFilter,
     setSortBy,
     resetFilters,
-    
-    // Обновление состояния (для operations)
     addProductToState,
     updateProductInState,
     removeProductFromState,
-    
-    // Геттеры
     getAllProducts,
     getFilteredProducts,
     getCategories,
@@ -451,3 +341,5 @@ export default {
     getSelectedCategory,
     getSortBy
 };
+
+console.log('[Products] Module loaded (Supabase Version)');
