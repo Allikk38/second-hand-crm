@@ -9,13 +9,13 @@
  * Реализует стратегию "Cache First, Sync Later".
  * 
  * @module sync-engine
- * @version 1.2.2
+ * @version 1.3.0
  * @changes
- * - Исправлен импорт из logger.js: error → logError, info → logInfo, warn → logWarn
- * - Добавлен вызов initLogger() при инициализации
- * - Диагностический API в window.__syncEngine
- * - v1.2.2: flushAllLogs() больше не блокирует initSyncEngine (убрано await)
- * - v1.2.2: flushAllLogs() в syncNow() также без await
+ * - v1.3.0: syncNow() при инициализации откладывается на 3 секунды
+ * - v1.3.0: loadData() защищён от параллельных запросов для одного entity
+ * - v1.3.0: checkLoggerHealth() не делает запросов при cached результате
+ * - v1.3.0: Интервал проверки логгера увеличен до 5 минут
+ * - v1.3.0: Добавлен глобальный Map для отслеживания активных загрузок
  */
 
 import {
@@ -60,7 +60,8 @@ const BASE_RETRY_DELAY = 5000;
 const MAX_RETRY_DELAY = 300000;
 const SYNC_INTERVAL = 30000;
 const OPERATION_TTL = 7 * 24 * 60 * 60 * 1000;
-const LOGGER_CHECK_INTERVAL = 60000;
+const LOGGER_CHECK_INTERVAL = 300000; // 5 минут (было 60000)
+const INITIAL_SYNC_DELAY = 3000; // 3 секунды задержки перед первой синхронизацией
 
 // ========== СОСТОЯНИЕ ==========
 
@@ -73,6 +74,9 @@ export const syncState = {
     loggerCheckInterval: null,
     listeners: new Set()
 };
+
+// Защита от параллельных загрузок одних и тех же данных
+const activeLoads = new Map();
 
 // ========== УТИЛИТЫ ==========
 
@@ -98,6 +102,10 @@ async function updatePendingCount() {
 
 // ========== ДИАГНОСТИКА ЛОГГЕРА ==========
 
+/**
+ * Проверяет здоровье логгера.
+ * НЕ делает запросов если результат уже закэширован.
+ */
 async function checkLoggerHealth() {
     const status = getLoggerStatus();
     
@@ -107,17 +115,26 @@ async function checkLoggerHealth() {
         return;
     }
     
+    // Если таблица точно недоступна — не проверяем повторно
     if (status.tableAvailable === false) {
-        console.warn('[SyncEngine] Logger table not available, logs saved locally');
-    } else if (status.tableAvailable === null) {
-        console.log('[SyncEngine] Logger table status unknown, testing...');
-        await testLoggerConnection();
+        // Только выводим статистику локальных логов
+        if (status.localLogsCount > 0) {
+            console.log('[SyncEngine] Logger table unavailable,', status.localLogsCount, 'logs stored locally');
+        }
+        return;
     }
     
-    if (status.tableAvailable && status.localLogsCount > 0) {
+    // Если таблица доступна и есть локальные логи — отправляем
+    if (status.tableAvailable === true && status.localLogsCount > 0) {
         console.log('[SyncEngine] Found', status.localLogsCount, 'local logs, forcing flush');
-        // Не ждём — отправка логов не должна блокировать работу
         flushAllLogs();
+        return;
+    }
+    
+    // Статус неизвестен (null) — проверяем в первый раз
+    if (status.tableAvailable === null) {
+        console.log('[SyncEngine] Logger table status unknown, testing...');
+        await testLoggerConnection();
     }
 }
 
@@ -286,8 +303,12 @@ window.addEventListener('online', () => {
     syncState.isOnline = true;
     logNetworkEvent('online');
     notifyListeners({ type: 'online' });
-    syncNow();
-    checkLoggerHealth();
+    
+    // При восстановлении сети — синхронизация с задержкой
+    setTimeout(() => {
+        syncNow();
+        checkLoggerHealth();
+    }, 2000);
 });
 
 window.addEventListener('offline', () => {
@@ -298,23 +319,73 @@ window.addEventListener('offline', () => {
 
 // ========== ПУБЛИЧНЫЙ API ==========
 
+/**
+ * Загружает данные с кэшированием.
+ * Защищён от параллельных запросов для одного entity+id.
+ * 
+ * @param {string} entity - Тип сущности
+ * @param {Object} options - Опции
+ * @param {string} options.id - ID данных
+ * @param {Function} options.fetcher - Функция-загрузчик
+ * @param {number} [options.maxAge=300000] - Максимальный возраст кэша в мс
+ * @returns {Promise<{data: any, fromCache: boolean}>}
+ */
 export async function loadData(entity, options = {}) {
     const { id = 'all', fetcher, maxAge = 5 * 60 * 1000 } = options;
+    const loadKey = `${entity}:${id}`;
     
+    // Защита от параллельных загрузок
+    if (activeLoads.has(loadKey)) {
+        console.log('[SyncEngine] Load already in progress for', loadKey, '- waiting for existing promise');
+        return activeLoads.get(loadKey);
+    }
+    
+    // Создаём промис и сохраняем его
+    const loadPromise = _loadDataInternal(entity, id, fetcher, maxAge, loadKey);
+    activeLoads.set(loadKey, loadPromise);
+    
+    try {
+        const result = await loadPromise;
+        return result;
+    } finally {
+        // Удаляем из активных после завершения
+        activeLoads.delete(loadKey);
+    }
+}
+
+/**
+ * Внутренняя реализация загрузки данных.
+ */
+async function _loadDataInternal(entity, id, fetcher, maxAge, loadKey) {
+    // Пробуем загрузить из кэша
     const cached = await cacheGet(entity, id, maxAge);
     
     if (cached) {
+        // Данные есть в кэше — возвращаем сразу
+        // Фоновое обновление запускаем если онлайн и есть fetcher
         if (syncState.isOnline && fetcher) {
-            fetcher().then(data => cacheSet(entity, id, data)).catch(err => {
-                logWarn(`Background refresh failed: ${entity}`, {
-                    entity,
-                    details: { error: err.message }
-                });
-            });
+            // НЕ запускаем фоновое обновление если уже есть активная загрузка для этого entity
+            const existingLoad = activeLoads.get(loadKey + '_bg');
+            if (!existingLoad) {
+                const bgPromise = fetcher()
+                    .then(data => {
+                        cacheSet(entity, id, data);
+                        console.log('[SyncEngine] Background refresh completed for', entity);
+                    })
+                    .catch(err => {
+                        logWarn(`Background refresh failed: ${entity}`, {
+                            entity,
+                            details: { error: err.message }
+                        });
+                    });
+                activeLoads.set(loadKey + '_bg', bgPromise);
+                bgPromise.finally(() => activeLoads.delete(loadKey + '_bg'));
+            }
         }
         return { data: cached, fromCache: true };
     }
     
+    // Нет кэша — загружаем с сервера
     if (fetcher) {
         try {
             const startTime = Date.now();
@@ -343,12 +414,19 @@ export async function saveChange(entity, type, data, originalData = null) {
 
 /**
  * Инициализирует Sync Engine.
- * ВАЖНО: flushAllLogs() вызывается БЕЗ await, чтобы не блокировать загрузку страницы.
+ * 
+ * ВАЖНО: 
+ * - initLogger() не блокирует (проверка таблицы в фоне)
+ * - syncNow() откладывается на 3 секунды чтобы не конкурировать с основными запросами
+ * - flushAllLogs() вызывается БЕЗ await
  */
 export async function initSyncEngine() {
     console.log('[SyncEngine] Initializing...');
     
+    // Инициализируем логгер (НЕ БЛОКИРУЕТ — проверка таблицы в фоне)
     await initLogger();
+    
+    // Проверяем здоровье логгера (быстро, использует кэш)
     await checkLoggerHealth();
     
     try {
@@ -356,8 +434,12 @@ export async function initSyncEngine() {
         await updatePendingCount();
         startBackgroundSync();
         
+        // ОТЛОЖЕННАЯ синхронизация — не конкурирует с основными запросами
         if (syncState.isOnline) {
-            syncNow();
+            setTimeout(() => {
+                console.log('[SyncEngine] Starting delayed initial sync...');
+                syncNow();
+            }, INITIAL_SYNC_DELAY);
         }
         
         console.log('[SyncEngine] Initialized. Pending operations:', syncState.pendingCount);
