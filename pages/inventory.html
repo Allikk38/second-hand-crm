@@ -24,6 +24,12 @@
     <link rel="stylesheet" href="css/layouts/inventory.css">
     
     <style>
+        /* РАЗБЛОКИРОВКА ТАЧ-СКРОЛЛА */
+        html, body {
+            touch-action: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior: auto;
+        }
         .inventory-page {
             display: flex;
             flex-direction: column;
