@@ -15,12 +15,10 @@
  * - Единая очередь для продаж и управления сменой
  * 
  * @module cashier/index
- * @version 2.0.0
+ * @version 2.0.1
  * @changes
- * - Полная интеграция с sync-engine.js
- * - Удалены отдельные модули cart.js, shift.js, products.js
- * - Оптимистичное оформление продаж через saveChange()
- * - Мгновенная загрузка товаров из IndexedDB
+ * - v2.0.1: Добавлен вызов window.markCashierModuleLoaded() в конце init()
+ * - v2.0.0: Полная интеграция с sync-engine.js
  */
 
 import { requireAuth, logout, isOnline, getSupabase } from '../../core/auth.js';
@@ -1080,6 +1078,11 @@ async function init() {
     // Проверяем смену и загружаем товары
     await checkOpenShift();
     await loadProductsData();
+    
+    // Сообщаем HTML-обёртке, что модуль загружен
+    if (window.markCashierModuleLoaded) {
+        window.markCashierModuleLoaded();
+    }
     
     console.log('[Cashier] Initialized');
 }
