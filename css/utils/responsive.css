@@ -8,10 +8,7 @@
  * @stylesheet responsive
  * @version 5.1.0
  * @changes
- * - v5.1.0: Добавлено разблокирование скролла на мобильных (body overflow).
- * - Удалены дублирующиеся правила.
- * - Упрощены селекторы.
- * - Добавлены комментарии.
+ * - v5.1.0: Разблокирован скролл на мобильных для всех страниц и контейнеров.
  */
 
 /* ========== БРЕЙКПОИНТЫ ========== */
@@ -22,12 +19,18 @@
  * xl: 1280px (десктопы)
  */
 
-/* ========== МОБИЛЬНЫЕ ТЕЛЕФОНЫ (768px и меньше) ========== */
+/* ========== МОБИЛЬНЫЕ: РАЗБЛОКИРОВКА СКРОЛЛА (768px и меньше) ========== */
 @media (max-width: 768px) {
-    /* Разблокируем скролл на мобильных */
-    body {
-        overflow: auto !important;
+    /* Корень */
+    html {
         height: auto;
+        overflow: auto;
+    }
+    
+    body {
+        height: auto !important;
+        overflow: auto !important;
+        position: static;
     }
     
     #app-root {
@@ -40,8 +43,80 @@
         overflow: visible;
     }
     
+    .app-main {
+        overflow: visible;
+        height: auto;
+    }
+    
     .page-container {
         overflow: visible;
+        height: auto;
+    }
+    
+    /* ===== СКЛАД ===== */
+    .inventory-page {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .products-table-wrapper {
+        overflow-x: auto;
+        overflow-y: visible;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* ===== КАССА ===== */
+    .cashier-page {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .cashier-page-container {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .cashier-app-wrapper {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .cashier-layout {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .products-panel {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .products-grid-container {
+        height: auto;
+        overflow-y: visible;
+    }
+    
+    .cart-panel {
+        height: auto;
+        max-height: none;
+    }
+    
+    .cart-items-container {
+        height: auto;
+        max-height: 50vh;
+        overflow-y: auto;
+    }
+    
+    /* ===== ОТЧЕТЫ ===== */
+    .reports-page {
+        height: auto;
+        overflow: visible;
+    }
+    
+    .reports-content {
+        height: auto;
+        overflow: visible;
+        min-height: auto;
     }
 }
 
