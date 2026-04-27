@@ -9,14 +9,12 @@
  * Отвечает за добавление/удаление товаров, изменение количества,
  * расчёт итогов, скидки и кэширование корзины.
  * 
- * Архитектурные решения:
- * - Чистые функции для расчётов (calculateCartCount, calculateItemTotal, calculateCartTotal).
- * - Кэширование корзины в localStorage с TTL 60 минут.
- * - Экспорт объекта cartState и функций для работы с ним.
- * - Интеграция с ui.js для диалогов подтверждения.
- * 
  * @module cashier/cart
- * @version 1.0.0
+ * @version 1.1.0
+ * @changes
+ * - v1.1.0: Убраны дубликаты (calculateCartCount/getCartCount, calculateCartTotal/getCartTotal).
+ * - Вычислительные функции теперь без параметров — работают с cartState напрямую.
+ * - Убран неиспользуемый импорт showConfirmDialog.
  */
 
 import { showConfirmDialog } from '../../utils/ui.js';
@@ -59,15 +57,14 @@ function notifyCartChanged() {
     }
 }
 
-// ========== ВЫЧИСЛЕНИЯ (ЧИСТЫЕ ФУНКЦИИ) ==========
+// ========== ВЫЧИСЛЕНИЯ ==========
 
 /**
  * Вычисляет количество товаров в корзине
- * @param {Array} items - Массив товаров
  * @returns {number}
  */
-export function calculateCartCount(items) {
-    return items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+export function calculateCartCount() {
+    return cartState.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
 }
 
 /**
@@ -85,28 +82,26 @@ export function calculateItemTotal(item) {
 
 /**
  * Вычисляет итоговую сумму корзины
- * @param {Array} items - Массив товаров в корзине
- * @param {number} totalDiscount - Общая скидка в процентах
  * @returns {number}
  */
-export function calculateCartTotal(items, totalDiscount = 0) {
-    const subtotal = items.reduce((sum, item) => {
+export function calculateCartTotal() {
+    const subtotal = cartState.items.reduce((sum, item) => {
         const itemPrice = item.price || 0;
         const itemDiscount = item.discount || 0;
         const discountedPrice = itemPrice * (1 - itemDiscount / 100);
         return sum + (discountedPrice * (item.quantity || 0));
     }, 0);
     
-    const total = subtotal * (1 - totalDiscount / 100);
+    const total = subtotal * (1 - cartState.totalDiscount / 100);
     return Math.max(0, Math.round(total));
 }
 
 /**
- * Вычисляет количество уникальных товаров в корзине
- * @returns {number}
+ * Проверяет, пуста ли корзина
+ * @returns {boolean}
  */
-export function getUniqueItemsCount() {
-    return cartState.items.length;
+export function isCartEmpty() {
+    return cartState.items.length === 0;
 }
 
 // ========== КЭШИРОВАНИЕ ==========
@@ -266,7 +261,7 @@ export async function clearCart() {
     
     const confirmed = await showConfirmDialog({
         title: 'Очистка корзины',
-        message: `Вы уверены, что хотите удалить все товары (${calculateCartCount(cartState.items)} поз.) из корзины?`,
+        message: `Вы уверены, что хотите удалить все товары (${calculateCartCount()} поз.) из корзины?`,
         confirmText: 'Очистить',
         confirmClass: 'btn-danger'
     });
@@ -290,38 +285,6 @@ export function resetCart() {
     notifyCartChanged();
 }
 
-/**
- * Проверяет, пуста ли корзина
- * @returns {boolean}
- */
-export function isCartEmpty() {
-    return cartState.items.length === 0;
-}
-
-/**
- * Получает итоговую сумму корзины
- * @returns {number}
- */
-export function getCartTotal() {
-    return calculateCartTotal(cartState.items, cartState.totalDiscount);
-}
-
-/**
- * Получает общее количество товаров
- * @returns {number}
- */
-export function getCartCount() {
-    return calculateCartCount(cartState.items);
-}
-
-/**
- * Получает копию товаров корзины
- * @returns {Array}
- */
-export function getCartItems() {
-    return [...cartState.items];
-}
-
 // ========== ЭКСПОРТ ПО УМОЛЧАНИЮ ==========
 
 export default {
@@ -335,10 +298,6 @@ export default {
     calculateCartCount,
     calculateItemTotal,
     calculateCartTotal,
-    getUniqueItemsCount,
-    getCartTotal,
-    getCartCount,
-    getCartItems,
     isCartEmpty,
     
     // Кэширование
