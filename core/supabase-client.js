@@ -9,21 +9,26 @@
  * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
  * 
  * @module supabase-client
- * @version 1.6.0
+ * @version 1.7.0
  * @changes
  * - v1.4.0: getUser() с отложенным рефрешем
  * - v1.5.0: Полный рефакторинг from() — поддержка method chaining
  * - v1.5.0: .select().eq().order().limit() работают как в оригинальном SDK
  * - v1.5.0: .insert(), .update().eq(), .delete().eq() возвращают { data, error }
  * - v1.6.0: Добавлен метод .is() для проверки IS NULL/TRUE/FALSE
- * - v1.6.0: Добавлен метод .neq() для проверки неравенства
- * - v1.6.0: Добавлен метод .gte() и .lte() для диапазонов
- * - v1.6.0: Полифилл AbortSignal.timeout вынесен в начало файла
+ * - v1.6.0: Добавлен метод .neq(), .gte(), .lte(), .gt(), .lt()
+ * - v1.7.0: Таймаут 30с для signInWithPassword и refreshSession (холодный старт Supabase)
+ * - v1.7.0: Автоматический повтор при первой ошибке таймаута
+ * - v1.7.0: Понятные сообщения об ошибках на русском
+ * - v1.7.0: Сигнал таймаута передаётся во все вызовы apiFetch
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
 const STORAGE_KEY = 'sb-bhdwniiyrrujeoubrvle-auth-token';
+
+// Таймауты
+const AUTH_TIMEOUT_MS = 30000; // 30 секунд для auth-запросов (холодный старт Supabase)
 
 // ========== ПОЛИФИЛЛ ==========
 
@@ -63,7 +68,24 @@ async function apiFetch(path, options = {}) {
         fetchOptions.signal = signal;
     }
     
-    return await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
+    try {
+        return await fetch(`${SUPABASE_URL}${path}`, fetchOptions);
+    } catch (error) {
+        // Прокидываем ошибку с понятным сообщением
+        if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+            const timeoutError = new Error('Сервер не отвечает. Попробуйте ещё раз.');
+            timeoutError.code = 'TIMEOUT';
+            timeoutError.originalError = error;
+            throw timeoutError;
+        }
+        if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+            const networkError = new Error('Нет подключения к интернету. Проверьте соединение.');
+            networkError.code = 'NETWORK_ERROR';
+            networkError.originalError = error;
+            throw networkError;
+        }
+        throw error;
+    }
 }
 
 // ========== УПРАВЛЕНИЕ ТОКЕНОМ ==========
@@ -90,73 +112,145 @@ function getAccessToken() {
 
 // ========== АУТЕНТИФИКАЦИЯ ==========
 
+/**
+ * Выполняет вход с паролем.
+ * Включает таймаут 30с для холодного старта Supabase.
+ * При первой ошибке таймаута делает автоматический повтор.
+ */
 async function signInWithPassword(email, password) {
-    let response;
-    try {
-        response = await apiFetch('/auth/v1/token?grant_type=password', {
-            method: 'POST',
-            body: { email, password },
-            headers: { 'Content-Type': 'application/json' }
-        });
-    } catch {
-        return { data: null, error: new Error('Сервер недоступен. Проверьте подключение к интернету.') };
-    }
+    // Пытаемся выполнить вход, с одним автоматическим повтором при таймауте
+    let lastError = null;
     
-    let data;
-    try { data = await response.json(); } catch {
-        return { data: null, error: new Error('Некорректный ответ сервера.') };
-    }
-    
-    if (!response.ok) {
-        const msg = data.error_description || data.error || data.msg || '';
-        if (msg.includes('Invalid login credentials')) {
-            return { data: null, error: new Error('Неверный email или пароль') };
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+            console.log('[Supabase] Retrying signInWithPassword (attempt ' + (attempt + 1) + ')...');
         }
-        return { data: null, error: new Error(msg || `Ошибка сервера (${response.status})`) };
+        
+        try {
+            const signal = createTimeoutSignal(AUTH_TIMEOUT_MS);
+            
+            const response = await apiFetch('/auth/v1/token?grant_type=password', {
+                method: 'POST',
+                body: { email, password },
+                headers: { 'Content-Type': 'application/json' },
+                signal
+            });
+            
+            let data;
+            try { data = await response.json(); } catch {
+                return { data: null, error: new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.') };
+            }
+            
+            if (!response.ok) {
+                const msg = data.error_description || data.error || data.msg || '';
+                
+                if (msg.includes('Invalid login credentials')) {
+                    return { data: null, error: new Error('Неверный email или пароль') };
+                }
+                
+                return { data: null, error: new Error(msg || `Ошибка сервера (${response.status}). Попробуйте позже.`) };
+            }
+            
+            if (!data.user || !data.access_token) {
+                return { data: null, error: new Error('Сервер вернул некорректный ответ. Попробуйте ещё раз.') };
+            }
+            
+            saveSession(data);
+            console.log('[Supabase] Login successful');
+            return { data: { user: data.user, session: data }, error: null };
+            
+        } catch (error) {
+            lastError = error;
+            
+            // При таймауте пробуем ещё раз (холодный старт Supabase)
+            if (error.code === 'TIMEOUT' && attempt === 0) {
+                continue;
+            }
+            
+            // На второй попытке или другой ошибке — возвращаем результат
+            break;
+        }
     }
     
-    if (!data.user || !data.access_token) {
-        return { data: null, error: new Error('Сервер вернул некорректный ответ.') };
+    // Формируем понятное сообщение об ошибке
+    let message = 'Не удалось подключиться к серверу.';
+    
+    if (lastError) {
+        if (lastError.code === 'TIMEOUT') {
+            message = 'Сервер не отвечает. Возможно, он "просыпается" после долгого бездействия. Попробуйте ещё раз через несколько секунд.';
+        } else if (lastError.code === 'NETWORK_ERROR') {
+            message = lastError.message;
+        } else if (lastError.message) {
+            message = 'Ошибка входа: ' + lastError.message;
+        }
     }
     
-    saveSession(data);
-    return { data: { user: data.user, session: data }, error: null };
+    return { data: null, error: new Error(message) };
 }
 
+/**
+ * Обновляет сессию с таймаутом и автоматическим повтором.
+ */
 async function refreshSession() {
     const session = getSession();
     if (!session?.refresh_token) {
         clearSession();
-        throw { status: 401, message: 'No refresh token' };
-    }
-    
-    let response;
-    try {
-        response = await apiFetch('/auth/v1/token?grant_type=refresh_token', {
-            method: 'POST',
-            body: { refresh_token: session.refresh_token },
-            headers: { 'Content-Type': 'application/json' }
-        });
-    } catch {
-        throw { status: 0, message: 'Сервер недоступен' };
-    }
-    
-    let data;
-    try { data = await response.json(); } catch {
-        throw { status: response.status, message: 'Некорректный ответ сервера' };
-    }
-    
-    if (!response.ok || data.error) {
-        clearSession();
         throw { status: 401, message: 'Сессия истекла. Войдите заново.' };
     }
     
-    if (!data.access_token) {
-        throw { status: response.status, message: 'Сервер не вернул токен' };
+    let lastError = null;
+    
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0) {
+            console.log('[Supabase] Retrying refreshSession...');
+        }
+        
+        try {
+            const signal = createTimeoutSignal(AUTH_TIMEOUT_MS);
+            
+            const response = await apiFetch('/auth/v1/token?grant_type=refresh_token', {
+                method: 'POST',
+                body: { refresh_token: session.refresh_token },
+                headers: { 'Content-Type': 'application/json' },
+                signal
+            });
+            
+            let data;
+            try { data = await response.json(); } catch {
+                throw { status: response.status, message: 'Некорректный ответ сервера' };
+            }
+            
+            if (!response.ok || data.error) {
+                clearSession();
+                throw { status: 401, message: 'Сессия истекла. Войдите заново.' };
+            }
+            
+            if (!data.access_token) {
+                throw { status: response.status, message: 'Сервер не вернул токен' };
+            }
+            
+            saveSession(data);
+            return data;
+            
+        } catch (error) {
+            lastError = error;
+            
+            // При таймауте пробуем ещё раз
+            if (error.code === 'TIMEOUT' && attempt === 0) {
+                continue;
+            }
+            
+            break;
+        }
     }
     
-    saveSession(data);
-    return data;
+    // Если после всех попыток ошибка — пробрасываем
+    if (lastError) {
+        if (lastError.code === 'TIMEOUT') {
+            throw { status: 0, message: 'Сервер не отвечает. Проверьте подключение к интернету.' };
+        }
+        throw lastError;
+    }
 }
 
 async function getUser() {
@@ -166,16 +260,37 @@ async function getUser() {
     }
     
     let response;
-    try { response = await apiFetch('/auth/v1/user'); } catch {
-        return { user: null, error: { status: 0, message: 'Сервер недоступен' } };
+    try {
+        response = await apiFetch('/auth/v1/user');
+    } catch (error) {
+        return { 
+            user: null, 
+            error: { 
+                status: 0, 
+                message: error.message || 'Сервер недоступен' 
+            } 
+        };
     }
     
     if (response.status === 401) {
-        try { await refreshSession(); } catch (refreshError) {
-            return { user: null, error: refreshError };
+        try { 
+            await refreshSession(); 
+        } catch (refreshError) {
+            return { 
+                user: null, 
+                error: refreshError 
+            };
         }
-        try { response = await apiFetch('/auth/v1/user'); } catch {
-            return { user: null, error: { status: 0, message: 'Сервер недоступен' } };
+        try { 
+            response = await apiFetch('/auth/v1/user'); 
+        } catch (error) {
+            return { 
+                user: null, 
+                error: { 
+                    status: 0, 
+                    message: error.message || 'Сервер недоступен' 
+                } 
+            };
         }
     }
     
@@ -205,7 +320,8 @@ async function signOut() {
         try {
             await apiFetch('/auth/v1/logout', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 'Authorization': `Bearer ${token}` },
+                signal: createTimeoutSignal(10000)
             });
         } catch {}
     }
@@ -332,7 +448,6 @@ class QueryBuilder {
         } else if (value === false) {
             this._filters.push(`${column}=is.false`);
         } else {
-            // Если передано что-то другое, используем eq как fallback
             this._filters.push(`${column}=eq.${encodeURIComponent(value)}`);
         }
         return this;
@@ -440,7 +555,6 @@ class QueryBuilder {
         
         // filters
         this._filters.forEach(f => {
-            // Каждый фильтр уже в формате "column=operator.value"
             const eqIndex = f.indexOf('=');
             if (eqIndex !== -1) {
                 const key = f.substring(0, eqIndex);
@@ -466,7 +580,7 @@ class QueryBuilder {
             const fetchOptions = {
                 method: this._method,
                 headers: { ...this._headers },
-                signal: this._method === 'GET' ? createTimeoutSignal(30000) : undefined
+                signal: this._method === 'GET' ? createTimeoutSignal(30000) : createTimeoutSignal(15000)
             };
             
             if (this._body) {
@@ -503,6 +617,9 @@ class QueryBuilder {
             return { data: responseData, error: null };
             
         } catch (error) {
+            if (error.code === 'TIMEOUT') {
+                error.message = 'Сервер не отвечает. Попробуйте обновить страницу.';
+            }
             return { data: null, error };
         }
     }
@@ -531,7 +648,8 @@ const storage = {
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${getAccessToken() || ''}`
                     },
-                    body: formData
+                    body: formData,
+                    signal: createTimeoutSignal(30000)
                 });
                 if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
                 return { error: null };
@@ -547,7 +665,8 @@ const storage = {
                 const response = await apiFetch(`/storage/v1/object/${bucket}`, {
                     method: 'DELETE',
                     body: { prefixes: paths },
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: createTimeoutSignal(15000)
                 });
                 return { error: null };
             } catch (error) {
