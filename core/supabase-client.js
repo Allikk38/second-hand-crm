@@ -6,20 +6,22 @@
  * Локальный Supabase Client
  * 
  * Собственная реализация клиента Supabase без внешних зависимостей.
- * Использует нативный fetch с HTTP/2 для обхода QUIC-ошибок.
+ * Поддерживает method chaining (билдер-паттерн) как оригинальный SDK.
  * 
  * @module supabase-client
- * @version 1.4.0
+ * @version 1.5.0
  * @changes
- * - v1.3.0: signInWithPassword возвращает { data, error }
- * - v1.4.0: getUser() больше не делает рефреш перед запросом /auth/v1/user
- * - v1.4.0: getUser() вызывает refreshSession() только если получил 401
- * - v1.4.0: пользователь НЕ выбрасывается обратно на вход после успешного входа
+ * - v1.4.0: getUser() с отложенным рефрешем
+ * - v1.5.0: Полный рефакторинг from() — поддержка method chaining
+ * - v1.5.0: .select().eq().order().limit() работают как в оригинальном SDK
+ * - v1.5.0: .insert(), .update().eq(), .delete().eq() возвращают { data, error }
  */
 
 const SUPABASE_URL = 'https://bhdwniiyrrujeoubrvle.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZHduaWl5cnJ1amVvdWJydmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MzM2MTYsImV4cCI6MjA5MjIwOTYxNn0.-EilGBYgNNRraTjEqilYuvk-Pfy_Mf5TNEtS1NrU2WM';
 const STORAGE_KEY = 'sb-bhdwniiyrrujeoubrvle-auth-token';
+
+// ========== ПОЛИФИЛЛ ==========
 
 function createTimeoutSignal(ms) {
     if (typeof AbortSignal.timeout === 'function') {
@@ -45,9 +47,6 @@ async function apiFetch(path, options = {}) {
         }
     };
     
-    // Токен добавляем только для НЕ-auth запросов
-    // Для /auth/v1/user — нужен токен
-    // Для /auth/v1/token — токен НЕ нужен (его ещё нет)
     if (token && !path.startsWith('/auth/v1/token')) {
         fetchOptions.headers['Authorization'] = `Bearer ${token}`;
     }
@@ -66,24 +65,18 @@ async function apiFetch(path, options = {}) {
 // ========== УПРАВЛЕНИЕ ТОКЕНОМ ==========
 
 function saveSession(session) {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(session)); } catch {}
 }
 
 function getSession() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         return raw ? JSON.parse(raw) : null;
-    } catch {
-        return null;
-    }
+    } catch { return null; }
 }
 
 function clearSession() {
-    try {
-        localStorage.removeItem(STORAGE_KEY);
-    } catch {}
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
 }
 
 function getAccessToken() {
@@ -95,24 +88,18 @@ function getAccessToken() {
 
 async function signInWithPassword(email, password) {
     let response;
-    
     try {
         response = await apiFetch('/auth/v1/token?grant_type=password', {
             method: 'POST',
             body: { email, password },
             headers: { 'Content-Type': 'application/json' }
         });
-    } catch (fetchError) {
-        return {
-            data: null,
-            error: new Error('Сервер недоступен. Проверьте подключение к интернету.')
-        };
+    } catch {
+        return { data: null, error: new Error('Сервер недоступен. Проверьте подключение к интернету.') };
     }
     
     let data;
-    try {
-        data = await response.json();
-    } catch {
+    try { data = await response.json(); } catch {
         return { data: null, error: new Error('Некорректный ответ сервера.') };
     }
     
@@ -125,16 +112,11 @@ async function signInWithPassword(email, password) {
     }
     
     if (!data.user || !data.access_token) {
-        console.error('[SupabaseClient] Missing user or token:', data);
         return { data: null, error: new Error('Сервер вернул некорректный ответ.') };
     }
     
     saveSession(data);
-    
-    return {
-        data: { user: data.user, session: data },
-        error: null
-    };
+    return { data: { user: data.user, session: data }, error: null };
 }
 
 async function refreshSession() {
@@ -156,9 +138,7 @@ async function refreshSession() {
     }
     
     let data;
-    try {
-        data = await response.json();
-    } catch {
+    try { data = await response.json(); } catch {
         throw { status: response.status, message: 'Некорректный ответ сервера' };
     }
     
@@ -175,52 +155,29 @@ async function refreshSession() {
     return data;
 }
 
-/**
- * Получает текущего пользователя.
- * Сначала пробует прямой запрос с текущим токеном.
- * Если получает 401 — пробует рефреш и повторяет запрос.
- * 
- * @returns {Promise<{user: Object, error: Object|null}>}
- */
 async function getUser() {
     const token = getAccessToken();
-    
     if (!token) {
         return { user: null, error: { status: 401, message: 'No session' } };
     }
     
-    // Первая попытка — с текущим токеном
     let response;
-    try {
-        response = await apiFetch('/auth/v1/user');
-    } catch {
+    try { response = await apiFetch('/auth/v1/user'); } catch {
         return { user: null, error: { status: 0, message: 'Сервер недоступен' } };
     }
     
-    // Если 401 — пробуем рефреш
     if (response.status === 401) {
-        try {
-            await refreshSession();
-        } catch (refreshError) {
+        try { await refreshSession(); } catch (refreshError) {
             return { user: null, error: refreshError };
         }
-        
-        // Повторяем запрос с новым токеном
-        try {
-            response = await apiFetch('/auth/v1/user');
-        } catch {
-            return { user: null, error: { status: 0, message: 'Сервер недоступен после рефреша' } };
+        try { response = await apiFetch('/auth/v1/user'); } catch {
+            return { user: null, error: { status: 0, message: 'Сервер недоступен' } };
         }
     }
     
-    // Проверяем финальный ответ
     if (!response.ok) {
         let errorData;
-        try {
-            errorData = await response.json();
-        } catch {
-            errorData = {};
-        }
+        try { errorData = await response.json(); } catch { errorData = {}; }
         return {
             user: null,
             error: {
@@ -235,8 +192,7 @@ async function getUser() {
 }
 
 function getCurrentSession() {
-    const session = getSession();
-    return { data: { session } };
+    return { data: { session: getSession() } };
 }
 
 async function signOut() {
@@ -252,71 +208,220 @@ async function signOut() {
     clearSession();
 }
 
-// ========== REST API ==========
+// ========== QUERY BUILDER (METHOD CHAINING) ==========
 
-async function from(table) {
-    return {
-        select: async (selectStr = '*') => {
-            const query = buildQuery(table, { select: selectStr });
-            try {
-                const response = await apiFetch(`/rest/v1/${table}?${query}`, {
-                    signal: createTimeoutSignal(30000)
-                });
-                const data = await response.json();
-                return { data, error: null };
-            } catch (error) {
+/**
+ * Строитель запросов с поддержкой method chaining.
+ * Накопляет фильтры, выполняет запрос при await.
+ */
+class QueryBuilder {
+    constructor(table) {
+        this._table = table;
+        this._method = 'GET';
+        this._selectStr = '*';
+        this._filters = [];
+        this._orderStr = null;
+        this._limitNum = null;
+        this._single = false;
+        this._body = null;
+        this._headers = {};
+        this._hasExecuted = false;
+        this._resultPromise = null;
+    }
+    
+    /**
+     * Делает билдер thenable — можно использовать с await.
+     */
+    then(resolve, reject) {
+        if (!this._resultPromise) {
+            this._resultPromise = this._execute();
+        }
+        return this._resultPromise.then(resolve, reject);
+    }
+    
+    /**
+     * SELECT запрос.
+     * @param {string} columns
+     * @returns {QueryBuilder}
+     */
+    select(columns = '*') {
+        this._method = 'GET';
+        this._selectStr = columns;
+        return this;
+    }
+    
+    /**
+     * INSERT запрос.
+     * @param {Object|Array} rows
+     * @returns {QueryBuilder}
+     */
+    insert(rows) {
+        this._method = 'POST';
+        this._body = rows;
+        this._headers['Prefer'] = 'return=representation';
+        return this;
+    }
+    
+    /**
+     * UPDATE запрос (требует .eq() после).
+     * @param {Object} updates
+     * @returns {QueryBuilder}
+     */
+    update(updates) {
+        this._method = 'PATCH';
+        this._body = updates;
+        this._headers['Prefer'] = 'return=representation';
+        return this;
+    }
+    
+    /**
+     * DELETE запрос (требует .eq() после).
+     * @returns {QueryBuilder}
+     */
+    delete() {
+        this._method = 'DELETE';
+        return this;
+    }
+    
+    /**
+     * Добавляет фильтр равенства.
+     * @param {string} column
+     * @param {any} value
+     * @returns {QueryBuilder}
+     */
+    eq(column, value) {
+        this._filters.push(`${column}=eq.${encodeURIComponent(value)}`);
+        return this;
+    }
+    
+    /**
+     * Добавляет сортировку.
+     * @param {string} column
+     * @param {{ascending?: boolean}} options
+     * @returns {QueryBuilder}
+     */
+    order(column, options = {}) {
+        const direction = options.ascending === false ? 'desc' : 'asc';
+        this._orderStr = `${column}.${direction}`;
+        return this;
+    }
+    
+    /**
+     * Ограничивает количество результатов.
+     * @param {number} n
+     * @returns {QueryBuilder}
+     */
+    limit(n) {
+        this._limitNum = n;
+        return this;
+    }
+    
+    /**
+     * Возвращает один объект вместо массива.
+     * @returns {QueryBuilder}
+     */
+    single() {
+        this._single = true;
+        return this;
+    }
+    
+    /**
+     * Возвращает null если запись не найдена (вместо ошибки 406).
+     * @returns {QueryBuilder}
+     */
+    maybeSingle() {
+        this._single = true;
+        this._headers['Accept'] = 'application/vnd.pgrst.object+json';
+        return this;
+    }
+    
+    /**
+     * Выполняет запрос к API.
+     * @returns {Promise<{data: any, error: Error|null}>}
+     */
+    async _execute() {
+        if (this._hasExecuted) return this._resultPromise;
+        this._hasExecuted = true;
+        
+        const params = new URLSearchParams();
+        
+        // select
+        if (this._method === 'GET' && this._selectStr) {
+            params.append('select', this._selectStr);
+        }
+        
+        // filters
+        this._filters.forEach(f => {
+            const [key, value] = f.split('=');
+            params.append(key, value);
+        });
+        
+        // order
+        if (this._orderStr) {
+            params.append('order', this._orderStr);
+        }
+        
+        // limit
+        if (this._limitNum) {
+            params.append('limit', String(this._limitNum));
+        }
+        
+        const queryString = params.toString();
+        const path = `/rest/v1/${this._table}${queryString ? '?' + queryString : ''}`;
+        
+        try {
+            const fetchOptions = {
+                method: this._method,
+                headers: { ...this._headers },
+                signal: this._method === 'GET' ? createTimeoutSignal(30000) : undefined
+            };
+            
+            if (this._body) {
+                fetchOptions.body = this._body;
+            }
+            
+            const response = await apiFetch(path, fetchOptions);
+            
+            if (!response.ok) {
+                // 406 Not Acceptable — нет результатов для single
+                if (response.status === 406 && this._single) {
+                    return { data: null, error: null };
+                }
+                
+                const error = new Error(`Supabase API error: ${response.status}`);
+                error.status = response.status;
+                error.code = response.headers.get('x-sb-error-code') || null;
+                try { error.details = await response.json(); } catch {}
                 return { data: null, error };
             }
-        },
-        insert: async (rows) => {
-            try {
-                const response = await apiFetch(`/rest/v1/${table}`, {
-                    method: 'POST',
-                    body: rows,
-                    headers: { 'Prefer': 'return=representation' }
-                });
-                const data = await response.json();
-                return { data, error: null };
-            } catch (error) {
-                return { data: null, error };
+            
+            // DELETE — нет тела ответа
+            if (this._method === 'DELETE') {
+                return { data: null, error: null };
             }
-        },
-        update: async (updates) => ({
-            eq: async (column, value) => {
-                try {
-                    const query = `${column}=eq.${encodeURIComponent(value)}`;
-                    const response = await apiFetch(`/rest/v1/${table}?${query}`, {
-                        method: 'PATCH',
-                        body: updates,
-                        headers: { 'Prefer': 'return=representation' }
-                    });
-                    const data = await response.json();
-                    return { data: data[0] || null, error: null };
-                } catch (error) {
-                    return { data: null, error };
-                }
+            
+            const responseData = await response.json();
+            
+            // single — возвращаем первый элемент
+            if (this._single && Array.isArray(responseData)) {
+                return { data: responseData[0] || null, error: null };
             }
-        }),
-        delete: async () => ({
-            eq: async (column, value) => {
-                try {
-                    const query = `${column}=eq.${encodeURIComponent(value)}`;
-                    await apiFetch(`/rest/v1/${table}?${query}`, { method: 'DELETE' });
-                    return { error: null };
-                } catch (error) {
-                    return { error };
-                }
-            }
-        })
-    };
+            
+            return { data: responseData, error: null };
+            
+        } catch (error) {
+            return { data: null, error };
+        }
+    }
 }
 
-function buildQuery(table, options = {}) {
-    const params = new URLSearchParams();
-    if (options.select) params.append('select', options.select);
-    if (options.order) params.append('order', options.order);
-    if (options.limit) params.append('limit', String(options.limit));
-    return params.toString();
+/**
+ * Создаёт строитель запросов для таблицы.
+ * @param {string} table
+ * @returns {QueryBuilder}
+ */
+function from(table) {
+    return new QueryBuilder(table);
 }
 
 // ========== STORAGE ==========
@@ -346,7 +451,7 @@ const storage = {
         }),
         remove: async (paths) => {
             try {
-                await apiFetch(`/storage/v1/object/${bucket}`, {
+                const response = await apiFetch(`/storage/v1/object/${bucket}`, {
                     method: 'DELETE',
                     body: { prefixes: paths },
                     headers: { 'Content-Type': 'application/json' }
