@@ -9,22 +9,20 @@
  * Использует нативный fetch с HTTP/2 для обхода QUIC-ошибок.
  * 
  * Архитектурные решения:
- * - Нет зависимости от @supabase/supabase-js (не грузится с CDN)
+ * - Нет зависимости от @supabase/supabase-js
  * - Прямые REST-запросы к PostgREST API Supabase
  * - JWT-токен хранится в localStorage и передаётся в заголовках
  * - Автоматический рефреш токена
- * - HTTP/2 только (без QUIC/HTTP3)
  * - Встроенный полифилл для AbortSignal.timeout()
  * 
  * @module supabase-client
- * @version 1.1.0
+ * @version 1.2.0
  * @changes
- * - Добавлен полифилл createTimeoutSignal() для поддержки старых браузеров.
- * - Заменены все AbortSignal.timeout() на createTimeoutSignal().
- * - Исправлена signInWithPassword: теперь проверяет data.user и data.error.
- * - Исправлена getUser: теперь проверяет структуру ответа.
- * - Исправлена refreshSession: теперь проверяет результат.
- * - Это исправляет ошибку "Cannot read properties of undefined (reading 'user')".
+ * - v1.1.0: Добавлен полифилл createTimeoutSignal()
+ * - v1.1.0: Исправлена валидация ответа signInWithPassword
+ * - v1.2.0: Убран signal для auth-запросов (вызывал ERR_CONNECTION_TIMED_OUT)
+ * - v1.2.0: Убран cache: 'no-store' для POST-запросов
+ * - v1.2.0: signal оставлен только для GET-запросов к REST API
  */
 
 // ========== КОНСТАНТЫ ==========
@@ -57,18 +55,22 @@ function createTimeoutSignal(ms) {
     return controller.signal;
 }
 
-// ========== HTTP/2 FETCH ==========
+// ========== HTTP FETCH ==========
 
 /**
  * Выполняет запрос к Supabase API.
- * Форсирует HTTP/2 через специальные заголовки и опции.
+ * 
+ * ВАЖНО: signal НЕ устанавливается по умолчанию.
+ * Для GET-запросов используйте apiFetchWithTimeout.
+ * Для POST/PATCH/DELETE (мутирующих и auth) signal НЕ используется,
+ * так как это вызывает ERR_CONNECTION_TIMED_OUT в некоторых окружениях.
  * 
  * @param {string} path - Путь API (напр. '/rest/v1/products')
  * @param {Object} options - Опции запроса
  * @param {string} [options.method='GET'] - HTTP метод
- * @param {Object} [options.body] - Тело запроса
+ * @param {Object} [options.body] - Тело запроса (для POST/PATCH)
  * @param {Object} [options.headers] - Дополнительные заголовки
- * @param {AbortSignal} [options.signal] - Сигнал отмены
+ * @param {AbortSignal} [options.signal] - Опциональный сигнал отмены
  * @returns {Promise<Response>}
  */
 async function apiFetch(path, options = {}) {
@@ -82,15 +84,8 @@ async function apiFetch(path, options = {}) {
         headers: {
             'apikey': SUPABASE_ANON_KEY,
             'Content-Type': 'application/json',
-            // Заголовки для принудительного HTTP/2
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache',
             ...headers
-        },
-        // Ключевое: отключаем кэш и QUIC
-        cache: 'no-store',
-        // Используем полифилл для совместимости со старыми браузерами
-        signal: signal || createTimeoutSignal(30000)
+        }
     };
     
     // Добавляем авторизацию если есть токен
@@ -101,6 +96,11 @@ async function apiFetch(path, options = {}) {
     // Добавляем тело для мутирующих запросов
     if (body && method !== 'GET') {
         fetchOptions.body = JSON.stringify(body);
+    }
+    
+    // signal добавляем ТОЛЬКО если он явно передан
+    if (signal) {
+        fetchOptions.signal = signal;
     }
     
     const url = `${SUPABASE_URL}${path}`;
@@ -121,6 +121,21 @@ async function apiFetch(path, options = {}) {
     }
     
     return response;
+}
+
+/**
+ * Выполняет GET-запрос с таймаутом.
+ * Используется для загрузки данных через REST API.
+ * 
+ * @param {string} path - Путь API
+ * @param {Object} options - Опции запроса
+ * @returns {Promise<Response>}
+ */
+async function apiFetchWithTimeout(path, options = {}) {
+    return apiFetch(path, {
+        ...options,
+        signal: createTimeoutSignal(30000)
+    });
 }
 
 // ========== УПРАВЛЕНИЕ ТОКЕНОМ ==========
@@ -176,7 +191,6 @@ function isTokenExpired() {
     
     const expiresAt = new Date(session.expires_at * 1000);
     const now = new Date();
-    // Токен протух если осталось меньше 60 секунд
     return (expiresAt - now) < 60000;
 }
 
@@ -184,7 +198,7 @@ function isTokenExpired() {
 
 /**
  * Вход по email и паролю.
- * Проверяет ответ от Supabase и выбрасывает ошибку при неудаче.
+ * НЕ использует signal/таймаут, так как это вызывает проблемы в некоторых окружениях.
  * 
  * @param {string} email
  * @param {string} password
@@ -203,7 +217,6 @@ async function signInWithPassword(email, password) {
             }
         });
     } catch (fetchError) {
-        // Ошибка сети или таймаут
         throw new Error('Сервер недоступен. Проверьте подключение к интернету.');
     }
     
@@ -214,22 +227,17 @@ async function signInWithPassword(email, password) {
         throw new Error('Некорректный ответ сервера.');
     }
     
-    // Supabase возвращает ошибку в теле ответа даже при HTTP 200
     if (data.error) {
         const message = data.error_description || data.error;
         if (message?.includes('Invalid login credentials')) {
             throw new Error('Неверный email или пароль');
         }
-        if (message?.includes('Email not confirmed')) {
-            throw new Error('Email не подтверждён. Проверьте почту.');
-        }
         throw new Error(message || 'Ошибка аутентификации');
     }
     
-    // Проверяем, что ответ содержит пользователя
     if (!data.user || !data.access_token) {
         console.error('[SupabaseClient] Unexpected auth response:', data);
-        throw new Error('Сервер вернул некорректный ответ. Попробуйте позже.');
+        throw new Error('Сервер вернул некорректный ответ.');
     }
     
     saveSession(data);
@@ -241,9 +249,7 @@ async function signInWithPassword(email, password) {
 }
 
 /**
- * Рефреш токена.
- * Проверяет ответ и выбрасывает ошибку при неудаче.
- * 
+ * Рефреш токена
  * @returns {Promise<Object>} Новая сессия
  * @throws {Error} Если нет refresh_token или он истёк
  */
@@ -288,18 +294,15 @@ async function refreshSession() {
 }
 
 /**
- * Получает текущего пользователя.
- * 
+ * Получает текущего пользователя
  * @returns {Promise<Object>} { user }
  * @throws {Object} Объект ошибки со статусом
  */
 async function getUser() {
-    // Проверяем токен
     if (!getAccessToken()) {
         throw { status: 401, message: 'No session' };
     }
     
-    // Рефрешим если протух
     if (isTokenExpired()) {
         try {
             await refreshSession();
@@ -346,27 +349,20 @@ async function signOut() {
 // ========== REST API (PostgREST) ==========
 
 /**
- * Выполняет SELECT-запрос к таблице
+ * Работа с таблицами через PostgREST
  * @param {string} table - Имя таблицы
- * @param {Object} options - Опции запроса
- * @param {string[]} [options.select='*'] - Колонки
- * @param {Object} [options.filters] - Фильтры { column: value }
- * @param {string} [options.order] - Сортировка 'column.asc'
- * @param {number} [options.limit] - Лимит
- * @param {boolean} [options.single] - Вернуть один объект
- * @param {string} [options.head] - Только заголовки 'exact'
- * @returns {Promise<{data: any, error: Error|null}>}
+ * @returns {Object} Объект для построения запросов
  */
 async function from(table) {
     return {
         /**
-         * SELECT запрос
+         * SELECT запрос (с таймаутом для GET)
          */
         select: async (selectStr = '*') => {
             const query = buildQuery(table, { select: selectStr });
             
             try {
-                const response = await apiFetch(`/rest/v1/${table}?${query}`);
+                const response = await apiFetchWithTimeout(`/rest/v1/${table}?${query}`);
                 const data = await response.json();
                 return { data, error: null };
             } catch (error) {
@@ -375,7 +371,7 @@ async function from(table) {
         },
         
         /**
-         * INSERT запрос
+         * INSERT запрос (без таймаута — мутирующий)
          */
         insert: async (rows) => {
             try {
@@ -394,7 +390,7 @@ async function from(table) {
         },
         
         /**
-         * UPDATE запрос
+         * UPDATE запрос (без таймаута — мутирующий)
          */
         update: async (updates) => {
             return {
@@ -418,7 +414,7 @@ async function from(table) {
         },
         
         /**
-         * DELETE запрос
+         * DELETE запрос (без таймаута — мутирующий)
          */
         delete: async () => {
             return {
@@ -461,34 +457,23 @@ function buildQuery(table, options = {}) {
 
 // ========== STORAGE ==========
 
-/**
- * Доступ к хранилищу файлов
- */
 const storage = {
     from: (bucket) => ({
-        /**
-         * Загрузка файла
-         */
         upload: async (path, file, options = {}) => {
             try {
                 const formData = new FormData();
                 formData.append('file', file);
                 
-                const fetchOptions = {
-                    method: 'POST',
-                    headers: {
-                        'apikey': SUPABASE_ANON_KEY,
-                        'Authorization': `Bearer ${getAccessToken() || ''}`,
-                        'Cache-Control': 'no-cache'
-                    },
-                    cache: 'no-store',
-                    body: formData,
-                    signal: createTimeoutSignal(30000)
-                };
-                
                 const response = await fetch(
                     `${SUPABASE_URL}/storage/v1/object/${bucket}/${path}`,
-                    fetchOptions
+                    {
+                        method: 'POST',
+                        headers: {
+                            'apikey': SUPABASE_ANON_KEY,
+                            'Authorization': `Bearer ${getAccessToken() || ''}`
+                        },
+                        body: formData
+                    }
                 );
                 
                 if (!response.ok) {
@@ -501,9 +486,6 @@ const storage = {
             }
         },
         
-        /**
-         * Получение публичного URL
-         */
         getPublicUrl: (path) => {
             return {
                 data: {
@@ -512,9 +494,6 @@ const storage = {
             };
         },
         
-        /**
-         * Удаление файлов
-         */
         remove: async (paths) => {
             try {
                 const response = await apiFetch(`/storage/v1/object/${bucket}`, {
@@ -536,9 +515,6 @@ const storage = {
 
 // ========== ПУБЛИЧНЫЙ API (СОВМЕСТИМЫЙ С SUPABASE SDK) ==========
 
-/**
- * Создаёт клиент Supabase (совместимый интерфейс)
- */
 function createClient(url, key, options = {}) {
     return {
         auth: {
@@ -548,7 +524,6 @@ function createClient(url, key, options = {}) {
             getSession: () => getCurrentSession(),
             refreshSession: () => refreshSession(),
             onAuthStateChange: (callback) => {
-                // Простая реализация — колбэк при изменениях
                 window.addEventListener('storage', (e) => {
                     if (e.key === STORAGE_KEY) {
                         const session = e.newValue ? JSON.parse(e.newValue) : null;
@@ -560,12 +535,11 @@ function createClient(url, key, options = {}) {
         },
         from: (table) => from(table),
         storage,
-        // Для обратной совместимости
         rest: { url, key }
     };
 }
 
-// Экспорт для совместимости
+// Экспорт
 window.supabase = { createClient };
 
 export { createClient };
