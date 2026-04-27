@@ -9,7 +9,9 @@
  * Использует нативный supabase-client.js для HTTP-запросов.
  * 
  * @module auth
- * @version 6.0.0
+ * @version 6.0.1
+ * @changes
+ * - v6.0.1: Добавлен экспорт getSupabase() для использования в других модулях
  */
 
 import { createClient } from './supabase-client.js';
@@ -59,6 +61,16 @@ export async function initAuth() {
     }
     
     return currentUser;
+}
+
+/**
+ * Возвращает экземпляр Supabase-клиента.
+ * Используется другими модулями для прямых запросов к БД.
+ * 
+ * @returns {Object} Supabase-клиент
+ */
+export function getSupabase() {
+    return supabaseClient;
 }
 
 /**
@@ -180,7 +192,8 @@ export default {
     requireAuth,
     logout,
     isOnline,
-    getReturnUrl
+    getReturnUrl,
+    getSupabase
 };
 
 console.log('[Auth] Module loaded (Supabase Version)');
