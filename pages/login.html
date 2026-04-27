@@ -8,18 +8,25 @@
     <!-- Базовый путь для GitHub Pages -->
     <base href="/second-hand-crm/">
     
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
     <!-- Основные стили -->
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/components/forms.css">
     <link rel="stylesheet" href="css/components/buttons.css">
     
     <style>
-        /* Стили только для страницы входа */
         .login-page {
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
+            min-height: 100dvh;
             padding: var(--spacing-4);
             background: var(--color-bg);
         }
@@ -185,6 +192,15 @@
     <!-- Основной скрипт страницы -->
     <script type="module" src="js/login.js"></script>
     
+    <!-- PWA: Регистрация Service Worker -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/second-hand-crm/sw.js', { scope: '/second-hand-crm/' })
+                .then(reg => console.log('[PWA] SW registered:', reg.scope))
+                .catch(err => console.warn('[PWA] SW failed:', err));
+        }
+    </script>
+    
     <!-- Fallback на случай ошибки -->
     <script>
         (function() {
@@ -192,7 +208,6 @@
             const loginBtn = document.getElementById('loginBtn');
             const offlineBanner = document.getElementById('offlineBanner');
             
-            // Проверка сети при загрузке
             if (!navigator.onLine && offlineBanner) {
                 offlineBanner.classList.add('show');
             }
